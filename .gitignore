@@ -1,0 +1,21 @@
+# Build and IDE
+target/
+.mvn/
+!.mvn/wrapper/
+node_modules/
+dist/
+build/
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Environment and Secrets
+.env
+.env.local
+.env.*.local
+
+# Local runtime uploads and logs
+uploads/
+logs/
+*.log
