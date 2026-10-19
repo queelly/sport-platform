@@ -1,11 +1,10 @@
 FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
 WORKDIR /app
+ENV MAVEN_OPTS="-Xmx512m -XX:+UseSerialGC"
 
 COPY pom.xml .
-RUN mvn dependency:go-offline -B
-
 COPY src ./src
-RUN mvn clean package -DskipTests -B
+RUN mvn package -DskipTests -Dmaven.test.skip=true -B
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
@@ -20,4 +19,4 @@ USER sportuser
 
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+ENTRYPOINT ["java", "-Xms256m", "-Xmx512m", "-jar", "/app/app.jar"]
