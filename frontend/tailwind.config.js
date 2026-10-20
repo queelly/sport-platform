@@ -7,23 +7,36 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        display: ['"Onest"', 'system-ui', '-apple-system', 'sans-serif'],
-        sans: ['"Golos Text"', '"Onest"', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['"Nunito"', '"Manrope"', 'system-ui', '-apple-system', 'sans-serif'],
+        sans: ['"Manrope"', '"Nunito"', 'system-ui', '-apple-system', 'sans-serif'],
       },
       colors: {
+        blue: {
+          50: '#E7F8F0',
+          100: '#CFECE0',
+          200: '#A5DFC7',
+          300: '#72CEA9',
+          400: '#3EC08D',
+          500: '#16B672',
+          600: '#16B672',
+          700: '#11995E',
+          800: '#0D7A4B',
+          900: '#0A5C38',
+          950: '#063B24',
+        },
         brand: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          900: '#1e3a8a',
+          50: '#E7F8F0',
+          100: '#CFECE0',
+          200: '#A5DFC7',
+          500: '#16B672',
+          600: '#16B672',
+          700: '#11995E',
+          900: '#0A5C38',
         },
         energy: {
-          400: '#a3e635',
-          500: '#84cc16',
-          600: '#65a30d',
+          400: '#72CEA9',
+          500: '#16B672',
+          600: '#11995E',
         }
       }
     },

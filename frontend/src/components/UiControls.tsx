@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, MapPin, Search, X } from 'lucide-react';
+import { Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Search } from 'lucide-react';
 import { RUSSIAN_REGIONS } from '../types';
 
 export interface SelectOption {
@@ -44,67 +44,68 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   const selectedOption = options.find((o) => o.value === value);
   const displayLabel = selectedOption ? selectedOption.label : placeholder;
 
-  const filtered = searchable && search.trim()
-    ? options.filter(
-        (o) =>
-          o.label.toLowerCase().replace('ё', 'е').includes(search.trim().toLowerCase().replace('ё', 'е')) ||
-          o.value.toLowerCase().replace('ё', 'е').includes(search.trim().toLowerCase().replace('ё', 'е'))
-      )
-    : options;
+  const filtered =
+    searchable && search.trim()
+      ? options.filter(
+          (o) =>
+            o.label.toLowerCase().replace('ё', 'е').includes(search.trim().toLowerCase().replace('ё', 'е')) ||
+            o.value.toLowerCase().replace('ё', 'е').includes(search.trim().toLowerCase().replace('ё', 'е'))
+        )
+      : options;
 
   const sizeClasses =
     size === 'sm'
-      ? 'px-3 py-1.5 text-xs rounded-xl min-h-[36px]'
-      : 'px-3.5 py-2.5 text-sm rounded-xl min-h-[42px]';
+      ? 'px-3.5 py-2 text-xs rounded-2xl min-h-[38px]'
+      : 'px-4 py-2.5 text-sm rounded-2xl min-h-[44px]';
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className={`w-full flex items-center justify-between gap-2 bg-white border transition-colors text-left font-medium ${sizeClasses} ${
+        className={`w-full flex items-center justify-between gap-2 bg-[#F7FAF8] hover:bg-white border transition-all text-left font-bold ${sizeClasses} ${
           open
-            ? 'border-blue-600 ring-2 ring-blue-500/15 text-slate-900'
-            : 'border-slate-300 hover:border-slate-400 text-slate-800'
+            ? 'border-[#16B672] bg-white ring-3 ring-[#16B672]/15 text-[#1A2622]'
+            : 'border-[#DCEAE4] hover:border-[#16B672]/50 text-[#1A2622]'
         }`}
       >
-        <div className="flex-1 min-w-0 overflow-hidden group/marquee">
+        <div className="flex-1 min-w-0 overflow-hidden group">
           <span
             className={`block whitespace-nowrap ${
-              displayLabel.length > 22 ? 'group-hover/marquee:animate-marquee' : 'truncate'
-            } ${!selectedOption ? 'text-slate-400 font-normal' : ''}`}
+              displayLabel.length > 22 ? 'animate-marquee' : 'truncate'
+            } ${!selectedOption ? 'text-[#7E8E89] font-medium' : ''}`}
             title={displayLabel}
           >
             {displayLabel}
           </span>
         </div>
         <ChevronDown
-          className={`w-4 h-4 text-slate-400 shrink-0 transition-transform duration-150 ${
-            open ? 'rotate-180 text-blue-600' : ''
+          className={`w-4 h-4 text-[#16B672] shrink-0 transition-transform duration-200 ${
+            open ? 'rotate-180' : ''
           }`}
         />
       </button>
 
       {open && (
-        <div className="absolute z-50 left-0 right-0 mt-1.5 min-w-[220px] bg-white rounded-2xl border border-slate-200 shadow-xl shadow-slate-900/10 py-1.5 max-h-72 overflow-y-auto">
+        <div className="absolute z-50 left-0 right-0 mt-2 min-w-[230px] bg-white rounded-2xl border border-[#DCEAE4] shadow-2xl shadow-emerald-950/10 py-2 max-h-72 overflow-y-auto">
           {searchable && (
-            <div className="px-2.5 pb-1.5 pt-1 sticky top-0 bg-white border-b border-slate-100">
+            <div className="px-3 pb-2 pt-1 sticky top-0 bg-white border-b border-[#EEF4F1]">
               <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <Search className="w-3.5 h-3.5 text-[#7E8E89] absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Поиск..."
+                  placeholder="Быстрый поиск..."
                   autoFocus
-                  className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:border-blue-500"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-[#DCEAE4] bg-[#F7FAF8] text-xs font-medium"
                 />
               </div>
             </div>
           )}
 
           {filtered.length === 0 ? (
-            <div className="px-3.5 py-2.5 text-xs text-slate-400 text-center">Ничего не найдено</div>
+            <div className="px-4 py-3 text-xs text-[#7E8E89] text-center">Ничего не найдено</div>
           ) : (
             filtered.map((opt) => {
               const active = opt.value === value;
@@ -117,17 +118,17 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                     setOpen(false);
                     setSearch('');
                   }}
-                  className={`w-full flex items-center justify-between gap-2 px-3.5 py-2 text-left text-xs sm:text-sm transition-colors ${
+                  className={`w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left text-xs sm:text-sm transition-colors ${
                     active
-                      ? 'bg-blue-50 text-blue-700 font-semibold'
-                      : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                      ? 'bg-[#E7F8F0] text-[#11995E] font-extrabold'
+                      : 'text-[#1A2622] hover:bg-[#F7FAF8]'
                   }`}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate">{opt.label}</div>
-                    {opt.sublabel && <div className="text-[11px] text-slate-400 truncate">{opt.sublabel}</div>}
+                    {opt.sublabel && <div className="text-[11px] text-[#7E8E89] truncate">{opt.sublabel}</div>}
                   </div>
-                  {active && <Check className="w-4 h-4 text-blue-600 shrink-0" />}
+                  {active && <Check className="w-4 h-4 text-[#16B672] shrink-0" />}
                 </button>
               );
             })
@@ -166,7 +167,6 @@ export const RegionSelect: React.FC<RegionSelectProps> = ({
     })),
   ];
 
-  // If current value is a custom city not in predefined list, include it so it's visible
   if (value && !options.some((o) => o.value.toLowerCase() === value.toLowerCase())) {
     options.push({
       value,
@@ -248,7 +248,6 @@ export const CustomDateTimePicker: React.FC<CustomDateTimePickerProps> = ({
   }, []);
 
   const firstDayOfMonth = new Date(viewYear, viewMonth, 1);
-  // Monday = 0 ... Sunday = 6
   const startOffset = (firstDayOfMonth.getDay() + 6) % 7;
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
 
@@ -260,149 +259,131 @@ export const CustomDateTimePicker: React.FC<CustomDateTimePickerProps> = ({
       viewMonth,
       day,
       safeDate.getHours(),
-      safeDate.getMinutes()
+      safeDate.getMinutes(),
+      0,
+      0
     );
     if (candidate.getTime() < minDate.getTime()) {
-      // If today is picked, bump time to at least next hour
-      const nextHour = new Date(minDate.getTime() + 60 * 60_000);
-      nextHour.setMinutes(0, 0, 0);
-      onChange(toLocalIsoString(nextHour));
+      const bumped = new Date(minDate.getTime() + 3600_000);
+      bumped.setMinutes(0, 0, 0);
+      onChange(toLocalIsoString(bumped));
     } else {
       onChange(toLocalIsoString(candidate));
     }
   };
 
-  const handleSelectTime = (hour: number, minute: number) => {
+  const handleSelectHour = (hour: number) => {
     const candidate = new Date(
       safeDate.getFullYear(),
       safeDate.getMonth(),
       safeDate.getDate(),
       hour,
-      minute
+      safeDate.getMinutes(),
+      0,
+      0
     );
-    if (candidate.getTime() < minDate.getTime()) {
-      // Move to tomorrow if user picks an earlier time than now on today's date
-      candidate.setDate(candidate.getDate() + 1);
-    }
+    if (candidate.getTime() < minDate.getTime()) return;
     onChange(toLocalIsoString(candidate));
   };
 
-  const applyQuickPreset = (daysOffset: number, hour: number, minute: number) => {
-    const d = new Date();
-    d.setDate(d.getDate() + daysOffset);
-    d.setHours(hour, minute, 0, 0);
-    if (d.getTime() <= minDate.getTime()) {
-      d.setDate(d.getDate() + 1);
-    }
-    setViewYear(d.getFullYear());
-    setViewMonth(d.getMonth());
-    onChange(toLocalIsoString(d));
-    setOpen(false);
+  const handleSelectMinute = (minute: number) => {
+    const candidate = new Date(
+      safeDate.getFullYear(),
+      safeDate.getMonth(),
+      safeDate.getDate(),
+      safeDate.getHours(),
+      minute,
+      0,
+      0
+    );
+    if (candidate.getTime() < minDate.getTime()) return;
+    onChange(toLocalIsoString(candidate));
   };
 
-  const formattedDisplay = safeDate.toLocaleString('ru-RU', {
+  const handlePrevMonth = () => {
+    if (viewMonth === 0) {
+      setViewYear((y) => y - 1);
+      setViewMonth(11);
+    } else {
+      setViewMonth((m) => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (viewMonth === 11) {
+      setViewYear((y) => y + 1);
+      setViewMonth(0);
+    } else {
+      setViewMonth((m) => m + 1);
+    }
+  };
+
+  const formattedDisplay = new Intl.DateTimeFormat('ru-RU', {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-  });
+  }).format(safeDate);
 
-  const hours = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+  const hours = Array.from({ length: 18 }, (_, i) => i + 6);
   const minutes = [0, 15, 30, 45];
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl border bg-white text-sm font-medium transition-colors ${
-          open ? 'border-blue-600 ring-2 ring-blue-500/15 text-slate-900' : 'border-slate-300 hover:border-slate-400 text-slate-800'
+        onClick={() => setOpen((o) => !o)}
+        className={`w-full flex items-center justify-between gap-2 px-4 py-2.5 rounded-2xl border bg-[#F7FAF8] hover:bg-white text-sm font-bold transition-all min-h-[44px] ${
+          open
+            ? 'border-[#16B672] bg-white ring-3 ring-[#16B672]/15 text-[#1A2622]'
+            : 'border-[#DCEAE4] hover:border-[#16B672]/50 text-[#1A2622]'
         }`}
       >
-        <span className="flex items-center gap-2 truncate">
-          <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
+        <span className="inline-flex items-center gap-2 truncate">
+          <Calendar className="w-4 h-4 text-[#16B672] shrink-0" />
           <span className="truncate">{formattedDisplay}</span>
         </span>
-        <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+        <ChevronDown
+          className={`w-4 h-4 text-[#16B672] shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
       </button>
 
       {open && (
-        <div className="absolute z-50 left-0 mt-2 w-[330px] sm:w-[370px] bg-white rounded-3xl border border-slate-200 shadow-2xl shadow-slate-900/15 p-4 space-y-3">
-          {/* Quick Presets */}
-          <div className="flex flex-wrap gap-1.5 pb-2 border-b border-slate-100">
-            <button
-              type="button"
-              onClick={() => applyQuickPreset(0, 19, 0)}
-              className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-semibold transition-colors"
-            >
-              Сегодня / Завтра 19:00
-            </button>
-            <button
-              type="button"
-              onClick={() => applyQuickPreset(1, 10, 0)}
-              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition-colors"
-            >
-              Завтра 10:00
-            </button>
-            <button
-              type="button"
-              onClick={() => applyQuickPreset(2, 18, 30)}
-              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition-colors"
-            >
-              Через 2 дня 18:30
-            </button>
-          </div>
-
-          {/* Month Navigation */}
+        <div className="absolute z-50 left-0 mt-2 w-80 sm:w-96 bg-white rounded-3xl border border-[#DCEAE4] shadow-2xl shadow-emerald-950/15 p-4 space-y-4">
           <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={() => {
-                if (viewMonth === 0) {
-                  setViewMonth(11);
-                  setViewYear((y) => y - 1);
-                } else {
-                  setViewMonth((m) => m - 1);
-                }
-              }}
-              className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-600"
+              onClick={handlePrevMonth}
+              className="p-1.5 rounded-xl hover:bg-[#F7FAF8] text-[#1A2622]"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <div className="font-display font-bold text-sm text-slate-900">
+            <div className="font-display font-extrabold text-sm text-[#1A2622]">
               {MONTH_NAMES[viewMonth]} {viewYear}
             </div>
             <button
               type="button"
-              onClick={() => {
-                if (viewMonth === 11) {
-                  setViewMonth(0);
-                  setViewYear((y) => y + 1);
-                } else {
-                  setViewMonth((m) => m + 1);
-                }
-              }}
-              className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-600"
+              onClick={handleNextMonth}
+              className="p-1.5 rounded-xl hover:bg-[#F7FAF8] text-[#1A2622]"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Calendar Grid */}
           <div className="grid grid-cols-7 gap-1 text-center">
-            {WEEKDAYS_SHORT.map((w) => (
-              <div key={w} className="text-[11px] font-bold text-slate-400 py-1">
-                {w}
+            {WEEKDAYS_SHORT.map((wd) => (
+              <div key={wd} className="text-[11px] font-extrabold text-[#7E8E89] py-1">
+                {wd}
               </div>
             ))}
-            {Array.from({ length: startOffset }).map((_, idx) => (
-              <div key={`empty-${idx}`} />
+            {Array.from({ length: startOffset }).map((_, i) => (
+              <div key={`empty-${i}`} />
             ))}
-            {Array.from({ length: daysInMonth }).map((_, idx) => {
+            {Array.from({ length: daysInMonth }, (_, idx) => {
               const day = idx + 1;
               const cellDate = new Date(viewYear, viewMonth, day);
-              const isPast = cellDate.getTime() < todayFloor.getTime();
+              const isPastDay = cellDate.getTime() < todayFloor.getTime();
               const isSelected =
                 safeDate.getFullYear() === viewYear &&
                 safeDate.getMonth() === viewMonth &&
@@ -412,14 +393,14 @@ export const CustomDateTimePicker: React.FC<CustomDateTimePickerProps> = ({
                 <button
                   key={day}
                   type="button"
-                  disabled={isPast}
+                  disabled={isPastDay}
                   onClick={() => handleSelectDay(day)}
-                  className={`h-8 rounded-xl text-xs font-semibold transition-colors ${
-                    isPast
+                  className={`h-8 rounded-xl text-xs font-extrabold transition-all ${
+                    isSelected
+                      ? 'bg-[#16B672] text-white shadow-md shadow-emerald-500/30'
+                      : isPastDay
                       ? 'text-slate-300 cursor-not-allowed'
-                      : isSelected
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'text-slate-700 hover:bg-blue-50 hover:text-blue-700'
+                      : 'text-[#1A2622] hover:bg-[#E7F8F0] hover:text-[#11995E]'
                   }`}
                 >
                   {day}
@@ -428,53 +409,110 @@ export const CustomDateTimePicker: React.FC<CustomDateTimePickerProps> = ({
             })}
           </div>
 
-          {/* Time Picker */}
-          <div className="pt-2 border-t border-slate-100 space-y-2">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-700">
-              <span>Время начала (часы и минуты):</span>
-              <span className="text-blue-600">
+          <div className="pt-3 border-t border-[#EEF4F1] space-y-2.5">
+            <div className="flex items-center justify-between text-xs font-extrabold text-[#1A2622]">
+              <span className="inline-flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-[#16B672]" />
+                <span>Время начала</span>
+              </span>
+              <span className="font-mono text-[#11995E] bg-[#E7F8F0] px-2.5 py-0.5 rounded-lg">
                 {pad2(safeDate.getHours())}:{pad2(safeDate.getMinutes())}
               </span>
             </div>
-            <div className="grid grid-cols-8 gap-1">
-              {hours.map((h) => (
-                <button
-                  key={h}
-                  type="button"
-                  onClick={() => handleSelectTime(h, safeDate.getMinutes())}
-                  className={`py-1 rounded-lg text-xs font-semibold transition-colors ${
-                    safeDate.getHours() === h
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  {pad2(h)}
-                </button>
-              ))}
+
+            <div className="space-y-1.5">
+              <div className="text-[10px] font-bold text-[#7E8E89] uppercase">Часы</div>
+              <div className="grid grid-cols-6 gap-1">
+                {hours.map((h) => {
+                  const candidate = new Date(
+                    safeDate.getFullYear(),
+                    safeDate.getMonth(),
+                    safeDate.getDate(),
+                    h,
+                    59
+                  );
+                  const disabled = candidate.getTime() < minDate.getTime();
+                  const active = safeDate.getHours() === h;
+                  return (
+                    <button
+                      key={h}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => handleSelectHour(h)}
+                      className={`py-1 rounded-lg text-xs font-bold transition-colors ${
+                        active
+                          ? 'bg-[#16B672] text-white'
+                          : disabled
+                          ? 'text-slate-300 cursor-not-allowed'
+                          : 'bg-[#F7FAF8] text-[#1A2622] hover:bg-[#E7F8F0]'
+                      }`}
+                    >
+                      {pad2(h)}:00
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div className="grid grid-cols-4 gap-1.5">
-              {minutes.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => handleSelectTime(safeDate.getHours(), m)}
-                  className={`py-1 rounded-lg text-xs font-semibold transition-colors ${
-                    safeDate.getMinutes() === m
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  :{pad2(m)}
-                </button>
-              ))}
+
+            <div className="space-y-1.5">
+              <div className="text-[10px] font-bold text-[#7E8E89] uppercase">Минуты</div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {minutes.map((m) => {
+                  const active = safeDate.getMinutes() === m;
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => handleSelectMinute(m)}
+                      className={`py-1 rounded-lg text-xs font-bold transition-colors ${
+                        active
+                          ? 'bg-[#16B672] text-white'
+                          : 'bg-[#F7FAF8] text-[#1A2622] hover:bg-[#E7F8F0]'
+                      }`}
+                    >
+                      :{pad2(m)}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          <div className="flex justify-end pt-1">
+          <div className="pt-2 border-t border-[#EEF4F1] flex items-center justify-between gap-2">
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const d = new Date(Date.now() + 24 * 3600_000);
+                  d.setHours(19, 0, 0, 0);
+                  onChange(toLocalIsoString(d));
+                  setViewYear(d.getFullYear());
+                  setViewMonth(d.getMonth());
+                }}
+                className="px-2.5 py-1 rounded-lg bg-[#F7FAF8] hover:bg-[#E7F8F0] text-[11px] font-bold text-[#1A2622]"
+              >
+                Завтра 19:00
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const d = new Date();
+                  const daysUntilSat = (6 - d.getDay() + 7) % 7 || 7;
+                  d.setDate(d.getDate() + daysUntilSat);
+                  d.setHours(11, 0, 0, 0);
+                  onChange(toLocalIsoString(d));
+                  setViewYear(d.getFullYear());
+                  setViewMonth(d.getMonth());
+                }}
+                className="px-2.5 py-1 rounded-lg bg-[#F7FAF8] hover:bg-[#E7F8F0] text-[11px] font-bold text-[#1A2622]"
+              >
+                В субботу 11:00
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="px-4 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800"
+              className="px-3.5 py-1.5 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white text-xs font-extrabold"
             >
               Готово
             </button>

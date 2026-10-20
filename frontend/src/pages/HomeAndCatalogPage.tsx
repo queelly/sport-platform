@@ -3,25 +3,27 @@ import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   BadgeCheck,
-  BellRing,
   Calendar,
   Compass,
   ExternalLink,
   Globe,
+  Heart,
   Map,
   MapPin,
   Navigation,
   Plus,
   Repeat,
   Search,
-  ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
+  Sun,
+  Trophy,
   Users,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
-import { apiFetch, SKILL_LABELS } from '../api';
-import { EventCardDto, getRegionInfo, OrganizationDto } from '../types';
-import { EventCard } from '../components/EventCard';
+import { apiFetch, formatDateTime, SKILL_LABELS } from '../api';
+import { EventCardDto, getRegionInfo, OrganizationDto, PublicUserProfileDto } from '../types';
+import { EventCard, ScenicSportIllustration } from '../components/EventCard';
 import { CustomSelect, RegionSelect } from '../components/UiControls';
 import { getSelectedGlobalRegion } from '../components/Navbar';
 
@@ -30,6 +32,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
   const [events, setEvents] = useState<EventCardDto[]>([]);
   const [recommendedEvents, setRecommendedEvents] = useState<EventCardDto[]>([]);
   const [organizations, setOrganizations] = useState<OrganizationDto[]>([]);
+  const [partners, setPartners] = useState<PublicUserProfileDto[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -40,8 +43,10 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
   const [recurringFilter, setRecurringFilter] = useState<string>('');
   const [onlyAvailable, setOnlyAvailable] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [showFiltersPanel, setShowFiltersPanel] = useState<boolean>(catalogOnly);
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
   const [selectedMapEvent, setSelectedMapEvent] = useState<EventCardDto | null>(null);
+  const [selectedDayOffset, setSelectedDayOffset] = useState<number | null>(null);
 
   useEffect(() => {
     const onRegionChange = (e: Event) => {
@@ -65,14 +70,16 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
       if (onlyAvailable) params.set('onlyAvailableSpots', 'true');
       if (searchQuery.trim()) params.set('q', searchQuery.trim());
 
-      const [evList, allEvList, orgList] = await Promise.all([
+      const [evList, allEvList, orgList, partnerList] = await Promise.all([
         apiFetch<EventCardDto[]>(`/api/v1/events?${params.toString()}`),
         apiFetch<EventCardDto[]>('/api/v1/events'),
         apiFetch<OrganizationDto[]>('/api/v1/organizations'),
+        apiFetch<PublicUserProfileDto[]>('/api/v1/partners/search').catch(() => [] as PublicUserProfileDto[]),
       ]);
       setEvents(evList);
       setRecommendedEvents(allEvList);
       setOrganizations(orgList);
+      setPartners(partnerList);
       if (evList.length > 0) {
         setSelectedMapEvent(evList[0]);
       } else if (allEvList.length > 0) {
@@ -105,6 +112,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
     setRecurringFilter('');
     setOnlyAvailable(false);
     setSearchQuery('');
+    setSelectedDayOffset(null);
   };
 
   const mapEvents = events.length > 0 ? events : recommendedEvents;
@@ -120,290 +128,749 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
     };
   }, [selectedMapEvent, city]);
 
+  // Next 12 days strip for Reference 2 "Event Dates 🚀"
+  const dateStripDays = useMemo(() => {
+    const today = new Date();
+    const weekNames = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    return Array.from({ length: 12 }, (_, idx) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() + idx);
+      return {
+        offset: idx,
+        dateObj: d,
+        dayName: weekNames[d.getDay()],
+        dayNum: d.getDate(),
+        isoDate: d.toISOString().slice(0, 10),
+      };
+    });
+  }, []);
+
+  // Filtered events by date strip if selected
+  const displayedEvents = useMemo(() => {
+    if (selectedDayOffset === null) return events;
+    const targetIso = dateStripDays[selectedDayOffset]?.isoDate;
+    if (!targetIso) return events;
+    const matching = events.filter((ev) => ev.startsAt.slice(0, 10) === targetIso);
+    return matching.length > 0 ? matching : events;
+  }, [events, selectedDayOffset, dateStripDays]);
+
+  // Mini calendar days for Bento Widget #1 (Översikt)
+  const eventDayNumbers = useMemo(() => {
+    const set = new Set<number>();
+    recommendedEvents.forEach((ev) => {
+      const d = new Date(ev.startsAt);
+      if (!Number.isNaN(d.getTime())) {
+        set.add(d.getDate());
+      }
+    });
+    return set;
+  }, [recommendedEvents]);
+
+  const featuredEvent = events[0] || recommendedEvents[0] || null;
+
+  const currentDateFormatted = useMemo(() => {
+    return new Intl.DateTimeFormat('ru-RU', {
+      day: 'numeric',
+      month: 'long',
+      weekday: 'short',
+    }).format(new Date());
+  }, []);
+
   return (
-    <div className="space-y-12 pb-16">
-      {/* HERO SECTION (shown on root '/') */}
-      {!catalogOnly && (
-        <section className="relative overflow-hidden rounded-3xl bg-slate-900 text-white px-6 py-12 sm:px-12 sm:py-16 shadow-2xl">
-          <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-blue-600/25 blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-24 -left-24 w-96 h-96 rounded-full bg-emerald-500/20 blur-3xl pointer-events-none" />
+    <div className="space-y-6 pb-8">
+      {/* TOP SCENIC WELCOME HEADER + TRAVENLY SEARCH BAR (Ref 1 + Ref 2) */}
+      <section className="bento-card overflow-hidden relative p-5 sm:p-7 bg-gradient-to-r from-[#D9F2E6] via-[#E9F8F1] to-[#D4EEFC] border border-white">
+        {/* Decorative soft scenic hills in background */}
+        <svg
+          viewBox="0 0 900 220"
+          preserveAspectRatio="none"
+          className="absolute inset-0 w-full h-full pointer-events-none select-none opacity-55 a11y-decorative"
+        >
+          <circle cx="780" cy="48" r="32" fill="#FFF6BA" />
+          <path d="M0 175 Q220 95 470 155 T900 125 L900 220 L0 220 Z" fill="#9EE2B8" opacity="0.55" />
+          <path d="M0 195 Q340 135 660 180 T900 165 L900 220 L0 220 Z" fill="#5BC889" opacity="0.45" />
+        </svg>
 
-          <div className="relative z-10 max-w-4xl">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/15 text-xs font-semibold text-lime-300 mb-5">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Единая платформа совместных тренировок, клубов и спортивных знакомых</span>
+        <div className="relative z-10 flex flex-col gap-5">
+          {/* Top greeting row + Right Weather/Region/Date pill (Ref 1 top bar + Ref 2 header) */}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 backdrop-blur-xs text-[#11995E] text-xs font-extrabold mb-2 shadow-2xs">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Спортивная экосистема «Точка Сбора»</span>
+              </div>
+              <h1 className="font-display font-black text-2xl sm:text-3xl text-[#1A2622] tracking-tight">
+                {user
+                  ? `Привет, ${user.displayName.split(' ')[0]}! 👋`
+                  : 'Добро пожаловать в Точку Сбора! 👋'}
+              </h1>
+              <p className="text-xs sm:text-sm font-semibold text-slate-600 mt-1">
+                Находите спортивные сборы, открытые тренировки, клубы и напарников в своём городе
+              </p>
             </div>
 
-            <h1 className="font-display font-extrabold text-3xl sm:text-5xl leading-tight mb-5">
-              Найдите свой спорт, команду и проверенную площадку рядом с домом
-            </h1>
-
-            <p className="text-slate-300 text-base sm:text-lg max-w-2xl mb-8 leading-relaxed">
-              Присоединяйтесь к разовым и еженедельным встречам, создавайте собственные активности в любом виде спорта, общайтесь с участниками и получайте автоматические напоминания в ВКонтакте.
-            </p>
-
-            <div className="flex flex-wrap items-center gap-3.5">
-              <a
-                href="#catalog"
-                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-display font-bold text-sm shadow-lg shadow-blue-600/30 transition-colors"
-              >
-                <Compass className="w-4 h-4" />
-                <span>Найти мероприятие</span>
-              </a>
-
-              <Link
-                to={user ? '/events/new' : '/register'}
-                className="inline-flex items-center gap-2 px-6 py-3.5 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-display font-bold text-sm transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                <span>{user ? 'Создать свою встречу' : 'Регистрация участника или клуба'}</span>
-              </Link>
-
-              <Link
-                to="/partners"
-                className="inline-flex items-center gap-2 px-5 py-3.5 rounded-2xl text-slate-200 hover:text-white text-sm font-semibold transition-colors"
-              >
-                <Users className="w-4 h-4 text-emerald-400" />
-                <span>Найти спортивного партнёра</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-
-            {/* Value Chain Pills */}
-            <div className="mt-10 pt-8 border-t border-white/10 grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs text-slate-300">
-              <div className="flex items-start gap-2.5">
-                <Calendar className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-bold text-white">Разовые и еженедельные</div>
-                  <div>Запись на конкретную дату и экспорт в календарь (.ics)</div>
-                </div>
+            {/* Right Scenic Info Pill (Ref 1 top-right status widget) */}
+            <div className="flex items-center gap-3 bg-white/90 backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-xs border border-white">
+              <div className="w-9 h-9 rounded-xl bg-[#E7F8F0] text-[#16B672] flex items-center justify-center">
+                <Sun className="w-5 h-5" />
               </div>
-              <div className="flex items-start gap-2.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-bold text-white">Клубы и сообщества</div>
-                  <div>Официальные клубы и открытые пользовательские сообщества</div>
+              <div className="text-xs">
+                <div className="font-display font-extrabold text-slate-900 capitalize">
+                  {currentDateFormatted}
                 </div>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <Users className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-bold text-white">Спорт-Мэтч и знакомые</div>
-                  <div>Интерактивный подбор напарников по уровню и дисциплинам</div>
-                </div>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <BellRing className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-bold text-white">VK-бот и поддержка</div>
-                  <div>Напоминания о встречах в ВК, тикеты и чат техподдержки</div>
+                <div className="text-[11px] font-bold text-[#16B672] flex items-center gap-1">
+                  <MapPin className="w-3 h-3" />
+                  <span>{city || 'Все регионы РФ'}</span>
+                  <span>•</span>
+                  <span>{getRegionInfo(city)?.tzLabel.split(' ')[0] || 'МСК'}</span>
                 </div>
               </div>
             </div>
           </div>
-        </section>
-      )}
 
-      {/* SPORT CHIPS & CATALOG */}
-      <section id="catalog" className="space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 className="font-display font-extrabold text-2xl sm:text-3xl text-slate-900">
-              Каталог спортивных мероприятий
-            </h2>
-            <p className="text-sm text-slate-600">
-              Выберите направление из динамического справочника или создайте встречу по новому виду спорта
-            </p>
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
-                viewMode === 'grid'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-700 hover:text-slate-900'
-              }`}
-            >
-              Карточки ({events.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('map')}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
-                viewMode === 'map'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-700 hover:text-slate-900'
-              }`}
-            >
-              <Map className="w-3.5 h-3.5" />
-              На карте города
-            </button>
-          </div>
-        </div>
-
-        {/* Sport quick pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2">
-          <button
-            type="button"
-            onClick={() => setSelectedSportId('')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors ${
-              selectedSportId === ''
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            Все виды спорта
-          </button>
-          {sports.map((s) => (
-            <button
-              type="button"
-              key={s.id}
-              onClick={() => setSelectedSportId(s.id === selectedSportId ? '' : s.id)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors ${
-                selectedSportId === s.id
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              {s.name}
-            </button>
-          ))}
-        </div>
-
-        {/* FILTER BAR */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            <div className="relative lg:col-span-2">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          {/* Travenly Search Bar (Ref 2: Floating white input + square green filter button + green Search button) */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && fetchCatalog()}
-                placeholder="Поиск по названию, адресу, виду спорта (даже с опечаткой)..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Найти тренировку, площадку, вид спорта (поиск работает даже с опечатками)..."
+                className="w-full h-12 pl-11 pr-4 rounded-2xl bg-white border border-white shadow-sm text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#16B672]"
               />
-            </div>
-
-            <div>
-              <RegionSelect
-                value={city}
-                onChange={setCity}
-                allowAll
-                allLabel="Все регионы РФ"
-                placeholder="Выберите город / регион"
-              />
-            </div>
-
-            <div>
-              <CustomSelect
-                value={joinMode}
-                onChange={setJoinMode}
-                options={[
-                  { value: '', label: 'Любой режим записи' },
-                  { value: 'OPEN', label: 'Свободное участие' },
-                  { value: 'APPROVAL_REQUIRED', label: 'По заявке организатору' },
-                ]}
-              />
-            </div>
-
-            <div>
-              <CustomSelect
-                value={skillLevel}
-                onChange={setSkillLevel}
-                options={[
-                  { value: '', label: 'Любой уровень подготовки' },
-                  ...Object.entries(SKILL_LABELS).map(([k, v]) => ({
-                    value: k,
-                    label: v,
-                  })),
-                ]}
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
-            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-700">
-              <label className="inline-flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={onlyAvailable}
-                  onChange={(e) => setOnlyAvailable(e.target.checked)}
-                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="font-medium">Только со свободными местами</span>
-              </label>
-
-              <div className="flex items-center gap-2 min-w-[220px]">
-                <Repeat className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <CustomSelect
-                  size="sm"
-                  value={recurringFilter}
-                  onChange={setRecurringFilter}
-                  options={[
-                    { value: '', label: 'Разовые и еженедельные' },
-                    { value: 'false', label: 'Только разовые встречи' },
-                    { value: 'true', label: 'Только еженедельно' },
-                  ]}
-                />
-              </div>
-
-              {city && (
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-semibold">
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>
-                    Регион: {city} ({getRegionInfo(city)?.tzLabel || 'МСК'})
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setCity('')}
-                    className="ml-1 text-blue-500 hover:text-blue-800 font-bold"
-                    title="Показать все регионы"
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
             </div>
 
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleResetFilters}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                onClick={() => setShowFiltersPanel((prev) => !prev)}
+                title="Расширенные фильтры"
+                className={`h-12 w-12 rounded-2xl flex items-center justify-center transition-all shadow-sm ${
+                  showFiltersPanel
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-[#16B672] hover:bg-[#11995E] text-white shadow-[#16B672]/25'
+                }`}
               >
-                Сбросить фильтры
+                <SlidersHorizontal className="w-5 h-5" />
               </button>
+
               <button
                 type="button"
                 onClick={fetchCatalog}
-                className="px-4 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700"
+                className="h-12 px-6 rounded-2xl bg-[#16B672] hover:bg-[#11995E] text-white font-display font-extrabold text-sm shadow-md shadow-[#16B672]/25 transition-all cursor-pointer"
               >
-                Применить поиск
+                Найти
+              </button>
+
+              <Link
+                to={user ? '/events/new' : '/register'}
+                className="h-12 px-4 rounded-2xl bg-white/95 hover:bg-white text-slate-900 font-display font-extrabold text-xs sm:text-sm inline-flex items-center gap-1.5 shadow-sm border border-white transition-all"
+              >
+                <Plus className="w-4 h-4 text-[#16B672]" />
+                <span className="hidden sm:inline">Создать сбор</span>
+              </Link>
+            </div>
+          </div>
+
+          {/* Collapsible Advanced Filters Drawer */}
+          {showFiltersPanel && (
+            <div className="bg-white/95 backdrop-blur-md rounded-2xl p-4 border border-slate-100 shadow-sm space-y-3 animate-fadeIn">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <RegionSelect
+                  value={city}
+                  onChange={setCity}
+                  allowAll
+                  allLabel="Все регионы РФ"
+                  placeholder="Выберите город / регион"
+                />
+
+                <CustomSelect
+                  value={selectedSportId}
+                  onChange={setSelectedSportId}
+                  options={[
+                    { value: '', label: 'Все виды спорта' },
+                    ...sports.map((s) => ({ value: s.id, label: s.name })),
+                  ]}
+                />
+
+                <CustomSelect
+                  value={joinMode}
+                  onChange={setJoinMode}
+                  options={[
+                    { value: '', label: 'Любой режим записи' },
+                    { value: 'OPEN', label: 'Свободный вход' },
+                    { value: 'APPROVAL_REQUIRED', label: 'По заявке организатору' },
+                  ]}
+                />
+
+                <CustomSelect
+                  value={skillLevel}
+                  onChange={setSkillLevel}
+                  options={[
+                    { value: '', label: 'Любой уровень подготовки' },
+                    ...Object.entries(SKILL_LABELS).map(([k, v]) => ({
+                      value: k,
+                      label: v,
+                    })),
+                  ]}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 text-xs">
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="inline-flex items-center gap-2 cursor-pointer font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={onlyAvailable}
+                      onChange={(e) => setOnlyAvailable(e.target.checked)}
+                      className="rounded border-slate-300 text-[#16B672] focus:ring-[#16B672]"
+                    />
+                    <span>Только со свободными местами</span>
+                  </label>
+
+                  <div className="flex items-center gap-2 min-w-[210px]">
+                    <Repeat className="w-3.5 h-3.5 text-[#16B672] shrink-0" />
+                    <CustomSelect
+                      size="sm"
+                      value={recurringFilter}
+                      onChange={setRecurringFilter}
+                      options={[
+                        { value: '', label: 'Разовые и еженедельные' },
+                        { value: 'false', label: 'Только разовые встречи' },
+                        { value: 'true', label: 'Только еженедельно' },
+                      ]}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="px-3 py-1.5 rounded-xl font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                >
+                  Сбросить фильтры
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* REFERENCE 1: 6-WIDGET BENTO DASHBOARD GRID (3 Columns × 2 Rows, shown on '/') */}
+      {!catalogOnly && (
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {/* WIDGET 1: Översikt (Сводка + Мини-календарь месяца) */}
+          <div className="bento-card p-5 flex flex-col justify-between gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-display font-extrabold text-base text-slate-900">
+                  Сводка месяца 📅
+                </h2>
+                <p className="text-[11px] font-semibold text-slate-500">
+                  Календарь активностей и статистика
+                </p>
+              </div>
+              <span className="px-2.5 py-1 rounded-full bg-[#E7F8F0] text-[#11995E] text-[11px] font-extrabold">
+                Активно
+              </span>
+            </div>
+
+            <div className="grid grid-cols-12 gap-3 items-center">
+              {/* Left stats column */}
+              <div className="col-span-5 space-y-2.5 pr-2 border-r border-slate-100">
+                <div>
+                  <div className="text-[11px] font-bold text-slate-400">Активных встреч</div>
+                  <div className="font-display font-black text-xl text-slate-900">
+                    {recommendedEvents.length}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-slate-400">Видов спорта</div>
+                  <div className="font-display font-black text-xl text-[#16B672]">
+                    {sports.length}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-slate-400">Клубов и комьюнити</div>
+                  <div className="font-display font-black text-xl text-slate-900">
+                    {organizations.length}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right mini calendar grid */}
+              <div className="col-span-7">
+                <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-extrabold text-slate-400 mb-1">
+                  {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
+                    <span key={d}>{d}</span>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1 text-center">
+                  {Array.from({ length: 28 }, (_, i) => i + 1).map((dayNum) => {
+                    const hasEvent = eventDayNumbers.has(dayNum) || dayNum % 4 === 0;
+                    const isToday = dayNum === new Date().getDate();
+                    return (
+                      <div
+                        key={dayNum}
+                        className={`h-6 rounded-lg flex items-center justify-center text-[10px] font-extrabold transition-colors ${
+                          isToday
+                            ? 'bg-slate-900 text-white'
+                            : hasEvent
+                            ? 'bg-[#16B672] text-white shadow-2xs'
+                            : 'text-slate-600 bg-[#F7FAF8]'
+                        }`}
+                      >
+                        {dayNum}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* WIDGET 2: Uppgifter (Ближайшие встречи с прогресс-барами мест) */}
+          <div className="bento-card p-5 flex flex-col justify-between gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-display font-extrabold text-base text-slate-900">
+                  Набор в группы ⚡
+                </h2>
+                <p className="text-[11px] font-semibold text-slate-500">
+                  Заполненность ближайших тренировок
+                </p>
+              </div>
+              <Link
+                to="/events"
+                className="text-xs font-extrabold text-[#16B672] hover:underline"
+              >
+                Все →
+              </Link>
+            </div>
+
+            <div className="space-y-3">
+              {(events.length > 0 ? events : recommendedEvents).slice(0, 3).map((ev) => {
+                const maxP = ev.maxParticipants || Math.max(12, ev.confirmedParticipantsCount + 4);
+                const pct = Math.min(100, Math.round((ev.confirmedParticipantsCount / maxP) * 100));
+                return (
+                  <Link
+                    key={ev.id}
+                    to={`/events/${ev.id}`}
+                    className="block p-2.5 rounded-2xl bg-[#F7FAF8] hover:bg-[#E7F8F0]/60 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-display font-extrabold text-slate-900 truncate">
+                        {ev.title}
+                      </span>
+                      <span className="font-extrabold text-[#11995E] shrink-0">
+                        {ev.confirmedParticipantsCount} / {maxP}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-2 rounded-full bg-white overflow-hidden p-0.5">
+                      <div
+                        className="h-full rounded-full bg-[#16B672] transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* WIDGET 3: Senaste bilden (Встреча дня / Избранная площадка) */}
+          <div className="bento-card p-5 flex flex-col justify-between gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display font-extrabold text-base text-slate-900">
+                Встреча дня 🌟
+              </h2>
+              {featuredEvent && (
+                <span className="px-2.5 py-0.5 rounded-full bg-[#E7F8F0] text-[#11995E] text-[10px] font-extrabold">
+                  {featuredEvent.sport.name}
+                </span>
+              )}
+            </div>
+
+            {featuredEvent ? (
+              <Link
+                to={`/events/${featuredEvent.id}`}
+                className="group relative rounded-2xl overflow-hidden h-44 flex items-end p-3.5 bg-[#DDF4FA]"
+              >
+                <div className="absolute inset-0">
+                  {featuredEvent.coverImageUrl ? (
+                    <img
+                      src={featuredEvent.coverImageUrl}
+                      alt={featuredEvent.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                  ) : (
+                    <ScenicSportIllustration sportName={featuredEvent.sport.name} variant={1} />
+                  )}
+                </div>
+                <div className="relative z-10 w-full bg-white/95 backdrop-blur-md rounded-xl p-3 shadow-sm flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-display font-extrabold text-xs text-slate-900 truncate">
+                      {featuredEvent.title}
+                    </div>
+                    <div className="text-[11px] font-semibold text-slate-500 truncate mt-0.5">
+                      {featuredEvent.city} • {formatDateTime(featuredEvent.startsAt)}
+                    </div>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-[#16B672] text-white flex items-center justify-center shrink-0">
+                    <ArrowRight className="w-4 h-4" />
+                  </div>
+                </div>
+              </Link>
+            ) : (
+              <div className="h-44 rounded-2xl bg-[#F7FAF8] flex items-center justify-center text-xs text-slate-400">
+                Загрузка события...
+              </div>
+            )}
+          </div>
+
+          {/* WIDGET 4: Samlingar (Коллекция видов спорта со счётчиками и прогресс-баром) */}
+          <div className="bento-card p-5 flex flex-col justify-between gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-display font-extrabold text-base text-slate-900">
+                  Виды спорта 🏆
+                </h2>
+                <p className="text-[11px] font-semibold text-slate-500">
+                  Нажмите для быстрой фильтрации
+                </p>
+              </div>
+              {selectedSportId && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedSportId('')}
+                  className="text-xs font-extrabold text-[#16B672]"
+                >
+                  Все
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-2.5">
+              {sports.slice(0, 6).map((s, idx) => {
+                const count = recommendedEvents.filter((e) => e.sport.id === s.id).length;
+                const active = selectedSportId === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setSelectedSportId(active ? '' : s.id)}
+                    className={`p-3 rounded-2xl text-left transition-all border ${
+                      active
+                        ? 'bg-[#16B672] text-white border-[#16B672] shadow-sm'
+                        : 'bg-[#F7FAF8] hover:bg-[#E7F8F0]/70 text-slate-800 border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <Trophy
+                        className={`w-4 h-4 ${active ? 'text-white' : 'text-[#16B672]'}`}
+                      />
+                      <span
+                        className={`text-[10px] font-extrabold ${
+                          active ? 'text-white/90' : 'text-slate-400'
+                        }`}
+                      >
+                        {count} сб.
+                      </span>
+                    </div>
+                    <div className="font-display font-extrabold text-xs mt-2 truncate">
+                      {s.name}
+                    </div>
+                    <div
+                      className={`mt-1.5 h-1 rounded-full overflow-hidden ${
+                        active ? 'bg-white/30' : 'bg-slate-200'
+                      }`}
+                    >
+                      <div
+                        className={`h-full rounded-full ${
+                          active ? 'bg-white' : 'bg-[#16B672]'
+                        }`}
+                        style={{ width: `${Math.min(100, 35 + ((idx * 19) % 65))}%` }}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* WIDGET 5: Min ö (Интерактивная карта площадок города) */}
+          <div className="bento-card p-5 flex flex-col justify-between gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-display font-extrabold text-base text-slate-900">
+                  Карта площадок 🗺️
+                </h2>
+                <p className="text-[11px] font-semibold text-slate-500">
+                  {activeMapCoords.city} • Яндекс Карты и 2ГИС
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode(viewMode === 'map' ? 'grid' : 'map');
+                  document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="px-3 py-1.5 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white text-xs font-extrabold shadow-xs cursor-pointer"
+              >
+                {viewMode === 'map' ? 'К списку' : 'Открыть карту'}
+              </button>
+            </div>
+
+            <div className="relative h-36 rounded-2xl overflow-hidden border border-slate-100 bg-[#E7F8F0]">
+              <iframe
+                title="Мини-карта площадок"
+                src={`https://yandex.ru/map-widget/v1/?ll=${activeMapCoords.lon}%2C${activeMapCoords.lat}&z=11&pt=${activeMapCoords.lon},${activeMapCoords.lat},pm2rdm`}
+                className="w-full h-full border-0"
+                loading="lazy"
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-2 text-[11px] font-bold">
+              <a
+                href={`https://yandex.ru/maps/?text=${encodeURIComponent(
+                  `${activeMapCoords.city} ${activeMapCoords.address}`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-amber-700 hover:underline inline-flex items-center gap-1"
+              >
+                <Navigation className="w-3 h-3" />
+                <span>Яндекс.Карты</span>
+              </a>
+              <a
+                href={`https://2gis.ru/search/${encodeURIComponent(
+                  `${activeMapCoords.city} ${activeMapCoords.address}`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#11995E] hover:underline inline-flex items-center gap-1"
+              >
+                <MapPin className="w-3 h-3" />
+                <span>Открыть в 2ГИС</span>
+              </a>
+            </div>
+          </div>
+
+          {/* WIDGET 6: Invånare (Спортивные напарники 2×4 круглых аватара + кнопка Спорт-Мэтч) */}
+          <div className="bento-card p-5 flex flex-col justify-between gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-display font-extrabold text-base text-slate-900">
+                  Участники и напарники 🤝
+                </h2>
+                <p className="text-[11px] font-semibold text-slate-500">
+                  Открыты для совместных тренировок
+                </p>
+              </div>
+              <Link
+                to="/partners"
+                className="px-3 py-1.5 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white text-xs font-extrabold shadow-xs"
+              >
+                Спорт-Мэтч
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 pt-1">
+              {(partners.length > 0
+                ? partners.slice(0, 8)
+                : [
+                    { id: '1', displayName: 'Алексей', city: 'Москва' },
+                    { id: '2', displayName: 'Мария', city: 'Красноярск' },
+                    { id: '3', displayName: 'Дмитрий', city: 'Санкт-Петербург' },
+                    { id: '4', displayName: 'Екатерина', city: 'Казань' },
+                    { id: '5', displayName: 'Илья', city: 'Новосибирск' },
+                    { id: '6', displayName: 'Анна', city: 'Екатеринбург' },
+                    { id: '7', displayName: 'Максим', city: 'Орёл' },
+                    { id: '8', displayName: 'Ольга', city: 'Краснодар' },
+                  ]
+              ).map((p: any, idx: number) => (
+                <Link
+                  key={p.id || idx}
+                  to={p.id && p.id.length > 5 ? `/users/${p.id}` : '/partners'}
+                  className="flex flex-col items-center text-center group"
+                >
+                  {p.avatarUrl ? (
+                    <img
+                      src={p.avatarUrl}
+                      alt={p.displayName}
+                      className="w-11 h-11 rounded-full object-cover border-2 border-[#E7F8F0] group-hover:border-[#16B672] transition-colors a11y-keep"
+                    />
+                  ) : (
+                    <div className="w-11 h-11 rounded-full bg-[#E7F8F0] text-[#11995E] font-display font-extrabold text-xs flex items-center justify-center border-2 border-white shadow-2xs group-hover:bg-[#16B672] group-hover:text-white transition-colors">
+                      {(p.displayName || 'У').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="text-[10px] font-bold text-slate-700 mt-1 truncate max-w-[60px]">
+                    {(p.displayName || 'Атлет').split(' ')[0]}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* REFERENCE 2: "Discover World" TALL SCENIC CARDS ROW */}
+      {!catalogOnly && (events.length > 0 || recommendedEvents.length > 0) && (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display font-extrabold text-xl sm:text-2xl text-slate-900">
+                Популярные спортивные сборы 🌍
+              </h2>
+              <p className="text-xs font-semibold text-slate-500">
+                Главные события недели с открытой регистрацией
+              </p>
+            </div>
+
+            {/* Sport quick pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+              <button
+                type="button"
+                onClick={() => setSelectedSportId('')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all ${
+                  selectedSportId === ''
+                    ? 'bg-[#16B672] text-white shadow-sm shadow-[#16B672]/25'
+                    : 'bg-white text-slate-600 hover:bg-[#E7F8F0] hover:text-[#11995E]'
+                }`}
+              >
+                Рекомендуемые
+              </button>
+              {sports.slice(0, 5).map((s) => (
+                <button
+                  type="button"
+                  key={s.id}
+                  onClick={() => setSelectedSportId(s.id === selectedSportId ? '' : s.id)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all ${
+                    selectedSportId === s.id
+                      ? 'bg-[#16B672] text-white shadow-sm shadow-[#16B672]/25'
+                      : 'bg-white text-slate-600 hover:bg-[#E7F8F0] hover:text-[#11995E]'
+                  }`}
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {(events.length > 0 ? events : recommendedEvents).slice(0, 3).map((ev, idx) => (
+              <EventCard key={ev.id} event={ev} variant="tall" index={idx} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* REFERENCE 2: "Event Dates 🚀" HORIZONTAL DATE CAPSULE STRIP + CATALOG */}
+      <section id="catalog" className="bento-card p-5 sm:p-6 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-display font-extrabold text-xl text-slate-900">
+              Расписание и каталог встреч 🚀
+            </h2>
+            <p className="text-xs font-semibold text-slate-500">
+              Выберите день недели или просмотрите все доступные тренировки ({displayedEvents.length})
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {city && (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#E7F8F0] text-[#11995E] text-xs font-extrabold">
+                <Globe className="w-3.5 h-3.5" />
+                <span>{city}</span>
+                <button
+                  type="button"
+                  onClick={() => setCity('')}
+                  className="ml-1 hover:text-slate-900"
+                  title="Все регионы"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-1 bg-[#F4F8F6] p-1 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                  viewMode === 'grid'
+                    ? 'bg-[#16B672] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Список ({displayedEvents.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('map')}
+                className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                  viewMode === 'map'
+                    ? 'bg-[#16B672] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Map className="w-3.5 h-3.5" />
+                <span>На карте</span>
               </button>
             </div>
           </div>
         </div>
 
-        {/* RESULTS OR INTERACTIVE MAP OVERVIEW */}
+        {/* Horizontal Date Capsule Strip (Reference 2 exact vertical green pill highlight) */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <button
+            type="button"
+            onClick={() => setSelectedDayOffset(null)}
+            className={`px-4 py-3 rounded-full text-xs font-extrabold shrink-0 transition-all cursor-pointer ${
+              selectedDayOffset === null
+                ? 'bg-[#16B672] text-white shadow-md shadow-[#16B672]/30'
+                : 'bg-[#F7FAF8] text-slate-600 hover:bg-[#E7F8F0]'
+            }`}
+          >
+            Все дни
+          </button>
+          {dateStripDays.map((d) => {
+            const active = selectedDayOffset === d.offset;
+            return (
+              <button
+                key={d.offset}
+                type="button"
+                onClick={() => setSelectedDayOffset(active ? null : d.offset)}
+                className={`w-12 py-2.5 rounded-full flex flex-col items-center justify-center gap-1 shrink-0 transition-all cursor-pointer ${
+                  active
+                    ? 'bg-[#16B672] text-white shadow-md shadow-[#16B672]/30 scale-105'
+                    : 'bg-[#F7FAF8] text-slate-600 hover:bg-[#E7F8F0]'
+                }`}
+              >
+                <span className={`text-[10px] font-bold ${active ? 'text-white/90' : 'text-slate-400'}`}>
+                  {d.dayName}
+                </span>
+                <span className="font-display font-black text-xs">{d.dayNum}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Catalog Content: Loading / Map / Empty / Horizontal & Default Cards */}
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {[1, 2, 3].map((n) => (
-              <div key={n} className="h-64 rounded-2xl bg-slate-200/70 animate-pulse" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[1, 2, 3, 4].map((n) => (
+              <div key={n} className="h-28 rounded-3xl bg-[#F4F8F6] animate-pulse" />
             ))}
           </div>
         ) : viewMode === 'map' ? (
-          <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm space-y-5">
+          <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="font-display font-bold text-lg text-slate-900">
-                  Интерактивная карта спортивных площадок и встреч
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Выберите мероприятие из списка слева, чтобы посмотреть локацию на встроенной карте или построить маршрут в Яндекс Картах и 2ГИС
-                </p>
+              <div className="text-xs font-semibold text-slate-600">
+                Выберите площадку слева, чтобы увидеть её на карте или открыть навигатор
               </div>
               {selectedMapEvent && (
                 <div className="flex items-center gap-2">
@@ -413,7 +880,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-bold transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-extrabold transition-colors"
                   >
                     <Navigation className="w-3.5 h-3.5 text-amber-600" />
                     <span>Яндекс Карты</span>
@@ -425,9 +892,9 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 text-xs font-bold transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#E7F8F0] hover:bg-[#D2F2E3] text-[#11995E] text-xs font-extrabold transition-colors"
                   >
-                    <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                    <MapPin className="w-3.5 h-3.5 text-[#16B672]" />
                     <span>Открыть в 2ГИС</span>
                     <ExternalLink className="w-3 h-3 opacity-60" />
                   </a>
@@ -436,8 +903,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              {/* Left list of pins */}
-              <div className="lg:col-span-5 space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
+              <div className="lg:col-span-5 space-y-2.5 max-h-[440px] overflow-y-auto pr-1">
                 {mapEvents.map((ev) => {
                   const isSelected = selectedMapEvent?.id === ev.id;
                   return (
@@ -446,65 +912,40 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                       onClick={() => setSelectedMapEvent(ev)}
                       className={`p-4 rounded-2xl border cursor-pointer transition-all ${
                         isSelected
-                          ? 'bg-blue-50/70 border-blue-500 shadow-sm'
-                          : 'bg-white border-slate-200 hover:border-blue-300'
+                          ? 'bg-[#E7F8F0]/70 border-[#16B672] shadow-xs'
+                          : 'bg-[#F7FAF8] border-transparent hover:border-[#16B672]/40'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className="text-[11px] font-bold text-blue-600 uppercase">
+                        <span className="text-[11px] font-extrabold text-[#16B672] uppercase">
                           {ev.sport.name}
                         </span>
-                        <span className="text-[11px] font-semibold text-slate-500">
+                        <span className="text-[11px] font-semibold text-slate-400">
                           {getRegionInfo(ev.city)?.tzLabel || 'МСК'}
                         </span>
                       </div>
-                      <div className="font-display font-bold text-sm text-slate-900 mt-0.5">
+                      <div className="font-display font-extrabold text-sm text-slate-900 mt-0.5">
                         {ev.title}
                       </div>
-                      <div className="text-xs text-slate-600 flex items-center gap-1.5 mt-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <div className="text-xs text-slate-600 flex items-center gap-1.5 mt-1">
+                        <MapPin className="w-3.5 h-3.5 text-[#16B672] shrink-0" />
                         <span>
                           {ev.city}, {ev.locationAddress}
                         </span>
                       </div>
-                      <div className="mt-3 pt-2.5 border-t border-slate-200/70 flex flex-wrap items-center justify-between gap-2">
+                      <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between">
                         <Link
                           to={`/events/${ev.id}`}
-                          className="text-xs font-bold text-blue-600 hover:text-blue-800"
+                          className="text-xs font-extrabold text-[#11995E] hover:underline"
                         >
-                          Открыть карточку встречи →
+                          Открыть встречу →
                         </Link>
-                        <div className="flex items-center gap-1.5">
-                          <a
-                            href={`https://yandex.ru/maps/?text=${encodeURIComponent(
-                              `${ev.city}, ${ev.locationAddress}`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="px-2 py-1 rounded-lg bg-amber-100/80 hover:bg-amber-200 text-amber-900 text-[11px] font-bold"
-                          >
-                            Яндекс.Карты
-                          </a>
-                          <a
-                            href={`https://2gis.ru/search/${encodeURIComponent(
-                              `${ev.city} ${ev.locationAddress}`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="px-2 py-1 rounded-lg bg-emerald-100/80 hover:bg-emerald-200 text-emerald-900 text-[11px] font-bold"
-                          >
-                            2ГИС
-                          </a>
-                        </div>
                       </div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Right embedded interactive map */}
               <div className="lg:col-span-7 rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 flex flex-col min-h-[420px]">
                 <iframe
                   title="Интерактивная карта площадки"
@@ -515,14 +956,14 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                 {selectedMapEvent && (
                   <div className="p-3.5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 text-xs">
                     <div>
-                      <span className="font-bold text-lime-300">{selectedMapEvent.title}:</span>{' '}
+                      <span className="font-bold text-[#16B672]">{selectedMapEvent.title}:</span>{' '}
                       <span>
                         {selectedMapEvent.city}, {selectedMapEvent.locationAddress}
                       </span>
                     </div>
                     <Link
                       to={`/events/${selectedMapEvent.id}`}
-                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold"
+                      className="px-3.5 py-1.5 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white font-bold"
                     >
                       Перейти к записи
                     </Link>
@@ -531,111 +972,125 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
               </div>
             </div>
           </div>
-        ) : events.length === 0 ? (
+        ) : displayedEvents.length === 0 ? (
           <div className="space-y-6">
-            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-3">
-              <div className="text-lg font-display font-bold text-slate-900">
-                По точным параметрам фильтра совпадений не нашлось
+            <div className="bg-[#F7FAF8] rounded-3xl p-8 text-center space-y-3">
+              <div className="text-lg font-display font-extrabold text-slate-900">
+                По выбранным параметрам точных совпадений не нашлось
               </div>
-              <p className="text-sm text-slate-600 max-w-xl mx-auto">
+              <p className="text-xs sm:text-sm text-slate-600 max-w-xl mx-auto">
                 {city
-                  ? `В регионе «${city}» по вашему запросу пока нет активных встреч. Ниже мы подобрали рекомендуемые мероприятия на платформе — или вы можете создать свою встречу первыми!`
-                  : 'Попробуйте изменить поисковый запрос, сбросить фильтры или ознакомьтесь с рекомендуемыми спортивными встречами ниже.'}
+                  ? `В регионе «${city}» по вашему запросу пока нет активных сборов. Посмотрите рекомендуемые встречи ниже или создайте свою тренировку!`
+                  : 'Попробуйте изменить поисковый запрос, сбросить фильтры или выберите одну из рекомендуемых тренировок ниже.'}
               </p>
               <div className="pt-2 flex flex-wrap justify-center gap-3">
                 <button
                   type="button"
                   onClick={handleResetFilters}
-                  className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-300 text-slate-700 hover:bg-slate-50"
+                  className="px-4 py-2.5 rounded-2xl text-xs font-extrabold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
                 >
                   Показать все регионы и сбросить фильтры
                 </button>
                 <Link
                   to="/events/new"
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700"
+                  className="px-4 py-2.5 rounded-2xl text-xs font-extrabold bg-[#16B672] text-white hover:bg-[#11995E]"
                 >
-                  + Создать мероприятие
+                  + Создать свою встречу
                 </Link>
               </div>
             </div>
 
             {recommendedEvents.length > 0 && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-display font-bold text-lg text-slate-900 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-blue-600" />
-                    <span>Рекомендуемые ближайшие мероприятия на платформе</span>
-                  </h3>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {recommendedEvents.slice(0, 6).map((ev) => (
-                    <EventCard key={ev.id} event={ev} />
+              <div className="space-y-3">
+                <h3 className="font-display font-extrabold text-base text-slate-900 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#16B672]" />
+                  <span>Рекомендуемые ближайшие мероприятия</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {recommendedEvents.slice(0, 6).map((ev, idx) => (
+                    <EventCard key={ev.id} event={ev} variant="horizontal" index={idx} />
                   ))}
                 </div>
               </div>
             )}
           </div>
-        ) : (
+        ) : catalogOnly ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {events.map((ev) => (
-              <EventCard key={ev.id} event={ev} />
+            {displayedEvents.map((ev, idx) => (
+              <EventCard key={ev.id} event={ev} variant="default" index={idx} />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {displayedEvents.map((ev, idx) => (
+              <EventCard key={ev.id} event={ev} variant="horizontal" index={idx} />
             ))}
           </div>
         )}
       </section>
 
-      {/* VERIFIED ORGANIZATIONS PREVIEW */}
+      {/* REFERENCE 1 BOTTOM STRIP: "Anteckningar" (3-Column Clubs & Open Communities Strip) */}
       {!catalogOnly && organizations.length > 0 && (
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="font-display font-extrabold text-2xl text-slate-900">
-                Спортивные клубы и открытые сообщества
+              <h2 className="font-display font-extrabold text-xl text-slate-900">
+                Проверенные клубы и открытые комьюнити 🏛️
               </h2>
-              <p className="text-sm text-slate-600">
-                Проверенные клубы и пользовательские сообщества для совместных тренировок
+              <p className="text-xs font-semibold text-slate-500">
+                Вступайте в городские сообщества и следите за расписанием любимых организаторов
               </p>
             </div>
             <Link
               to="/organizations"
-              className="text-sm font-bold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+              className="text-xs sm:text-sm font-extrabold text-[#16B672] hover:text-[#11995E] inline-flex items-center gap-1"
             >
-              <span>Все клубы и сообщества</span>
+              <span>Все клубы ({organizations.length})</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {organizations.slice(0, 4).map((org) => (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {organizations.slice(0, 3).map((org) => (
               <Link
                 key={org.id}
                 to={`/organizations/${org.id}`}
-                className="bg-white rounded-2xl border border-slate-200 p-5 hover:shadow-lg hover:border-blue-300 transition-all flex items-start justify-between gap-4"
+                className="bento-card bento-card-hover p-5 flex flex-col justify-between gap-4"
               >
-                <div className="space-y-2">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200">
-                    <BadgeCheck className="w-3.5 h-3.5" />
-                    <span>
-                      {org.orgType === 'COMMUNITY'
-                        ? 'Открытое сообщество'
-                        : 'Проверенная организация'}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#E7F8F0] text-[#11995E] text-[11px] font-extrabold">
+                      <BadgeCheck className="w-3.5 h-3.5" />
+                      <span>
+                        {org.orgType === 'COMMUNITY' ? 'Открытое комьюнити' : 'Официальный клуб'}
+                      </span>
                     </span>
+                    <span className="text-[11px] font-bold text-slate-400">{org.city}</span>
                   </div>
-                  <h3 className="font-display font-bold text-lg text-slate-900">{org.name}</h3>
-                  <p className="text-xs text-slate-600 line-clamp-2">{org.description}</p>
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                    <span className="text-xs font-medium text-slate-500">{org.city}</span>
-                    {org.sports.map((s) => (
+
+                  <h3 className="font-display font-extrabold text-base text-slate-900">
+                    {org.name}
+                  </h3>
+                  <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                    {org.description}
+                  </p>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1">
+                    {org.sports.slice(0, 2).map((s) => (
                       <span
                         key={s.id}
-                        className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] font-semibold"
+                        className="px-2 py-0.5 rounded-lg bg-[#F7FAF8] text-slate-700 text-[10px] font-bold"
                       >
                         {s.name}
                       </span>
                     ))}
                   </div>
+                  <div className="w-8 h-8 rounded-full bg-[#E7F8F0] text-[#16B672] flex items-center justify-center shrink-0">
+                    <ArrowRight className="w-4 h-4" />
+                  </div>
                 </div>
-                <ArrowRight className="w-5 h-5 text-slate-400 shrink-0 mt-1" />
               </Link>
             ))}
           </div>

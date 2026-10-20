@@ -3,21 +3,35 @@
 @tailwind utilities;
 
 @layer base {
-  html {
-    font-family: 'Golos Text', 'Onest', system-ui, -apple-system, sans-serif;
-    scroll-behavior: smooth;
+  :root {
+    --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-display: 'Nunito', 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+    --sp-emerald: #16B672;
+    --sp-emerald-dark: #11995E;
+    --sp-emerald-soft: #E7F8F0;
+    --sp-coral: #FF7849;
+    --sp-bg: #EEF4F1;
+    --sp-surface: #F7FAF8;
   }
 
-  h1, h2, h3, h4, h5, h6, .font-display {
-    font-family: 'Onest', system-ui, -apple-system, sans-serif;
-    letter-spacing: -0.02em;
+  body {
+    font-family: var(--font-sans);
+    background-color: #EEF4F1;
+    color: #1A2622;
+    overflow-x: hidden;
   }
 
-  /* Custom styled select inputs across the site (#1 & #6) */
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+
+  /* Custom-styled native select fallback */
   select {
     appearance: none;
     -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2316B672' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.75rem center;
     background-size: 1rem;
@@ -25,147 +39,196 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     overflow: hidden;
-    cursor: pointer;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
 
-  select:focus {
+  input, textarea {
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  input:focus, textarea:focus {
     outline: none;
-    border-color: #2563eb;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    border-color: #16B672 !important;
+    box-shadow: 0 0 0 3px rgba(22, 182, 114, 0.14) !important;
   }
 }
 
-/* Marquee animation for overflowing filter labels (#6) */
-@keyframes marqueeScroll {
-  0% { transform: translateX(0%); }
-  20% { transform: translateX(0%); }
-  80% { transform: translateX(-35%); }
-  100% { transform: translateX(0%); }
+/* Travenly & Bento Card Utilities */
+.bento-card,
+div.bg-white.rounded-3xl {
+  background: #FFFFFF;
+  border-radius: 1.75rem;
+  border: 1px solid rgba(22, 182, 114, 0.09);
+  box-shadow: 0 10px 30px -10px rgba(20, 60, 45, 0.05), 0 2px 8px -2px rgba(20, 60, 45, 0.03);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.animate-marquee {
+.bento-card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 36px -12px rgba(22, 182, 114, 0.14), 0 4px 12px -2px rgba(20, 60, 45, 0.05);
+}
+
+.travenly-btn {
+  background-color: #16B672;
+  color: #FFFFFF;
+  font-family: var(--font-display);
+  font-weight: 800;
+  border-radius: 1rem;
+  box-shadow: 0 8px 20px -4px rgba(22, 182, 114, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.travenly-btn:hover:not(:disabled) {
+  background-color: #129D61;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px -4px rgba(22, 182, 114, 0.45);
+}
+
+.travenly-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Smooth hover marquee for long text inside dropdowns */
+@keyframes sp-marquee {
+  0%, 15% {
+    transform: translateX(0%);
+  }
+  85%, 100% {
+    transform: translateX(-38%);
+  }
+}
+
+.group:hover .animate-marquee {
   display: inline-block;
-  animation: marqueeScroll 4.5s ease-in-out infinite;
+  animation: sp-marquee 4.5s ease-in-out infinite alternate;
+}
+
+/* Custom sleek scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(22, 182, 114, 0.22);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(22, 182, 114, 0.45);
 }
 
 /* ============================================================================
-   ВЕРСИЯ ДЛЯ СЛАБОВИДЯЩИХ (ACCESSIBILITY MODE #27)
+   ACCESSIBILITY MODE (Версия для слабовидящих — ГОСТ Р 52872-2019)
    ============================================================================ */
 html.a11y-font-lg {
-  font-size: 114%;
+  font-size: 18px !important;
 }
 
 html.a11y-font-xl {
-  font-size: 128%;
+  font-size: 20.5px !important;
 }
 
-html.a11y-spacing-wide,
 html.a11y-spacing-wide * {
   letter-spacing: 0.06em !important;
   line-height: 1.65 !important;
 }
 
-html.a11y-hide-images img:not(.a11y-keep) {
+html.a11y-hide-images img,
+html.a11y-hide-images video,
+html.a11y-hide-images .event-card-cover-banner {
   display: none !important;
 }
 
-/* Схема 1: Чёрным по белому (Высокий контраст) */
+/* High Contrast: Black on White */
 html.a11y-contrast-bw body,
 html.a11y-contrast-bw main,
+html.a11y-contrast-bw aside,
 html.a11y-contrast-bw header,
-html.a11y-contrast-bw div,
+html.a11y-contrast-bw footer,
 html.a11y-contrast-bw section,
-html.a11y-contrast-bw form,
-html.a11y-contrast-bw input,
-html.a11y-contrast-bw select,
-html.a11y-contrast-bw textarea {
+html.a11y-contrast-bw div.bg-white,
+html.a11y-contrast-bw .bento-card {
   background-color: #ffffff !important;
   background-image: none !important;
   color: #000000 !important;
   border-color: #000000 !important;
 }
 
-html.a11y-contrast-bw a,
-html.a11y-contrast-bw button {
+html.a11y-contrast-bw p,
+html.a11y-contrast-bw span,
+html.a11y-contrast-bw h1,
+html.a11y-contrast-bw h2,
+html.a11y-contrast-bw h3,
+html.a11y-contrast-bw label,
+html.a11y-contrast-bw a {
   color: #000000 !important;
-  border: 2px solid #000000 !important;
-  background-color: #f8fafc !important;
-  font-weight: 700 !important;
 }
 
-/* Схема 2: Белым по чёрному (Тёмная высококонтрастная) */
+html.a11y-contrast-bw button,
+html.a11y-contrast-bw input,
+html.a11y-contrast-bw select,
+html.a11y-contrast-bw textarea {
+  border: 2px solid #000000 !important;
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+/* High Contrast: Yellow/White on Black */
 html.a11y-contrast-wb body,
 html.a11y-contrast-wb main,
+html.a11y-contrast-wb aside,
 html.a11y-contrast-wb header,
-html.a11y-contrast-wb div,
+html.a11y-contrast-wb footer,
 html.a11y-contrast-wb section,
-html.a11y-contrast-wb form,
+html.a11y-contrast-wb div.bg-white,
+html.a11y-contrast-wb .bento-card {
+  background-color: #000000 !important;
+  background-image: none !important;
+  color: #fff500 !important;
+  border-color: #fff500 !important;
+}
+
+html.a11y-contrast-wb p,
+html.a11y-contrast-wb span,
+html.a11y-contrast-wb h1,
+html.a11y-contrast-wb h2,
+html.a11y-contrast-wb h3,
+html.a11y-contrast-wb label,
+html.a11y-contrast-wb a {
+  color: #fff500 !important;
+}
+
+html.a11y-contrast-wb button,
 html.a11y-contrast-wb input,
 html.a11y-contrast-wb select,
 html.a11y-contrast-wb textarea {
-  background-color: #000000 !important;
-  background-image: none !important;
-  color: #ffffff !important;
-  border-color: #ffffff !important;
-}
-
-html.a11y-contrast-wb a,
-html.a11y-contrast-wb button {
-  color: #ffff00 !important;
-  border: 2px solid #ffff00 !important;
+  border: 2px solid #fff500 !important;
   background-color: #111111 !important;
-  font-weight: 700 !important;
+  color: #fff500 !important;
 }
 
-/* Схема 3: Тёмно-синим по голубому */
+/* High Contrast: Dark Blue on Light Blue */
 html.a11y-contrast-blue body,
 html.a11y-contrast-blue main,
+html.a11y-contrast-blue aside,
 html.a11y-contrast-blue header,
-html.a11y-contrast-blue div,
+html.a11y-contrast-blue footer,
 html.a11y-contrast-blue section,
-html.a11y-contrast-blue form,
-html.a11y-contrast-blue input,
-html.a11y-contrast-blue select,
-html.a11y-contrast-blue textarea {
+html.a11y-contrast-blue div.bg-white,
+html.a11y-contrast-blue .bento-card {
   background-color: #9dd1ff !important;
   background-image: none !important;
   color: #063462 !important;
   border-color: #063462 !important;
 }
 
-html.a11y-contrast-blue a,
-html.a11y-contrast-blue button {
+html.a11y-contrast-blue p,
+html.a11y-contrast-blue span,
+html.a11y-contrast-blue h1,
+html.a11y-contrast-blue h2,
+html.a11y-contrast-blue h3,
+html.a11y-contrast-blue label,
+html.a11y-contrast-blue a {
   color: #063462 !important;
-  border: 2px solid #063462 !important;
-  background-color: #cce7ff !important;
-  font-weight: 700 !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
-/* Custom subtle scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
 }

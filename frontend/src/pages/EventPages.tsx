@@ -45,6 +45,7 @@ import {
   getRegionInfo,
 } from '../types';
 import { CustomDateTimePicker, CustomSelect, RegionSelect } from '../components/UiControls';
+import { ScenicSportIllustration } from '../components/EventCard';
 
 export const CreateEventPage: React.FC = () => {
   const { user, myOrganizations, sports, refreshSports, refreshMe } = useAuth();
@@ -925,16 +926,18 @@ export const EventDetailPage: React.FC = () => {
 
       {/* MAIN EVENT HEADER & DETAILS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
-          {event.coverImageUrl && (
-            <div className="h-56 sm:h-64 w-full overflow-hidden bg-slate-900 relative">
+        <div className="lg:col-span-2 bento-card overflow-hidden">
+          <div className="h-52 sm:h-60 w-full overflow-hidden bg-[#DDF4FA] relative">
+            {event.coverImageUrl ? (
               <img
                 src={event.coverImageUrl}
                 alt={event.title}
                 className="w-full h-full object-cover"
               />
-            </div>
-          )}
+            ) : (
+              <ScenicSportIllustration sportName={event.sport.name} variant={2} />
+            )}
+          </div>
 
           <div className="p-6 sm:p-8 space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
