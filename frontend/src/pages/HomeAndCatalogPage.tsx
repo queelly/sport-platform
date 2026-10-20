@@ -31,6 +31,7 @@ import { useAuth } from '../AuthContext';
 import { apiFetch, formatDateTime, SKILL_LABELS } from '../api';
 import {
   EventCardDto,
+  EventDetailDto,
   getRegionInfo,
   isOnlineEvent,
   OrganizationDto,
@@ -212,8 +213,18 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
       const nowMs = Date.now();
       const isUpcomingActive = (ev: EventCardDto) =>
         ev.status === 'PUBLISHED' && new Date(ev.startsAt).getTime() >= nowMs;
-      setEvents(evList.filter(isUpcomingActive));
-      setRecommendedEvents(allEvList.filter(isUpcomingActive));
+      const activeEvList = evList.filter(isUpcomingActive);
+      const activeAllList = allEvList.filter(isUpcomingActive);
+      setEvents(activeEvList);
+      setRecommendedEvents(activeAllList);
+      setSelectedEvent((prev) => {
+        if (!prev) return null;
+        return (
+          activeEvList.find((x) => x.id === prev.id) ||
+          activeAllList.find((x) => x.id === prev.id) ||
+          prev
+        );
+      });
     } catch {
       // ignore
     } finally {
@@ -342,15 +353,25 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
     setJoiningEventId(ev.id);
     setJoinFeedback(null);
     try {
-      await apiFetch(`/api/v1/events/${ev.id}/join`, {
+      const detail = await apiFetch<EventDetailDto>(`/api/v1/events/${ev.id}/join`, {
         method: 'POST',
         body: JSON.stringify({ comment: 'Быстрая запись с карты' }),
       });
+      if (detail?.event) {
+        setSelectedEvent(detail.event);
+        setEvents((prev) => prev.map((item) => (item.id === detail.event.id ? detail.event : item)));
+        setRecommendedEvents((prev) =>
+          prev.map((item) => (item.id === detail.event.id ? detail.event : item))
+        );
+      }
+      const nextStatus = detail?.event?.viewerParticipationStatus;
       setJoinFeedback({
         type: 'ok',
         text:
-          ev.joinMode === 'OPEN'
+          nextStatus === 'CONFIRMED'
             ? 'Вы успешно записаны в состав участников!'
+            : nextStatus === 'WAITLISTED'
+            ? 'Вы добавлены в лист ожидания!'
             : 'Заявка отправлена организатору встречи!',
       });
       await fetchCatalog();
@@ -886,9 +907,31 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                             <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted">
                               <span>{ev.sport.name}</span>
                             </span>
-                            <span className="ml-auto text-[11px] font-bold px-2 py-0.5 rounded-md bg-brand-tint text-brand-ink">
-                              {ev.joinMode === 'OPEN' ? 'Открыто' : 'По заявке'}
-                            </span>
+                            {user && ev.organizerUserId === user.id ? (
+                              <span className="ml-auto text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                                Вы организатор
+                              </span>
+                            ) : ev.viewerParticipationStatus === 'CONFIRMED' ? (
+                              <span className="ml-auto text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                                Вы записаны ✓
+                              </span>
+                            ) : ev.viewerParticipationStatus === 'PENDING' ? (
+                              <span className="ml-auto text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">
+                                Заявка отправлена
+                              </span>
+                            ) : ev.viewerParticipationStatus === 'WAITLISTED' ? (
+                              <span className="ml-auto text-[11px] font-bold px-2 py-0.5 rounded-md bg-sky-100 text-sky-800">
+                                Лист ожидания
+                              </span>
+                            ) : ev.viewerParticipationStatus === 'REJECTED' ? (
+                              <span className="ml-auto text-[11px] font-bold px-2 py-0.5 rounded-md bg-rose-100 text-rose-800">
+                                Отклонено
+                              </span>
+                            ) : (
+                              <span className="ml-auto text-[11px] font-bold px-2 py-0.5 rounded-md bg-brand-tint text-brand-ink">
+                                {ev.joinMode === 'OPEN' ? 'Открыто' : 'По заявке'}
+                              </span>
+                            )}
                           </div>
 
                           <h3 className="font-bold text-ink text-sm leading-snug truncate mb-1">
@@ -1150,18 +1193,40 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                     >
                       Подробнее
                     </Link>
-                    <button
-                      type="button"
-                      disabled={joiningEventId === selectedEvent.id}
-                      onClick={() => handleQuickJoin(selectedEvent)}
-                      className="flex-1 h-11 rounded-xl bg-brand hover:bg-brand-hover text-white font-display font-bold text-xs flex items-center justify-center transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      {joiningEventId === selectedEvent.id
-                        ? 'Отправка...'
-                        : selectedEvent.joinMode === 'OPEN'
-                        ? 'Записаться'
-                        : 'Подать заявку'}
-                    </button>
+                    {user && selectedEvent.organizerUserId === user.id ? (
+                      <div className="flex-1 h-11 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-display font-bold text-xs flex items-center justify-center px-3 text-center">
+                        Вы организатор встречи
+                      </div>
+                    ) : selectedEvent.viewerParticipationStatus === 'CONFIRMED' ? (
+                      <div className="flex-1 h-11 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-display font-bold text-xs flex items-center justify-center px-3 text-center">
+                        Вы записаны ✓
+                      </div>
+                    ) : selectedEvent.viewerParticipationStatus === 'PENDING' ? (
+                      <div className="flex-1 h-11 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 font-display font-bold text-xs flex items-center justify-center px-3 text-center">
+                        Заявка на рассмотрении
+                      </div>
+                    ) : selectedEvent.viewerParticipationStatus === 'WAITLISTED' ? (
+                      <div className="flex-1 h-11 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 font-display font-bold text-xs flex items-center justify-center px-3 text-center">
+                        Вы в листе ожидания
+                      </div>
+                    ) : selectedEvent.viewerParticipationStatus === 'REJECTED' ? (
+                      <div className="flex-1 h-11 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 font-display font-bold text-xs flex items-center justify-center px-3 text-center">
+                        Заявка отклонена
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={joiningEventId === selectedEvent.id}
+                        onClick={() => handleQuickJoin(selectedEvent)}
+                        className="flex-1 h-11 rounded-xl bg-brand hover:bg-brand-hover text-white font-display font-bold text-xs flex items-center justify-center transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        {joiningEventId === selectedEvent.id
+                          ? 'Отправка...'
+                          : selectedEvent.joinMode === 'OPEN'
+                          ? 'Записаться'
+                          : 'Подать заявку'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

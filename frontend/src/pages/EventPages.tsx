@@ -64,6 +64,9 @@ export const CreateEventPage: React.FC = () => {
   const preselectedOrgId = searchParams.get('orgId') || '';
 
   const approvedOrgs = myOrganizations.filter((o) => o.status === 'APPROVED');
+  const officialOrgs = myOrganizations.filter((o) => o.orgType !== 'COMMUNITY');
+  const approvedOfficialOrgs = officialOrgs.filter((o) => o.status === 'APPROVED');
+  const isOrganizationAccount = officialOrgs.length > 0;
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -112,10 +115,21 @@ export const CreateEventPage: React.FC = () => {
   }, [sports]);
 
   useEffect(() => {
+    if (isOrganizationAccount) {
+      if (preselectedOrgId && approvedOfficialOrgs.some((o) => o.id === preselectedOrgId)) {
+        setOrganizationId(preselectedOrgId);
+      } else if (
+        approvedOfficialOrgs.length > 0 &&
+        (!organizationId || !approvedOfficialOrgs.some((o) => o.id === organizationId))
+      ) {
+        setOrganizationId(approvedOfficialOrgs[0].id);
+      }
+      return;
+    }
     if (preselectedOrgId && approvedOrgs.some((o) => o.id === preselectedOrgId)) {
       setOrganizationId(preselectedOrgId);
     }
-  }, [preselectedOrgId, approvedOrgs.length]);
+  }, [preselectedOrgId, approvedOrgs.length, approvedOfficialOrgs.length, isOrganizationAccount]);
 
   const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -136,6 +150,20 @@ export const CreateEventPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (isOrganizationAccount && approvedOfficialOrgs.length === 0) {
+      setError('Аккаунт организации может публиковать мероприятия только от имени верифицированной организации.');
+      return;
+    }
+
+    const effectiveOrgId = isOrganizationAccount
+      ? organizationId || approvedOfficialOrgs[0]?.id || ''
+      : organizationId;
+
+    if (isOrganizationAccount && !effectiveOrgId) {
+      setError('Выберите организацию, от имени которой публикуется мероприятие.');
+      return;
+    }
 
     const parsedDuration = parseInt(durationMinutesStr.trim(), 10);
     const validDuration = Number.isFinite(parsedDuration) && parsedDuration >= 15 ? parsedDuration : 90;
@@ -176,7 +204,7 @@ export const CreateEventPage: React.FC = () => {
         sportId: useNewSport ? null : sportId,
         newSportName: useNewSport ? newSportName.trim() : null,
         newSportCategory: useNewSport ? 'Спорт' : null,
-        organizationId: organizationId || null,
+        organizationId: effectiveOrgId || null,
         coverAttachmentId: coverAttachment?.id || null,
         city: isOnline ? 'Онлайн' : city,
         locationAddress: finalAddress,
@@ -230,29 +258,51 @@ export const CreateEventPage: React.FC = () => {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Organizer choice — shown ONLY when user has approved organizations/communities */}
-          {approvedOrgs.length > 0 && (
+          {/* Organizer choice */}
+          {isOrganizationAccount ? (
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
               <label className="block text-xs font-bold text-slate-700">
-                От чьего имени публикуется мероприятие?
+                Организация-организатор (аккаунт организации публикует встречи только от имени организации)
               </label>
-              <CustomSelect
-                value={organizationId}
-                onChange={setOrganizationId}
-                options={[
-                  {
-                    value: '',
-                    label: `Личное мероприятие (от моего имени: ${user?.displayName || 'Участник'})`,
-                  },
-                  ...approvedOrgs.map((org) => ({
+              {approvedOfficialOrgs.length > 0 ? (
+                <CustomSelect
+                  value={organizationId || approvedOfficialOrgs[0].id}
+                  onChange={setOrganizationId}
+                  options={approvedOfficialOrgs.map((org) => ({
                     value: org.id,
-                    label: `${
-                      org.orgType === 'COMMUNITY' ? 'От имени сообщества' : 'От имени организации'
-                    }: «${org.name}»`,
-                  })),
-                ]}
-              />
+                    label: `От имени организации: «${org.name}»`,
+                  }))}
+                />
+              ) : (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-900">
+                  Ваша организация находится на проверке модератором. Публикация мероприятий от аккаунта организации станет доступна сразу после её подтверждения.
+                </div>
+              )}
             </div>
+          ) : (
+            approvedOrgs.length > 0 && (
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <label className="block text-xs font-bold text-slate-700">
+                  От чьего имени публикуется мероприятие?
+                </label>
+                <CustomSelect
+                  value={organizationId}
+                  onChange={setOrganizationId}
+                  options={[
+                    {
+                      value: '',
+                      label: `Личное мероприятие (от моего имени: ${user?.displayName || 'Участник'})`,
+                    },
+                    ...approvedOrgs.map((org) => ({
+                      value: org.id,
+                      label: `${
+                        org.orgType === 'COMMUNITY' ? 'От имени сообщества' : 'От имени организации'
+                      }: «${org.name}»`,
+                    })),
+                  ]}
+                />
+              </div>
+            )
           )}
 
           {/* Sport selection (without sport categories) */}
@@ -998,7 +1048,7 @@ export const EventDetailPage: React.FC = () => {
   return (
     <div className="space-y-8 pb-16">
       {/* Status Banner if Unpublished or Cancelled */}
-      {event.status !== 'PUBLISHED' && (
+      {(event.status === 'UNPUBLISHED_BY_ADMIN' || event.status === 'CANCELLED_BY_ORGANIZER') && (
         <div className="p-5 rounded-3xl bg-rose-50 border-2 border-rose-200 flex flex-wrap items-center justify-between gap-4 text-rose-900">
           <div className="flex items-start gap-3">
             <ShieldAlert className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
@@ -1228,8 +1278,10 @@ export const EventDetailPage: React.FC = () => {
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
                         occ.id === event.id
                           ? 'bg-blue-600 text-white border-blue-600'
-                          : occ.status !== 'PUBLISHED' || new Date(occ.startsAt).getTime() < Date.now()
+                          : occ.status === 'UNPUBLISHED_BY_ADMIN' || occ.status === 'CANCELLED_BY_ORGANIZER'
                           ? 'bg-rose-50 text-rose-700 border-rose-200 line-through'
+                          : occ.status === 'COMPLETED' || new Date(occ.startsAt).getTime() < Date.now()
+                          ? 'bg-slate-100 text-slate-500 border-slate-200'
                           : 'bg-white text-slate-700 border-slate-200 hover:border-blue-400'
                       }`}
                     >

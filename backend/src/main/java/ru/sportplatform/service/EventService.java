@@ -88,6 +88,11 @@ public class EventService {
             throw ApiException.badRequest("Выберите вид спорта из справочника или введите название нового направления");
         }
 
+        List<Organization> ownedOfficialOrgs = organizationRepository.findByOwnerIdOrderByCreatedAtDesc(creatorUserId).stream()
+                .filter(o -> o.getOrgType() != OrganizationType.COMMUNITY)
+                .toList();
+        boolean isOrganizationAccount = !ownedOfficialOrgs.isEmpty();
+
         Organization organization = null;
         if (req.organizationId() != null) {
             organization = organizationRepository.findById(req.organizationId())
@@ -95,8 +100,22 @@ public class EventService {
             if (!canUserManageOrg(organization, creatorUserId) && creator.getGlobalRole() != GlobalRole.ADMIN) {
                 throw ApiException.forbidden("Вы не являетесь создателем или администратором выбранного сообщества");
             }
+            if (isOrganizationAccount && organization.getOrgType() == OrganizationType.COMMUNITY) {
+                throw ApiException.forbidden("Аккаунт организации может публиковать мероприятия только от имени своей организации");
+            }
             if (organization.getStatus() != OrganizationStatus.APPROVED) {
                 throw ApiException.forbidden("Невозможно опубликовать мероприятие от имени организации до её одобрения администратором (текущий статус: " + organization.getStatus() + ")");
+            }
+        } else if (isOrganizationAccount) {
+            List<Organization> approvedOfficialOrgs = ownedOfficialOrgs.stream()
+                    .filter(o -> o.getStatus() == OrganizationStatus.APPROVED)
+                    .toList();
+            if (approvedOfficialOrgs.size() == 1) {
+                organization = approvedOfficialOrgs.get(0);
+            } else if (approvedOfficialOrgs.isEmpty()) {
+                throw ApiException.forbidden("Аккаунт организации может публиковать мероприятия только от имени верифицированной организации после её одобрения администратором");
+            } else {
+                throw ApiException.badRequest("Выберите организацию, от имени которой публикуется мероприятие");
             }
         }
 
