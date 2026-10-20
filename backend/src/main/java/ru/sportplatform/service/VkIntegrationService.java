@@ -85,16 +85,30 @@ public class VkIntegrationService {
     }
 
     public boolean isRealVkMode() {
-        return "REAL".equalsIgnoreCase(vkMode) && vkToken != null && !vkToken.isBlank() && vkGroupId > 0;
+        boolean hasCredentials = vkToken != null && !vkToken.isBlank() && vkGroupId > 0;
+        if (!hasCredentials) {
+            return false;
+        }
+        return "REAL".equalsIgnoreCase(vkMode)
+                || "LIVE".equalsIgnoreCase(vkMode)
+                || "TEST_LOG".equalsIgnoreCase(vkMode);
+    }
+
+    private String resolveClubUrl() {
+        if ((vkClubUrl == null || vkClubUrl.isBlank() || "https://vk.com/club0".equals(vkClubUrl)) && vkGroupId > 0) {
+            return "https://vk.com/club" + vkGroupId;
+        }
+        return vkClubUrl;
     }
 
     @Transactional(readOnly = true)
     public VkStatusDto getStatus(UUID userId) {
+        String effectiveClubUrl = resolveClubUrl();
         Optional<VkAccountLink> opt = vkLinkRepository.findByUserId(userId);
         if (opt.isEmpty()) {
             return new VkStatusDto(
                     isRealVkMode() ? "REAL" : "TEST_LOG",
-                    vkClubUrl,
+                    effectiveClubUrl,
                     vkGroupId,
                     false,
                     null,
@@ -109,7 +123,7 @@ public class VkIntegrationService {
                 ? link.getLinkCode() : null;
         return new VkStatusDto(
                 isRealVkMode() ? "REAL" : "TEST_LOG",
-                vkClubUrl,
+                effectiveClubUrl,
                 vkGroupId,
                 link.isLinked(),
                 link.getVkUserId(),
