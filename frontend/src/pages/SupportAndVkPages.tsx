@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Bell,
   CheckCheck,
@@ -658,11 +658,9 @@ export const SupportPage: React.FC = () => {
 
 export const NotificationsAndVkPage: React.FC = () => {
   const { refreshUnreadCount } = useAuth();
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [vkStatus, setVkStatus] = useState<VkStatusDto | null>(null);
-  const [simBotInput, setSimBotInput] = useState('');
-  const [simBotReply, setSimBotReply] = useState<string | null>(null);
-  const [reminderResult, setReminderResult] = useState<string | null>(null);
   const [vkActionFeedback, setVkActionFeedback] = useState<string | null>(null);
   const [connectingVk, setConnectingVk] = useState(false);
 
@@ -682,9 +680,13 @@ export const NotificationsAndVkPage: React.FC = () => {
 
   useEffect(() => {
     loadAll();
+    const onUpdated = () => {
+      loadAll();
+    };
+    window.addEventListener('sp-notifications-updated', onUpdated);
+    return () => window.removeEventListener('sp-notifications-updated', onUpdated);
   }, []);
 
-  // Poll VK connection status automatically while waiting for 1-click deep link confirmation (#2)
   useEffect(() => {
     if (!vkStatus?.activeLinkCode || vkStatus.linked) return;
     const interval = setInterval(async () => {
@@ -710,7 +712,6 @@ export const NotificationsAndVkPage: React.FC = () => {
     return `${clubUrl}${sep}ref=${encodeURIComponent(code)}`;
   };
 
-  // Single-button VK connection (#2)
   const handleOneClickConnectVk = async () => {
     setConnectingVk(true);
     setVkActionFeedback(null);
@@ -719,7 +720,6 @@ export const NotificationsAndVkPage: React.FC = () => {
       setVkStatus(vk);
       const code = vk.activeLinkCode || '';
       if (code) {
-        setSimBotInput(code);
         try {
           await navigator.clipboard.writeText(code);
         } catch {
@@ -728,12 +728,12 @@ export const NotificationsAndVkPage: React.FC = () => {
         const deepLink = buildVkBotDeepLink(vk.clubUrl, code);
         window.open(deepLink, '_blank', 'noopener,noreferrer');
         setVkActionFeedback(
-          `Диалог с VK-ботом открыт (параметр привязки ${code} передан автоматически и скопирован в буфер обмена). Нажмите «Начать» или отправьте сообщение в открывшемся окне VK.`
+          'Диалог с сообществом ВКонтакте открыт. Нажмите «Начать» или отправьте сообщение в диалоге, чтобы завершить привязку.'
         );
       }
     } catch (err) {
       setVkActionFeedback(
-        err instanceof ApiError ? err.message : 'Не удалось подготовить подключение VK-бота'
+        err instanceof ApiError ? err.message : 'Не удалось подготовить подключение ВКонтакте'
       );
     } finally {
       setConnectingVk(false);
@@ -753,228 +753,150 @@ export const NotificationsAndVkPage: React.FC = () => {
     setVkStatus(vk);
   };
 
-  const handleSimulateBotCommand = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!simBotInput.trim()) return;
-    const res = await apiFetch<{ vkUserId: number; botReply: string; status: VkStatusDto }>(
-      '/api/v1/vk/simulate-bot-message',
-      {
-        method: 'POST',
-        body: JSON.stringify({ messageText: simBotInput }),
+  const handleMarkSingleRead = async (n: NotificationDto, shouldNavigate = false) => {
+    if (!n.read) {
+      setNotifications((prev) =>
+        prev.map((item) => (item.id === n.id ? { ...item, read: true } : item))
+      );
+      try {
+        await apiFetch(`/api/v1/notifications/${n.id}/read`, { method: 'POST' });
+      } catch {
+        // ignore
       }
-    );
-    setSimBotReply(res.botReply);
-    setVkStatus(res.status);
-    if (res.status.linked) {
-      setVkActionFeedback('Аккаунт ВКонтакте успешно связан с профилем!');
+      await refreshUnreadCount();
+      window.dispatchEvent(new CustomEvent('sp-notifications-updated'));
+    }
+    if (shouldNavigate && n.linkUrl) {
+      navigate(n.linkUrl);
     }
   };
 
-  const handleTriggerReminders = async () => {
-    const res = await apiFetch<{ remindersDispatched: number }>('/api/v1/vk/trigger-reminders', {
-      method: 'POST',
-    });
-    setReminderResult(
-      `Планировщик напоминаний выполнен. Отправлено новых напоминаний о предстоящих встречах: ${res.remindersDispatched}.`
-    );
-    await loadAll();
-  };
-
   const handleMarkAllRead = async () => {
-    await apiFetch('/api/v1/notifications/read-all', { method: 'POST' });
-    await loadAll();
+    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+    try {
+      await apiFetch('/api/v1/notifications/read-all', { method: 'POST' });
+    } catch {
+      // ignore
+    }
+    await refreshUnreadCount();
+    window.dispatchEvent(new CustomEvent('sp-notifications-updated'));
   };
 
   return (
     <div className="space-y-8 pb-16">
       <div>
         <h1 className="font-display font-extrabold text-2xl sm:text-3xl text-slate-900">
-          Уведомления и интеграция с ботом ВКонтакте
+          Уведомления
         </h1>
         <p className="text-sm text-slate-600 mt-1">
-          Подключите уведомления ВКонтакте одной кнопкой, чтобы получать напоминания о тренировках и ответах организаторов
+          Оповещения о предстоящих тренировках, новых записях участников и ответах организаторов
         </p>
       </div>
 
-      {/* VK BOT INTEGRATION CARD */}
+      {/* VK NOTIFICATIONS CARD */}
       {vkStatus && (
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white font-display font-extrabold flex items-center justify-center">
                 VK
               </div>
               <div>
                 <h2 className="font-display font-bold text-lg text-slate-900">
-                  Интеграция с VK-ботом напоминаний
+                  Уведомления ВКонтакте
                 </h2>
-                <div className="text-xs text-slate-500">
-                  Режим провайдера:{' '}
-                  <span className="font-bold text-slate-800">
-                    {vkStatus.mode === 'REAL'
-                      ? 'Боевой VK Bots Long Poll API (REAL)'
-                      : 'Локальный режим проверки (TEST_LOG — внешний токен VK не настроен)'}
-                  </span>
-                </div>
+                <p className="text-xs text-slate-500">
+                  Получайте мгновенные напоминания о сборах в личные сообщения ВКонтакте
+                </p>
               </div>
             </div>
 
             {vkStatus.linked ? (
               <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-100 text-emerald-900 text-xs font-bold">
                 <ShieldCheck className="w-4 h-4" />
-                <span>Подключено к VK (ID: {vkStatus.vkUserId})</span>
+                <span>Аккаунт ВКонтакте подключён</span>
               </span>
             ) : (
               <span className="px-3.5 py-1.5 rounded-full bg-slate-100 text-slate-700 text-xs font-bold">
-                VK не подключён
+                Не подключено
               </span>
             )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* One-Click VK Connection (#2) */}
-            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4 text-xs">
-              <div className="font-display font-bold text-sm text-slate-900">
-                Быстрое подключение уведомлений ВКонтакте
-              </div>
-              <p className="text-slate-700 leading-relaxed">
-                Нажмите кнопку ниже — откроется диалог с нашим ботом ВКонтакте с автоматически переданным параметром привязки вашего профиля. После отправки первого сообщения в диалоге аккаунт сразу свяжется с сайтом.
-              </p>
+          <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4 text-xs">
+            <p className="text-slate-700 leading-relaxed">
+              Подключите бота ВКонтакте, чтобы не пропускать изменения расписания, подтверждения участия и напоминания перед началом тренировки.
+            </p>
 
-              <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                {!vkStatus.linked ? (
-                  <button
-                    type="button"
-                    disabled={connectingVk}
-                    onClick={handleOneClickConnectVk}
-                    className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-display font-bold text-xs shadow-sm transition-colors"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    <span>
-                      {connectingVk ? 'Подготовка ссылки...' : 'Подключить VK для уведомлений'}
-                    </span>
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleVkEnabled(!vkStatus.notificationsEnabled)}
-                      className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white font-bold text-slate-700"
-                    >
-                      {vkStatus.notificationsEnabled
-                        ? 'Приостановить доставку в VK'
-                        : 'Включить доставку в VK'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleUnlinkVk}
-                      className="px-4 py-2.5 rounded-xl border border-rose-200 text-rose-700 font-bold"
-                    >
-                      Отвязать VK
-                    </button>
-                  </>
-                )}
-
+            <div className="flex flex-wrap items-center gap-2.5">
+              {!vkStatus.linked ? (
                 <button
                   type="button"
-                  onClick={handleTriggerReminders}
-                  className="px-3.5 py-2.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold"
+                  disabled={connectingVk}
+                  onClick={handleOneClickConnectVk}
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-display font-bold text-xs shadow-sm transition-colors cursor-pointer"
                 >
-                  Проверить отправку напоминаний
+                  <ExternalLink className="w-4 h-4" />
+                  <span>
+                    {connectingVk ? 'Подготовка ссылки...' : 'Подключить уведомления ВКонтакте'}
+                  </span>
                 </button>
-              </div>
-
-              {vkActionFeedback && (
-                <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-950 font-semibold leading-relaxed">
-                  {vkActionFeedback}
-                </div>
-              )}
-
-              {!vkStatus.linked && vkStatus.activeLinkCode && (
-                <div className="p-3.5 rounded-xl bg-white border border-slate-200 text-slate-700 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="text-[11px] text-slate-500">
-                      Ожидание подтверждения из диалога VK (параметр привязки: <strong className="font-mono text-slate-900">{vkStatus.activeLinkCode}</strong>)
-                    </div>
-                  </div>
-                  <a
-                    href={buildVkBotDeepLink(vkStatus.clubUrl, vkStatus.activeLinkCode)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 font-bold border border-blue-200"
-                  >
-                    <span>Открыть диалог с ботом</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              )}
-
-              {reminderResult && (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 font-semibold">
-                  {reminderResult}
-                </div>
-              )}
-            </div>
-
-            {/* Interactive VK Bot Terminal (fallback/sandbox verification when VK token is not configured) */}
-            <div className="p-5 rounded-2xl bg-slate-900 text-white space-y-3 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-display font-bold text-sm flex items-center gap-1.5 text-lime-300">
-                  <Sparkles className="w-4 h-4" />
-                  <span>Тестовый диалог с ботом (если VK недоступен)</span>
-                </span>
-                <span className="text-[10px] text-slate-400">Автономная проверка</span>
-              </div>
-              <p className="text-slate-300">
-                Если внешний сервер VK не настроен, вы можете подтвердить привязку или протестировать команды бота прямо здесь (<code className="text-lime-300">Мои мероприятия</code>, <code className="text-lime-300">Статус</code>, <code className="text-lime-300">Помощь</code>):
-              </p>
-
-              <form onSubmit={handleSimulateBotCommand} className="flex gap-2">
-                <input
-                  type="text"
-                  value={simBotInput}
-                  onChange={(e) => setSimBotInput(e.target.value)}
-                  placeholder="Параметр привязки подставляется автоматически..."
-                  className="flex-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold"
-                >
-                  Подтвердить / Отправить
-                </button>
-              </form>
-
-              <div className="flex flex-wrap gap-1.5">
-                {['Помощь', 'Мои мероприятия', 'Статус', 'Отключить', 'Включить'].map((cmd) => (
+              ) : (
+                <>
                   <button
-                    key={cmd}
                     type="button"
-                    onClick={() => setSimBotInput(cmd)}
-                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px]"
+                    onClick={() => handleToggleVkEnabled(!vkStatus.notificationsEnabled)}
+                    className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white font-bold text-slate-700 cursor-pointer"
                   >
-                    {cmd}
+                    {vkStatus.notificationsEnabled
+                      ? 'Приостановить доставку в VK'
+                      : 'Включить доставку в VK'}
                   </button>
-                ))}
-              </div>
-
-              {simBotReply && (
-                <div className="p-3.5 rounded-xl bg-slate-800 border border-slate-700 whitespace-pre-line text-slate-100 leading-relaxed">
-                  {simBotReply}
-                </div>
+                  <button
+                    type="button"
+                    onClick={handleUnlinkVk}
+                    className="px-4 py-2.5 rounded-xl border border-rose-200 text-rose-700 font-bold cursor-pointer"
+                  >
+                    Отвязать аккаунт
+                  </button>
+                </>
               )}
             </div>
+
+            {vkActionFeedback && (
+              <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-950 font-semibold leading-relaxed">
+                {vkActionFeedback}
+              </div>
+            )}
+
+            {!vkStatus.linked && vkStatus.activeLinkCode && (
+              <div className="p-3.5 rounded-xl bg-white border border-slate-200 text-slate-700 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs text-slate-600">
+                  Код привязки вашего профиля:{' '}
+                  <strong className="font-mono text-slate-900">{vkStatus.activeLinkCode}</strong>
+                </div>
+                <a
+                  href={buildVkBotDeepLink(vkStatus.clubUrl, vkStatus.activeLinkCode)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 font-bold border border-blue-200"
+                >
+                  <span>Открыть диалог ВКонтакте</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* IN-APP NOTIFICATIONS LIST */}
       <section className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Bell className="w-5 h-5 text-blue-600" />
             <h2 className="font-display font-bold text-xl text-slate-900">
-              Журнал уведомлений платформы ({notifications.length})
+              Все уведомления ({notifications.length})
             </h2>
           </div>
 
@@ -982,7 +904,7 @@ export const NotificationsAndVkPage: React.FC = () => {
             <button
               type="button"
               onClick={handleMarkAllRead}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer"
             >
               <CheckCheck className="w-4 h-4" />
               <span>Отметить все как прочитанные</span>
@@ -999,29 +921,52 @@ export const NotificationsAndVkPage: React.FC = () => {
             {notifications.map((n) => (
               <div
                 key={n.id}
-                className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                  n.read ? 'bg-white border-slate-200' : 'bg-blue-50/60 border-blue-300'
+                onClick={() => handleMarkSingleRead(n, Boolean(n.linkUrl))}
+                className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
+                  n.linkUrl ? 'cursor-pointer' : ''
+                } ${
+                  n.read
+                    ? 'bg-white border-slate-200'
+                    : 'bg-blue-50/60 border-blue-300 hover:bg-blue-50'
                 }`}
               >
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
+                    {!n.read && (
+                      <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+                    )}
                     <span className="font-display font-bold text-sm text-slate-900">{n.title}</span>
                     <span className="text-[11px] text-slate-400">{formatDateTime(n.createdAt)}</span>
-                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-semibold">
-                      VK статус: {n.vkDeliveryStatus}
-                    </span>
                   </div>
                   <p className="text-xs text-slate-700">{n.message}</p>
                 </div>
 
-                {n.linkUrl && (
-                  <Link
-                    to={n.linkUrl}
-                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-800 text-xs font-bold shrink-0 self-start sm:self-center transition-colors"
-                  >
-                    Перейти →
-                  </Link>
-                )}
+                <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                  {!n.read && !n.linkUrl && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkSingleRead(n, false);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold cursor-pointer"
+                    >
+                      Прочитано
+                    </button>
+                  )}
+                  {n.linkUrl && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkSingleRead(n, true);
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-800 text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Перейти →
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>

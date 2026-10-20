@@ -55,12 +55,14 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
   const selectedOption = options.find((o) => o.value === value);
   const displayLabel = selectedOption ? selectedOption.label : placeholder;
 
+  const normSearch = search.trim().toLowerCase().replace(/ё/g, 'е');
   const filtered =
-    searchable && search.trim()
+    searchable && normSearch
       ? options.filter(
           (o) =>
-            o.label.toLowerCase().replace('ё', 'е').includes(search.trim().toLowerCase().replace('ё', 'е')) ||
-            o.value.toLowerCase().replace('ё', 'е').includes(search.trim().toLowerCase().replace('ё', 'е'))
+            o.label.toLowerCase().replace(/ё/g, 'е').includes(normSearch) ||
+            o.value.toLowerCase().replace(/ё/g, 'е').includes(normSearch) ||
+            Boolean(o.sublabel && o.sublabel.toLowerCase().replace(/ё/g, 'е').includes(normSearch))
         )
       : options;
 
@@ -98,14 +100,14 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
       {open && (
         <div className="absolute z-[130] left-0 top-full mt-1.5 min-w-[250px] w-max max-w-[360px] bg-card rounded-2xl border border-line-2 shadow-2xl py-1.5 max-h-72 overflow-y-auto anim-fade">
           {searchable && (
-            <div className="px-3 pb-2 pt-1 sticky top-0 bg-card border-b border-line z-10">
+            <div className="px-3 pb-2 pt-1 sticky top-0 bg-card border-b border-b-line z-10">
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Быстрый поиск..."
+                  placeholder="Найти город или регион..."
                   autoFocus
                   className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-line-2 bg-surface/60 text-xs font-medium text-ink focus:outline-none focus:border-brand"
                 />
@@ -120,7 +122,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
               const active = opt.value === value;
               return (
                 <button
-                  key={opt.value}
+                  key={`${opt.value}-${opt.label}`}
                   type="button"
                   onClick={() => {
                     onChange(opt.value);
@@ -174,7 +176,7 @@ export const RegionSelect: React.FC<RegionSelectProps> = ({
     ...RUSSIAN_REGIONS.map((r) => ({
       value: r.value,
       label: r.label,
-      sublabel: `Часовой пояс: ${r.tzLabel}`,
+      sublabel: `${r.regionName || r.label} · ${r.tzLabel}`,
     })),
   ];
 
@@ -870,7 +872,7 @@ function formatNominatimAddress(item: any, fallbackCity: string): GeocodedPlace 
 
   return {
     city: detectedCity,
-    address: formattedAddress || 'Точка на карте 2ГИС',
+    address: formattedAddress || 'Выбранная точка на карте',
     lat: Number(Number(item.lat).toFixed(5)),
     lng: Number(Number(item.lon).toFixed(5)),
     subtitle: [detectedCity, suburb].filter(Boolean).join(' · '),
@@ -885,7 +887,7 @@ export async function searchRealAddresses2Gis(
   const normalizedQ = q.toLowerCase().replace('ё', 'е');
   const normalizedCity = city.trim().toLowerCase().replace('ё', 'е');
 
-  // 1. Локальные точные совпадения по базе площадок 2ГИС
+  // 1. Локальные точные совпадения по базе площадок
   const localMatches = KNOWN_2GIS_VENUES.filter((v) => {
     const cityOk = !normalizedCity || v.city.toLowerCase().replace('ё', 'е').includes(normalizedCity);
     if (!q) return cityOk;
@@ -970,10 +972,10 @@ export async function reverseGeocode2GisPoint(
 
   return {
     city: fallbackCity || 'Москва',
-    address: `Координаты 2ГИС: ${roundedLat}, ${roundedLng}`,
+    address: `Координаты: ${roundedLat}, ${roundedLng}`,
     lat: roundedLat,
     lng: roundedLng,
-    subtitle: 'Точка выбрана на карте 2ГИС',
+    subtitle: 'Точка выбрана на карте',
   };
 }
 
@@ -1021,7 +1023,7 @@ export const MapAddressPicker: React.FC<MapAddressPickerProps> = ({
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
-  // Инициализация карты 2ГИС для выбора координат кликом или перетаскиванием пина
+  // Инициализация интерактивной карты для выбора координат кликом или перетаскиванием пина
   useEffect(() => {
     const L = (window as any).L;
     if (!L || !mapContainerRef.current) return;
@@ -1161,7 +1163,7 @@ export const MapAddressPicker: React.FC<MapAddressPickerProps> = ({
 
   return (
     <div ref={wrapperRef} className="space-y-3">
-      {/* Поле поиска реального адреса 2ГИС с автодополнением */}
+      {/* Поле поиска реального адреса с автодополнением */}
       <div className="relative">
         <div className="relative flex items-center">
           <MapPin className="w-4 h-4 text-brand absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -1179,7 +1181,7 @@ export const MapAddressPicker: React.FC<MapAddressPickerProps> = ({
               });
               setShowSuggestions(true);
             }}
-            placeholder="Введите улицу, дом или спорткомплекс (или кликните на карту 2ГИС ниже)..."
+            placeholder="Введите улицу, дом или спорткомплекс (или выберите точку на карте ниже)..."
             className="w-full pl-10 pr-28 py-2.5 rounded-xl border border-line-2 bg-card focus:border-brand text-sm font-medium text-ink outline-none"
           />
           <button
@@ -1197,7 +1199,7 @@ export const MapAddressPicker: React.FC<MapAddressPickerProps> = ({
             }}
             className="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-brand-tint hover:bg-brand text-brand-ink hover:text-white text-xs font-bold transition-colors cursor-pointer"
           >
-            {searching ? 'Поиск...' : 'Найти в 2ГИС'}
+            {searching ? 'Поиск...' : 'Найти на карте'}
           </button>
         </div>
 
@@ -1205,8 +1207,8 @@ export const MapAddressPicker: React.FC<MapAddressPickerProps> = ({
         {showSuggestions && suggestions.length > 0 && (
           <div className="absolute z-[140] left-0 right-0 top-full mt-1.5 bg-card rounded-2xl border border-line-2 shadow-2xl py-1.5 max-h-64 overflow-y-auto anim-fade">
             <div className="px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted flex items-center justify-between">
-              <span>Адреса и площадки 2ГИС ({city || 'Россия'})</span>
-              <span>Кликните для привязки координат</span>
+              <span>Адреса и спортивные площадки ({city || 'Россия'})</span>
+              <span>Выберите адрес</span>
             </div>
             {suggestions.map((item, idx) => (
               <button
@@ -1232,7 +1234,7 @@ export const MapAddressPicker: React.FC<MapAddressPickerProps> = ({
         )}
       </div>
 
-      {/* Интерактивная карта 2ГИС для выбора точки кликом */}
+      {/* Интерактивная карта для выбора точки кликом */}
       <div className="rounded-2xl border border-line-2 overflow-hidden bg-surface relative">
         <div ref={mapContainerRef} className="w-full h-56 sm:h-64 z-10" />
 
@@ -1240,8 +1242,8 @@ export const MapAddressPicker: React.FC<MapAddressPickerProps> = ({
         <div className="absolute top-2.5 left-2.5 right-2.5 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
           <div className="px-3 py-1.5 rounded-xl bg-card/95 backdrop-blur-md border border-line-2 shadow-sm text-[11px] font-semibold text-ink">
             {reverseLoading
-              ? '⏳ Определяем точный адрес точки 2ГИС...'
-              : '👆 Кликните в любое место на карте 2ГИС или перетащите указатель для точной привязки'}
+              ? 'Определяем адрес выбранной точки...'
+              : 'Нажмите на карту или перетащите указатель для точного выбора места'}
           </div>
           <button
             type="button"
@@ -1257,7 +1259,7 @@ export const MapAddressPicker: React.FC<MapAddressPickerProps> = ({
         <div className="px-3.5 py-2 bg-card border-t border-line flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-brand" />
-            <span className="font-semibold text-ink">Координаты точки:</span>
+            <span className="font-semibold text-ink">Координаты площадки:</span>
             <span className="font-mono font-bold text-brand-ink bg-brand-tint px-2 py-0.5 rounded-md">
               {currentLat.toFixed(5)}, {currentLng.toFixed(5)}
             </span>
@@ -1268,7 +1270,7 @@ export const MapAddressPicker: React.FC<MapAddressPickerProps> = ({
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-ink hover:underline"
           >
-            <span>Открыть эту точку в 2ГИС</span>
+            <span>Открыть на внешней карте</span>
             <ExternalLink className="w-3 h-3" />
           </a>
         </div>
@@ -1277,7 +1279,7 @@ export const MapAddressPicker: React.FC<MapAddressPickerProps> = ({
   );
 };
 
-/* Встроенная мини-карта 2ГИС для карточки мероприятия (EventDetailPage) */
+/* Встроенная мини-карта для карточки мероприятия (EventDetailPage) */
 export const Embedded2GisMiniMap: React.FC<{
   city: string;
   address: string;
@@ -1360,7 +1362,7 @@ export const Embedded2GisMiniMap: React.FC<{
       <div ref={containerRef} className="w-full h-48 sm:h-56 z-10" />
       <div className="px-3.5 py-2 bg-card border-t border-line flex flex-wrap items-center justify-between gap-2 text-[11px]">
         <span className="font-mono font-semibold text-muted">
-          Координаты 2ГИС: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+          Координаты площадки: {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
         </span>
         <a
           href={`https://2gis.ru/search/${encodeURIComponent(`${city} ${address}`)}`}
@@ -1368,7 +1370,7 @@ export const Embedded2GisMiniMap: React.FC<{
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 font-bold text-brand-ink hover:underline"
         >
-          <span>Построить маршрут в 2ГИС</span>
+          <span>Построить маршрут</span>
           <ExternalLink className="w-3 h-3" />
         </a>
       </div>

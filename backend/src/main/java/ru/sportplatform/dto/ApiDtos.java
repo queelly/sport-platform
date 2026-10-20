@@ -33,11 +33,9 @@ public final class ApiDtos {
     ) {}
 
     public record RegisterOrganizationRequest(
-            @NotBlank(message = "Укажите имя представителя")
-            @Size(min = 2, max = 80)
             String representativeName,
 
-            @NotBlank(message = "Укажите email для входа представителя")
+            @NotBlank(message = "Укажите email для входа организации")
             @Email(message = "Некорректный формат email")
             String email,
 
@@ -269,7 +267,6 @@ public final class ApiDtos {
             String city,
             @NotBlank(message = "Укажите описание деятельности")
             String description,
-            @NotBlank(message = "Укажите имя представителя")
             String representativeName,
             @NotBlank(message = "Укажите контакт для обратной связи модератора")
             String moderationContact,

@@ -6,9 +6,9 @@ import {
   CalendarCheck,
   CheckCheck,
   ChevronDown,
+  Compass,
   HelpCircle,
   List,
-  LogIn,
   LogOut,
   Map as MapIcon,
   MapPin,
@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { apiFetch, formatDateTime } from '../api';
-import { getRegionInfo, NotificationDto, RUSSIAN_REGIONS } from '../types';
+import { getRegionInfo, NotificationDto, searchRussianLocations } from '../types';
 
 export function getSelectedGlobalRegion(): string {
   return localStorage.getItem('sp_selected_region') ?? '';
@@ -60,7 +60,8 @@ function useNavActiveState() {
     location.pathname.startsWith('/partners') ||
     location.pathname.startsWith('/friends') ||
     location.pathname.startsWith('/users/');
-  const isClubsActive =
+  const isCommunitiesActive = location.pathname.startsWith('/communities');
+  const isOrganizationsActive =
     location.pathname.startsWith('/organizations') ||
     location.pathname.startsWith('/my-organization');
   const isMyActive = location.pathname === '/my';
@@ -73,7 +74,8 @@ function useNavActiveState() {
     isMapActive,
     isCatalogActive,
     isPartnersActive,
-    isClubsActive,
+    isCommunitiesActive,
+    isOrganizationsActive,
     isMyActive,
     isNotifsActive,
     isSupportActive,
@@ -90,19 +92,18 @@ export const AppSidebar: React.FC<{
   selectedRegion: string;
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
-}> = ({ onOpenRegionModal, selectedRegion, mobileOpen = false, onCloseMobile }) => {
+}> = ({ onOpenRegionModal, selectedRegion, onCloseMobile }) => {
   const {
     user,
     unreadNotificationsCount,
-    logout,
   } = useAuth();
-  const navigate = useNavigate();
 
   const {
     isMapActive,
     isCatalogActive,
     isPartnersActive,
-    isClubsActive,
+    isCommunitiesActive,
+    isOrganizationsActive,
     isMyActive,
     isNotifsActive,
     isSupportActive,
@@ -119,10 +120,10 @@ export const AppSidebar: React.FC<{
         : 'text-ink hover:bg-surface/80'
     }`;
 
-  const content = (
+  return (
     <aside className="w-64 h-full bg-card border-r border-line-2 flex flex-col justify-between select-none shrink-0">
       {/* Верхняя часть: Бренд + Кнопка создания + Вертикальные вкладки */}
-      <div className="p-4 space-y-4 overflow-y-auto">
+      <div className="p-4 space-y-4 overflow-y-auto flex-1">
         {/* Логотип */}
         <div className="flex items-center justify-between gap-2">
           <Link
@@ -138,7 +139,7 @@ export const AppSidebar: React.FC<{
                 ТОЧКА СБОРА
               </span>
               <span className="font-mono text-[10px] font-medium text-brand-ink mt-1">
-                СПОРТ · 2ГИС ПЛАТФОРМА
+                СПОРТИВНАЯ ПЛАТФОРМА
               </span>
             </div>
           </Link>
@@ -164,7 +165,7 @@ export const AppSidebar: React.FC<{
           <span>Создать сбор</span>
         </Link>
 
-        {/* Выбор региона / города 2ГИС */}
+        {/* Выбор региона / города */}
         <button
           type="button"
           onClick={() => {
@@ -177,7 +178,7 @@ export const AppSidebar: React.FC<{
             <MapPin className="w-4 h-4 text-brand shrink-0" />
             <div className="min-w-0">
               <div className="text-[10px] font-bold uppercase tracking-wider text-muted">
-                Город на карте 2ГИС
+                Город или регион
               </div>
               <div className="text-xs font-bold text-ink truncate">
                 {selectedRegion || 'Все регионы России'}
@@ -204,14 +205,7 @@ export const AppSidebar: React.FC<{
           >
             <span className="flex items-center gap-2.5">
               <MapIcon className="w-4 h-4 shrink-0" />
-              <span>Карта 2ГИС</span>
-            </span>
-            <span
-              className={`font-mono text-[10px] px-1.5 py-0.5 rounded ${
-                isMapActive ? 'bg-white/20 text-white' : 'bg-brand-tint text-brand-ink'
-              }`}
-            >
-              2ГИС
+              <span>Карта событий</span>
             </span>
           </Link>
 
@@ -227,6 +221,28 @@ export const AppSidebar: React.FC<{
           </Link>
 
           <Link
+            to="/communities"
+            onClick={onCloseMobile}
+            className={sidebarLinkClass(isCommunitiesActive)}
+          >
+            <span className="flex items-center gap-2.5">
+              <Compass className="w-4 h-4 shrink-0" />
+              <span>Сообщества</span>
+            </span>
+          </Link>
+
+          <Link
+            to="/organizations"
+            onClick={onCloseMobile}
+            className={sidebarLinkClass(isOrganizationsActive)}
+          >
+            <span className="flex items-center gap-2.5">
+              <Building2 className="w-4 h-4 shrink-0" />
+              <span>Организации</span>
+            </span>
+          </Link>
+
+          <Link
             to="/partners"
             onClick={onCloseMobile}
             className={sidebarLinkClass(isPartnersActive)}
@@ -234,17 +250,6 @@ export const AppSidebar: React.FC<{
             <span className="flex items-center gap-2.5">
               <Users className="w-4 h-4 shrink-0" />
               <span>Напарники и друзья</span>
-            </span>
-          </Link>
-
-          <Link
-            to="/organizations"
-            onClick={onCloseMobile}
-            className={sidebarLinkClass(isClubsActive)}
-          >
-            <span className="flex items-center gap-2.5">
-              <Building2 className="w-4 h-4 shrink-0" />
-              <span>Организации и сообщества</span>
             </span>
           </Link>
 
@@ -261,7 +266,7 @@ export const AppSidebar: React.FC<{
               >
                 <span className="flex items-center gap-2.5">
                   <CalendarCheck className="w-4 h-4 shrink-0" />
-                  <span>Мои сборы и расписание</span>
+                  <span>Мои записи и календарь</span>
                 </span>
               </Link>
 
@@ -272,7 +277,7 @@ export const AppSidebar: React.FC<{
               >
                 <span className="flex items-center gap-2.5">
                   <Bell className="w-4 h-4 shrink-0" />
-                  <span>Уведомления и VK-бот</span>
+                  <span>Уведомления</span>
                 </span>
                 {unreadNotificationsCount > 0 && (
                   <span
@@ -318,58 +323,9 @@ export const AppSidebar: React.FC<{
         </nav>
       </div>
 
-      {/* Нижняя часть: Профиль пользователя */}
-      <div className="p-3.5 border-t border-line-2 bg-surface/40">
-        {user ? (
-          <div className="space-y-2">
-            <Link
-              to="/profile"
-              onClick={onCloseMobile}
-              className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-card border border-transparent hover:border-line-2 transition-colors"
-            >
-              {user.avatarUrl ? (
-                <img
-                  key={user.avatarUrl}
-                  src={user.avatarUrl}
-                  alt={user.displayName}
-                  className="w-9 h-9 rounded-full object-cover border border-line-2 shrink-0"
-                />
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-brand text-white font-display font-bold text-xs flex items-center justify-center shrink-0">
-                  {user.displayName.charAt(0).toUpperCase()}
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="text-xs font-bold text-ink truncate">{user.displayName}</div>
-                <div className="text-[11px] text-muted truncate">
-                  {user.city || 'Профиль и анкета'}
-                </div>
-              </div>
-            </Link>
-            <div className="flex items-center gap-1.5">
-              <Link
-                to="/profile"
-                onClick={onCloseMobile}
-                className="flex-1 py-1.5 px-2.5 rounded-lg bg-card hover:bg-surface border border-line-2 text-[11px] font-semibold text-ink text-center transition-colors"
-              >
-                Настройки
-              </Link>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (onCloseMobile) onCloseMobile();
-                  await logout();
-                  navigate('/login');
-                }}
-                title="Выйти из аккаунта"
-                className="py-1.5 px-2.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Выйти</span>
-              </button>
-            </div>
-          </div>
-        ) : (
+      {/* Нижняя часть только для неавторизованных гостей (чтобы не дублировать меню профиля сверху) */}
+      {!user && (
+        <div className="p-3.5 border-t border-line-2 bg-surface/40">
           <div className="grid grid-cols-2 gap-2">
             <Link
               to="/login"
@@ -386,12 +342,10 @@ export const AppSidebar: React.FC<{
               Регистрация
             </Link>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </aside>
   );
-
-  return content;
 };
 
 /* ============================================================================
@@ -461,7 +415,7 @@ export const Navbar: React.FC<{
     return () => window.removeEventListener('sp-region-change', handler);
   }, []);
 
-  // Применяем тему и только размер шрифта (все остальные фильтры удалены по требованию)
+  // Применяем тему и только размер шрифта
   useEffect(() => {
     const html = document.documentElement;
     html.dataset.theme = settings.theme;
@@ -484,7 +438,7 @@ export const Navbar: React.FC<{
     setLoadingNotifs(true);
     try {
       const list = await apiFetch<NotificationDto[]>('/api/v1/notifications');
-      setNotifications(list.slice(0, 12));
+      setNotifications(list.filter((n) => !n.read).slice(0, 15));
       await refreshUnreadCount();
     } catch {
       // ignore
@@ -492,6 +446,14 @@ export const Navbar: React.FC<{
       setLoadingNotifs(false);
     }
   }, [user, refreshUnreadCount]);
+
+  useEffect(() => {
+    const onNotifSync = () => {
+      loadNotifications();
+    };
+    window.addEventListener('sp-notifications-updated', onNotifSync);
+    return () => window.removeEventListener('sp-notifications-updated', onNotifSync);
+  }, [loadNotifications]);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -516,19 +478,18 @@ export const Navbar: React.FC<{
   const handleMarkAllRead = async () => {
     try {
       await apiFetch('/api/v1/notifications/read-all', { method: 'POST' });
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      setNotifications([]);
       await refreshUnreadCount();
+      window.dispatchEvent(new CustomEvent('sp-notifications-updated'));
     } catch {
       // ignore
     }
   };
 
+  const unreadNotifications = notifications.filter((n) => !n.read);
+
   const currentRegionInfo = getRegionInfo(selectedRegion);
-  const filteredRegions = RUSSIAN_REGIONS.filter(
-    (r) =>
-      r.value.toLowerCase().includes(cityQuery.trim().toLowerCase()) ||
-      r.label.toLowerCase().includes(cityQuery.trim().toLowerCase())
-  );
+  const filteredRegions = searchRussianLocations(cityQuery);
 
   return (
     <>
@@ -674,7 +635,9 @@ export const Navbar: React.FC<{
                   className="absolute right-0 top-11 w-80 sm:w-96 rounded-2xl bg-card border border-line-2 shadow-2xl p-4 z-50 space-y-3 anim-fade"
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-line">
-                    <span className="font-display font-bold text-xs text-ink">Уведомления</span>
+                    <span className="font-display font-bold text-xs text-ink">
+                      Новые уведомления
+                    </span>
                     <div className="flex items-center gap-2">
                       {unreadNotificationsCount > 0 && (
                         <button
@@ -701,34 +664,35 @@ export const Navbar: React.FC<{
                       <div className="h-12 rounded-xl bg-surface animate-pulse" />
                       <div className="h-12 rounded-xl bg-surface animate-pulse" />
                     </div>
-                  ) : notifications.length === 0 ? (
+                  ) : unreadNotifications.length === 0 ? (
                     <div className="py-6 text-center text-xs text-muted">
-                      У вас пока нет новых уведомлений
+                      У вас нет непрочитанных уведомлений
                     </div>
                   ) : (
                     <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-                      {notifications.map((n) => (
+                      {unreadNotifications.map((n) => (
                         <div
                           key={n.id}
                           onClick={async () => {
-                            if (!n.read) {
-                              try {
-                                await apiFetch(`/api/v1/notifications/${n.id}/read`, {
-                                  method: 'POST',
-                                });
-                                await refreshUnreadCount();
-                              } catch {
-                                // ignore
-                              }
+                            // Сразу убираем из выпадающего окошка и отмечаем прочитанным
+                            setNotifications((prev) => prev.filter((item) => item.id !== n.id));
+                            try {
+                              await apiFetch(`/api/v1/notifications/${n.id}/read`, {
+                                method: 'POST',
+                              });
+                              await refreshUnreadCount();
+                              window.dispatchEvent(
+                                new CustomEvent('sp-notifications-updated', {
+                                  detail: { id: n.id },
+                                })
+                              );
+                            } catch {
+                              // ignore
                             }
                             setNotifOpen(false);
                             if (n.linkUrl) navigate(n.linkUrl);
                           }}
-                          className={`p-3 rounded-xl border text-xs cursor-pointer transition-colors ${
-                            n.read
-                              ? 'bg-surface/40 border-line text-muted'
-                              : 'bg-brand-tint/60 border-brand/30 text-ink'
-                          }`}
+                          className="p-3 rounded-xl border bg-brand-tint/60 border-brand/30 hover:bg-brand-tint text-ink text-xs cursor-pointer transition-colors"
                         >
                           <div className="font-bold text-ink">{n.title}</div>
                           <div className="text-[11px] text-muted mt-0.5 line-clamp-2">
@@ -799,7 +763,16 @@ export const Navbar: React.FC<{
                     className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-ink hover:bg-surface"
                   >
                     <User className="w-4 h-4 text-brand" />
-                    <span>Мой профиль и анкета</span>
+                    <span>Мой профиль и настройки</span>
+                  </Link>
+
+                  <Link
+                    to="/my"
+                    onClick={() => setProfileMenuOpen(false)}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-ink hover:bg-surface"
+                  >
+                    <CalendarCheck className="w-4 h-4 text-brand" />
+                    <span>Мои записи и календарь</span>
                   </Link>
 
                   <Link
@@ -809,7 +782,7 @@ export const Navbar: React.FC<{
                   >
                     <span className="flex items-center gap-2.5">
                       <Building2 className="w-4 h-4 text-brand" />
-                      <span>Мои организации и сообщества</span>
+                      <span>Управление организациями и сообществами</span>
                     </span>
                     {myOrganizations.length > 0 && (
                       <span className="px-1.5 py-0.5 rounded-md bg-brand-tint text-brand-ink font-mono text-[10px] font-bold">
@@ -887,10 +860,10 @@ export const Navbar: React.FC<{
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="font-display font-bold text-base text-ink">
-                  Выберите город или регион
+                  Выберите город или регион России
                 </h3>
                 <p className="text-xs text-muted mt-0.5">
-                  Карта 2ГИС и каталог перестроятся под выбранный регион и часовой пояс
+                  Поиск по всем 89 субъектам РФ и городам (включая малые города регионального подчинения)
                 </p>
               </div>
               <button
@@ -906,7 +879,7 @@ export const Navbar: React.FC<{
               type="text"
               value={cityQuery}
               onChange={(e) => setCityQuery(e.target.value)}
-              placeholder="Найти регион или город (например: Бурятия, Улан-Удэ, Москва, Казань)..."
+              placeholder="Найти город или регион (например: Железногорск, Красноярский край, Донецк, Бурятия)..."
               autoFocus
               className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-line-2 text-sm text-ink outline-none focus:border-brand"
             />
@@ -924,7 +897,7 @@ export const Navbar: React.FC<{
                     : 'hover:bg-surface text-ink'
                 }`}
               >
-                <span>🌍 Все регионы России</span>
+                <span>Все регионы России</span>
                 <span className="font-mono text-[11px] opacity-80">Все часовые пояса</span>
               </button>
 
@@ -932,7 +905,7 @@ export const Navbar: React.FC<{
                 const active = selectedRegion.toLowerCase() === reg.value.toLowerCase();
                 return (
                   <button
-                    key={reg.value}
+                    key={`${reg.value}-${reg.label}`}
                     type="button"
                     onClick={() => {
                       setSelectedGlobalRegion(reg.value);
@@ -944,7 +917,18 @@ export const Navbar: React.FC<{
                         : 'hover:bg-surface text-ink'
                     }`}
                   >
-                    <span className="font-semibold text-left truncate">{reg.label}</span>
+                    <div className="text-left min-w-0">
+                      <div className="font-semibold truncate">{reg.label}</div>
+                      {reg.regionName && reg.regionName !== reg.label && (
+                        <div
+                          className={`text-[10px] truncate ${
+                            active ? 'text-white/80' : 'text-muted'
+                          }`}
+                        >
+                          {reg.regionName}
+                        </div>
+                      )}
+                    </div>
                     <span
                       className={`font-mono text-[11px] px-2 py-0.5 rounded-md shrink-0 ${
                         active ? 'bg-white/20 text-white' : 'bg-surface text-muted'
@@ -955,6 +939,23 @@ export const Navbar: React.FC<{
                   </button>
                 );
               })}
+
+              {cityQuery.trim().length >= 2 &&
+                !filteredRegions.some(
+                  (r) => r.value.toLowerCase() === cityQuery.trim().toLowerCase()
+                ) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedGlobalRegion(cityQuery.trim());
+                      setCityModalOpen(false);
+                    }}
+                    className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-brand-tint/60 hover:bg-brand-tint text-brand-ink transition-colors cursor-pointer"
+                  >
+                    <span>Искать в населённом пункте «{cityQuery.trim()}»</span>
+                    <span className="font-mono text-[10px]">Выбрать →</span>
+                  </button>
+                )}
             </div>
           </div>
         </div>
@@ -965,56 +966,74 @@ export const Navbar: React.FC<{
 
 export const MobileTabBar: React.FC = () => {
   const { user } = useAuth();
-  const { isMapActive, isCatalogActive, isPartnersActive, isClubsActive } = useNavActiveState();
+  const {
+    isMapActive,
+    isCatalogActive,
+    isCommunitiesActive,
+    isOrganizationsActive,
+    isMyActive,
+  } = useNavActiveState();
 
   return (
     <nav
       aria-label="Мобильное меню"
-      className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur-md border-t border-line-2 px-2 py-1.5 flex items-center justify-around"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-card/95 backdrop-blur-md border-t border-line-2 px-1.5 py-1.5 flex items-center justify-around"
     >
       <Link
         to="/?view=map"
-        className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[10px] font-semibold ${
+        className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-[10px] font-semibold ${
           isMapActive ? 'text-brand font-bold' : 'text-muted'
         }`}
       >
         <MapIcon className="w-4 h-4" />
-        <span>Карта 2ГИС</span>
+        <span>Карта</span>
       </Link>
       <Link
         to="/events?view=list"
-        className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[10px] font-semibold ${
+        className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-[10px] font-semibold ${
           isCatalogActive ? 'text-brand font-bold' : 'text-muted'
         }`}
       >
         <List className="w-4 h-4" />
-        <span>Каталог</span>
+        <span>События</span>
       </Link>
       <Link
         to={user ? '/events/new' : '/login'}
-        className="flex flex-col items-center justify-center w-10 h-10 rounded-xl bg-brand text-white shadow-sm"
+        className="flex flex-col items-center justify-center w-10 h-10 rounded-xl bg-brand text-white shadow-sm shrink-0"
         aria-label="Создать сбор"
       >
         <Plus className="w-5 h-5" />
       </Link>
       <Link
-        to="/partners"
-        className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[10px] font-semibold ${
-          isPartnersActive ? 'text-brand font-bold' : 'text-muted'
+        to="/communities"
+        className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-[10px] font-semibold ${
+          isCommunitiesActive ? 'text-brand font-bold' : 'text-muted'
         }`}
       >
-        <Users className="w-4 h-4" />
-        <span>Напарники</span>
+        <Compass className="w-4 h-4" />
+        <span>Сообщества</span>
       </Link>
-      <Link
-        to="/organizations"
-        className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl text-[10px] font-semibold ${
-          isClubsActive ? 'text-brand font-bold' : 'text-muted'
-        }`}
-      >
-        <Building2 className="w-4 h-4" />
-        <span>Организации</span>
-      </Link>
+      {user ? (
+        <Link
+          to="/my"
+          className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-[10px] font-semibold ${
+            isMyActive ? 'text-brand font-bold' : 'text-muted'
+          }`}
+        >
+          <CalendarCheck className="w-4 h-4" />
+          <span>Записи</span>
+        </Link>
+      ) : (
+        <Link
+          to="/organizations"
+          className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-[10px] font-semibold ${
+            isOrganizationsActive ? 'text-brand font-bold' : 'text-muted'
+          }`}
+        >
+          <Building2 className="w-4 h-4" />
+          <span>Организации</span>
+        </Link>
+      )}
     </nav>
   );
 };

@@ -62,13 +62,18 @@ public class OrganizationService {
 
     @Transactional
     public Organization createInitialOrganization(User owner, RegisterOrganizationRequest req) {
+        String orgName = req.organizationName().trim();
+        OrganizationType actualType = (req.orgType() == null || req.orgType() == OrganizationType.COMMUNITY)
+                ? OrganizationType.SPORTS_CLUB
+                : req.orgType();
+
         Organization org = new Organization();
         org.setOwner(owner);
-        org.setName(req.organizationName().trim());
-        org.setOrgType(req.orgType());
+        org.setName(orgName);
+        org.setOrgType(actualType);
         org.setCity(req.city().trim());
         org.setDescription(req.description().trim());
-        org.setRepresentativeName(req.representativeName().trim());
+        org.setRepresentativeName(orgName);
         org.setModerationContact(req.moderationContact().trim());
         org.setPublicContacts(req.publicContacts());
         org.setWebsiteUrl(req.websiteUrl());
@@ -99,10 +104,17 @@ public class OrganizationService {
         User owner = userRepository.findById(viewer.id())
                 .orElseThrow(() -> ApiException.unauthorized("Пользователь не найден"));
 
+        boolean isOrganizationAccount = organizationRepository.findByOwnerIdOrderByCreatedAtDesc(owner.getId())
+                .stream()
+                .anyMatch(existing -> existing.getOrgType() != OrganizationType.COMMUNITY);
+        if (isOrganizationAccount) {
+            throw ApiException.forbidden("Аккаунт спортивной организации не может создавать пользовательские сообщества. Создавать сообщества могут только обычные участники.");
+        }
+
         Organization org = new Organization();
         org.setOwner(owner);
         org.setName(req.name().trim());
-        org.setOrgType(req.orgType() != null ? req.orgType() : OrganizationType.COMMUNITY);
+        org.setOrgType(OrganizationType.COMMUNITY);
         org.setCity(req.city().trim());
         org.setDescription(req.description().trim());
         org.setRepresentativeName(owner.getDisplayName());
@@ -134,14 +146,26 @@ public class OrganizationService {
                 .orElseThrow(() -> ApiException.unauthorized("Пользователь не найден"));
 
         if (!canManageOrganization(org, currentUserId) && actor.getGlobalRole() != ru.sportplatform.domain.enums.Enums.GlobalRole.ADMIN) {
-            throw ApiException.forbidden("Только создатель или администратор сообщества может редактировать данные");
+            throw ApiException.forbidden("Только создатель или администратор может редактировать данные");
         }
 
-        org.setName(req.name().trim());
-        org.setOrgType(req.orgType());
+        String updatedName = req.name().trim();
+        org.setName(updatedName);
+        if (org.getOrgType() == OrganizationType.COMMUNITY) {
+            org.setOrgType(OrganizationType.COMMUNITY);
+        } else if (req.orgType() != null && req.orgType() != OrganizationType.COMMUNITY) {
+            org.setOrgType(req.orgType());
+        }
         org.setCity(req.city().trim());
         org.setDescription(req.description().trim());
-        org.setRepresentativeName(req.representativeName().trim());
+        String repName = (org.getOrgType() == OrganizationType.COMMUNITY && req.representativeName() != null && !req.representativeName().isBlank())
+                ? req.representativeName().trim()
+                : updatedName;
+        org.setRepresentativeName(repName);
+        if (org.getOrgType() != OrganizationType.COMMUNITY && org.getOwner().getId().equals(actor.getId())) {
+            actor.setDisplayName(updatedName);
+            userRepository.save(actor);
+        }
         org.setModerationContact(req.moderationContact().trim());
         org.setPublicContacts(req.publicContacts());
         org.setWebsiteUrl(req.websiteUrl());

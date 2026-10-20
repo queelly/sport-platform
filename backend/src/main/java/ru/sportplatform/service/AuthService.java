@@ -72,13 +72,15 @@ public class AuthService {
             throw ApiException.conflict("Учётная запись с таким email уже существует. Войдите в аккаунт или используйте другой email.");
         }
 
+        String orgName = req.organizationName().trim();
         User owner = new User();
         owner.setEmail(normalizedEmail);
-        owner.setDisplayName(req.representativeName().trim());
+        owner.setDisplayName(orgName);
         owner.setPasswordHash(passwordEncoder.encode(req.password()));
         owner.setGlobalRole(GlobalRole.USER);
         owner.setCity(req.city().trim());
-        owner.setBio("Представитель спортивной организации «" + req.organizationName().trim() + "»");
+        owner.setBio("Официальный аккаунт спортивной организации «" + orgName + "»");
+        owner.setShowInPartnerSearch(false);
         owner.setTermsAccepted(req.termsAccepted());
         owner = userRepository.save(owner);
 

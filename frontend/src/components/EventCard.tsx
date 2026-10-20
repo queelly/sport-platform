@@ -140,15 +140,10 @@ export const EventCard: React.FC<EventCardProps> = ({
         {/* Top-left Pill (Online or Entry Mode) */}
         <span className="absolute top-3.5 left-3.5 bg-brand text-white font-bold text-xs px-3 py-1 rounded-full shadow-sm select-none">
           {isOnline
-            ? '🌐 Онлайн'
+            ? 'Онлайн'
             : event.joinMode === 'OPEN'
             ? 'Свободная запись'
             : 'По заявке'}
-        </span>
-
-        {/* Top-right Pill (Sport Name) */}
-        <span className="absolute top-3.5 right-3.5 bg-card/95 text-ink font-bold text-xs px-3 py-1 rounded-full shadow-sm select-none">
-          {getSportEmoji(event.sport.name)} {event.sport.name}
         </span>
 
         {/* Bottom-left badges (Recurring only, no categories) */}
@@ -203,7 +198,7 @@ export const EventCard: React.FC<EventCardProps> = ({
                 {event.locationAddress}
               </span>
               <span className="text-[11px] text-muted leading-tight mt-0.5 truncate">
-                {isOnline ? 'Онлайн-подключение' : `${event.city} · Точка 2ГИС`}
+                {isOnline ? 'Онлайн-подключение' : event.city}
               </span>
             </div>
           </div>

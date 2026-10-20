@@ -219,7 +219,7 @@ export const CreateEventPage: React.FC = () => {
             Создать спортивный сбор
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Опубликуйте разовую или повторяющуюся встречу с точной привязкой к адресу и координатам 2ГИС
+            Опубликуйте разовую или повторяющуюся встречу с привязкой к точному адресу на карте
           </p>
         </div>
 
@@ -348,7 +348,6 @@ export const CreateEventPage: React.FC = () => {
             />
           </div>
 
-          {/* Привязка к реальному адресу и координатам на карте 2ГИС */}
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="inline-flex items-center gap-2 cursor-pointer">
@@ -396,7 +395,7 @@ export const CreateEventPage: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Реальный адрес площадки или выбор точки на карте 2ГИС *
+                    Адрес площадки или выбор точки на карте *
                   </label>
                   <MapAddressPicker
                     city={city}
@@ -1152,7 +1151,7 @@ export const EventDetailPage: React.FC = () => {
                   <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                   <div className="space-y-1.5">
                     <div className="font-bold text-slate-900">
-                      {isOnline ? 'Формат и платформа подключения' : 'Место проведения (2ГИС)'}
+                      {isOnline ? 'Формат и платформа подключения' : 'Место проведения'}
                     </div>
                     <div className="text-slate-700">
                       {isOnline
@@ -1172,7 +1171,7 @@ export const EventDetailPage: React.FC = () => {
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100/90 hover:bg-emerald-200 text-emerald-950 font-bold text-[11px] transition-colors"
                         >
                           <MapPin className="w-3 h-3 text-emerald-700" />
-                          <span>Открыть точку в 2ГИС</span>
+                          <span>Открыть на карте</span>
                           <ExternalLink className="w-2.5 h-2.5 opacity-60" />
                         </a>
                         <a

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  Archive,
   ArrowRight,
   BadgeCheck,
   Calendar,
@@ -21,7 +22,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Repeat,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -35,7 +35,7 @@ import {
   isOnlineEvent,
   OrganizationDto,
 } from '../types';
-import { EventCard, getSportCoverUrl, getSportEmoji } from '../components/EventCard';
+import { EventCard, getSportCoverUrl } from '../components/EventCard';
 import { getSelectedGlobalRegion } from '../components/Navbar';
 import {
   GeocodedPlace,
@@ -132,7 +132,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
   const [onlyAvailable, setOnlyAvailable] = useState<boolean>(false);
   const [datePreset, setDatePreset] = useState<'' | 'today' | 'tomorrow' | 'weekend' | string>('');
 
-  // Поиск реальных адресов 2ГИС прямо из поисковой строки
+  // Поиск реальных адресов прямо из поисковой строки
   const [addressSuggestions, setAddressSuggestions] = useState<GeocodedPlace[]>([]);
   const [showAddressDropdown, setShowAddressDropdown] = useState(false);
   const [searchedAddressPin, setSearchedAddressPin] = useState<GeocodedPlace | null>(null);
@@ -142,8 +142,9 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
   const [showFiltersModal, setShowFiltersModal] = useState(false);
   const [calendarMonthOffset, setCalendarMonthOffset] = useState(0);
 
-  // Состояния карты
+  // Состояния карты (на мобильных по умолчанию сразу открыта интерактивная карта, а список можно открыть кнопкой)
   const [listCollapsed, setListCollapsed] = useState(false);
+  const [mobileMapShowList, setMobileMapShowList] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<EventCardDto | null>(null);
   const [joiningEventId, setJoiningEventId] = useState<string | null>(null);
   const [joinFeedback, setJoinFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -171,7 +172,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
     return () => document.removeEventListener('mousedown', handleOutside);
   }, []);
 
-  // Подсказки реальных адресов 2ГИС при вводе в строку поиска
+  // Подсказки реальных адресов при вводе в строку поиска
   useEffect(() => {
     let cancelled = false;
     const q = urlQuery.trim();
@@ -225,6 +226,9 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
     const next = new URLSearchParams(searchParams);
     next.set('view', nextView);
     setSearchParams(next);
+    if (nextView === 'map') {
+      setMobileMapShowList(false);
+    }
   };
 
   const handleResetFilters = () => {
@@ -334,7 +338,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
     try {
       await apiFetch(`/api/v1/events/${ev.id}/join`, {
         method: 'POST',
-        body: JSON.stringify({ comment: 'Быстрая запись через карту 2ГИС' }),
+        body: JSON.stringify({ comment: 'Быстрая запись с карты' }),
       });
       setJoinFeedback({
         type: 'ok',
@@ -358,18 +362,18 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
     <div
       className={
         viewMode === 'map'
-          ? 'h-[calc(100dvh-56px)] flex flex-col bg-page overflow-hidden select-none'
-          : 'min-h-[calc(100dvh-56px)] flex flex-col bg-page'
+          ? 'h-[calc(100dvh-56px)] pb-14 lg:pb-0 flex flex-col bg-page overflow-hidden select-none'
+          : 'min-h-[calc(100dvh-56px)] pb-16 lg:pb-0 flex flex-col bg-page'
       }
     >
-      {/* ПАНЕЛЬ ПОИСКА ПО АДРЕСАМ 2ГИС И ФИЛЬТРОВ (БЕЗ OVERFLOW-X-AUTO, ЧТОБЫ ВСЕ МЕНЮ ОТКРЫВАЛИСЬ) */}
+      {/* ПАНЕЛЬ ПОИСКА ПО АДРЕСАМ И ФИЛЬТРОВ */}
       <div
         ref={filterBarRef}
-        className="px-4 lg:px-6 py-2.5 bg-card border-b border-line-2 flex flex-wrap items-center justify-between gap-2.5 shrink-0 relative z-40"
+        className="px-3 sm:px-4 lg:px-6 py-2.5 bg-card border-b border-line-2 flex flex-wrap items-center justify-between gap-2 shrink-0 relative z-40"
       >
-        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-          {/* 0. Поиск по мероприятиям и реальным адресам 2ГИС */}
-          <div className="relative min-w-[240px] sm:min-w-[320px] max-w-[440px] flex-1">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
+          {/* 0. Поиск по мероприятиям и реальным адресам */}
+          <div className="relative w-full sm:w-auto sm:min-w-[280px] max-w-[440px] flex-1">
             <div className="relative flex items-center">
               <Search className="w-4 h-4 text-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
@@ -384,7 +388,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                   setSearchParams(next, { replace: true });
                   setShowAddressDropdown(true);
                 }}
-                placeholder="Поиск по адресу 2ГИС, улице, спорткомплексу или спорту..."
+                placeholder="Поиск по улице, адресу, спорткомплексу или спорту..."
                 className="w-full h-9 pl-9 pr-9 rounded-xl bg-surface/75 hover:bg-surface focus:bg-card border border-line-2 focus:border-brand text-[13px] font-medium text-ink placeholder:text-muted outline-none transition-colors"
               />
               <div className="absolute right-1 top-1/2 -translate-y-1/2">
@@ -399,11 +403,11 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
               </div>
             </div>
 
-            {/* Выпадающий список найденных реальных адресов 2ГИС */}
+            {/* Выпадающий список найденных реальных адресов */}
             {showAddressDropdown && addressSuggestions.length > 0 && (
               <div className="absolute left-0 right-0 top-full mt-1.5 bg-card rounded-2xl border border-line-2 shadow-2xl py-1.5 z-[220] anim-fade">
                 <div className="px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted flex items-center justify-between">
-                  <span>📍 Реальные адреса на карте 2ГИС</span>
+                  <span>Адреса и спортивные площадки</span>
                   <span>Показать точку</span>
                 </div>
                 {addressSuggestions.map((place, idx) => (
@@ -413,7 +417,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                     onClick={() => {
                       setSearchedAddressPin(place);
                       setShowAddressDropdown(false);
-                      // Очищаем строгий текстовый фильтр, если пользователь хочет просто посмотреть точку на карте и все события рядом
+                      setMobileMapShowList(false);
                       const streetPart = place.address.split(',')[0].trim();
                       const hasMatchingEvent = events.some((ev) =>
                         ev.locationAddress.toLowerCase().includes(streetPart.toLowerCase())
@@ -451,7 +455,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             <button
               type="button"
               onClick={() => setOpenDropdown((prev) => (prev === 'date' ? null : 'date'))}
-              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+              className={`h-9 px-3 rounded-xl text-xs sm:text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
                 datePreset || openDropdown === 'date'
                   ? 'bg-ink text-card font-semibold shadow-2xs'
                   : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
@@ -459,7 +463,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             >
               <Calendar className="w-3.5 h-3.5 text-brand shrink-0" />
               <span className="whitespace-nowrap">
-                Когда: <strong className="font-bold">{datePreset ? dateFilterLabel : 'Любое время'}</strong>
+                Когда: <strong className="font-bold">{datePreset ? dateFilterLabel : 'Все даты'}</strong>
               </span>
               <ChevronDown
                 className={`w-3.5 h-3.5 opacity-70 transition-transform ${
@@ -469,7 +473,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             </button>
 
             {openDropdown === 'date' && (
-              <div className="absolute left-0 top-full mt-2 w-[310px] bg-card rounded-2xl shadow-2xl border border-line-2 p-4 z-[220] anim-fade">
+              <div className="absolute left-0 top-full mt-2 w-[300px] sm:w-[310px] bg-card rounded-2xl shadow-2xl border border-line-2 p-4 z-[220] anim-fade">
                 <div className="grid grid-cols-2 gap-1.5 mb-3">
                   {[
                     { id: '', label: 'Любое время' },
@@ -550,12 +554,12 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             )}
           </div>
 
-          {/* 2. ВИД СПОРТА (Выпадающий список без категорий) */}
+          {/* 2. ВИД СПОРТА (Выпадающий список без значков) */}
           <div className="relative">
             <button
               type="button"
               onClick={() => setOpenDropdown((prev) => (prev === 'sport' ? null : 'sport'))}
-              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+              className={`h-9 px-3 rounded-xl text-xs sm:text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
                 selectedSportId || openDropdown === 'sport'
                   ? 'bg-ink text-card font-semibold shadow-2xs'
                   : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
@@ -564,7 +568,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
               <span className="whitespace-nowrap">
                 Спорт:{' '}
                 <strong className="font-bold">
-                  {selectedSportObj ? `${getSportEmoji(selectedSportObj.name)} ${selectedSportObj.name}` : 'Все виды'}
+                  {selectedSportObj ? selectedSportObj.name : 'Все виды'}
                 </strong>
               </span>
               <ChevronDown
@@ -603,10 +607,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                         active ? 'bg-brand-tint text-brand-ink font-bold' : 'text-ink hover:bg-surface'
                       }`}
                     >
-                      <span className="flex items-center gap-2">
-                        <span>{getSportEmoji(s.name)}</span>
-                        <span>{s.name}</span>
-                      </span>
+                      <span>{s.name}</span>
                       {active && <Check className="w-4 h-4 text-brand" />}
                     </button>
                   );
@@ -620,7 +621,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             <button
               type="button"
               onClick={() => setOpenDropdown((prev) => (prev === 'format' ? null : 'format'))}
-              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+              className={`h-9 px-3 rounded-xl text-xs sm:text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
                 formatFilter || openDropdown === 'format'
                   ? 'bg-ink text-card font-semibold shadow-2xs'
                   : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
@@ -628,9 +629,9 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             >
               <span className="whitespace-nowrap">
                 {formatFilter === 'ONLINE'
-                  ? '🌐 Онлайн'
+                  ? 'Онлайн'
                   : formatFilter === 'OFFLINE'
-                  ? '📍 На площадке'
+                  ? 'На площадке'
                   : 'Формат: Все'}
               </span>
               <ChevronDown
@@ -644,8 +645,8 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
               <div className="absolute left-0 top-full mt-2 w-60 bg-card rounded-2xl shadow-2xl border border-line-2 p-1.5 z-[220] anim-fade">
                 {[
                   { id: '', label: 'Любой формат' },
-                  { id: 'OFFLINE', label: '📍 На площадке (офлайн)' },
-                  { id: 'ONLINE', label: '🌐 Онлайн-трансляция' },
+                  { id: 'OFFLINE', label: 'На площадке (офлайн)' },
+                  { id: 'ONLINE', label: 'Онлайн-трансляция' },
                 ].map((opt) => (
                   <button
                     key={opt.id}
@@ -681,12 +682,32 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
           )}
         </div>
 
-        {/* Расширенные фильтры */}
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Расширенные фильтры + Мобильный переключатель Карта/Список */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {viewMode === 'map' && (
+            <button
+              type="button"
+              onClick={() => setMobileMapShowList((v) => !v)}
+              className="lg:hidden h-9 px-3 rounded-xl bg-brand text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            >
+              {mobileMapShowList ? (
+                <>
+                  <MapIcon className="w-3.5 h-3.5" />
+                  <span>На карту</span>
+                </>
+              ) : (
+                <>
+                  <List className="w-3.5 h-3.5" />
+                  <span>Список ({displayedEvents.length})</span>
+                </>
+              )}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setShowFiltersModal(true)}
-            className={`h-9 px-3.5 rounded-xl text-[13px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`h-9 px-3 rounded-xl text-xs sm:text-[13px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
               joinMode || skillLevel || onlyAvailable || recurringFilter
                 ? 'bg-ink text-card'
                 : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
@@ -701,13 +722,15 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
         </div>
       </div>
 
-      {/* ОСНОВНОЙ КОНТЕНТ: КАРТА 2ГИС ИЛИ КАТАЛОГ ВСТРЕЧ */}
+      {/* ОСНОВНОЙ КОНТЕНТ: ИНТЕРАКТИВНАЯ КАРТА ИЛИ КАТАЛОГ ВСТРЕЧ */}
       {viewMode === 'map' ? (
         <div className="relative flex-1 min-h-0 flex overflow-hidden">
-          {/* ЛЕВАЯ КОЛОНКА СПИСКА СОБЫТИЙ РЯДОМ */}
+          {/* ЛЕВАЯ КОЛОНКА СПИСКА СОБЫТИЙ РЯДОМ (на мобильных открывается по кнопке «Список», чтобы карта была видна сразу) */}
           <div
             className={`${
-              listCollapsed ? 'hidden' : 'flex'
+              mobileMapShowList ? 'flex' : 'hidden'
+            } ${
+              listCollapsed ? 'lg:hidden' : 'lg:flex'
             } w-full lg:w-[410px] shrink-0 bg-card border-r border-line-2 flex-col h-full z-20`}
           >
             <div className="px-4 py-3 border-b border-line-2 flex items-center justify-between shrink-0">
@@ -728,11 +751,19 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
+                  onClick={() => setMobileMapShowList(false)}
+                  className="lg:hidden h-8 px-2.5 rounded-lg bg-brand text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <MapIcon className="w-3.5 h-3.5" />
+                  <span>Показать карту</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setViewMode('list')}
                   className="h-8 px-2.5 rounded-lg bg-surface hover:bg-surface-2 text-ink text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <List className="w-3.5 h-3.5" />
-                  <span>Каталог</span>
+                  <span>Сетка</span>
                 </button>
                 <button
                   type="button"
@@ -749,10 +780,10 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
               <div className="px-4 py-2.5 bg-brand-tint/60 border-b border-brand/20 flex items-center justify-between gap-2 text-xs">
                 <div className="min-w-0">
                   <div className="font-bold text-brand-ink truncate">
-                    📍 {searchedAddressPin.address}
+                    {searchedAddressPin.address}
                   </div>
                   <div className="font-mono text-[10px] text-muted">
-                    Координаты 2ГИС: {searchedAddressPin.lat.toFixed(4)}, {searchedAddressPin.lng.toFixed(4)}
+                    Координаты: {searchedAddressPin.lat.toFixed(4)}, {searchedAddressPin.lng.toFixed(4)}
                   </div>
                 </div>
                 <button
@@ -782,7 +813,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                     Событий по фильтрам не найдено
                   </div>
                   <p className="text-xs text-muted leading-relaxed">
-                    Попробуйте сбросить фильтры, выбрать другой город или создайте собственную тренировку с привязкой к точке 2ГИС.
+                    Попробуйте сбросить фильтры, выбрать другой город или создайте собственную тренировку.
                   </p>
                   <div className="pt-1 flex flex-wrap justify-center gap-2">
                     <button
@@ -822,6 +853,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                       onClick={() => {
                         setSelectedEvent(ev);
                         setJoinFeedback(null);
+                        setMobileMapShowList(false);
                       }}
                       className={`px-4 py-3.5 cursor-pointer transition-colors ${
                         isSelected ? 'bg-brand-tint/70' : 'hover:bg-surface/70'
@@ -843,7 +875,6 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                             <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted">
-                              <span>{getSportEmoji(ev.sport.name)}</span>
                               <span>{ev.sport.name}</span>
                             </span>
                             <span className="ml-auto text-[11px] font-bold px-2 py-0.5 rounded-md bg-brand-tint text-brand-ink">
@@ -898,24 +929,39 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             </div>
           </div>
 
-          {/* ПРАВАЯ ИНТЕРАКТИВНАЯ КАРТА 2ГИС */}
-          <div className="relative flex-1 h-full bg-surface overflow-hidden">
+          {/* ПРАВАЯ ИНТЕРАКТИВНАЯ КАРТА */}
+          <div
+            className={`${
+              mobileMapShowList ? 'hidden lg:block' : 'block'
+            } relative flex-1 h-full bg-surface overflow-hidden`}
+          >
             {listCollapsed && (
               <button
                 type="button"
                 onClick={() => setListCollapsed(false)}
-                className="absolute top-4 left-4 z-[500] h-10 px-3.5 rounded-xl bg-card text-ink font-semibold text-xs shadow-lg border border-line flex items-center gap-2 hover:bg-surface transition-colors cursor-pointer"
+                className="hidden lg:flex absolute top-4 left-4 z-[500] h-10 px-3.5 rounded-xl bg-card text-ink font-semibold text-xs shadow-lg border border-line items-center gap-2 hover:bg-surface transition-colors cursor-pointer"
               >
                 <PanelLeftOpen className="w-4 h-4 text-brand" />
                 <span>Показать список ({displayedEvents.length})</span>
               </button>
             )}
 
+            {/* На мобильных плавающая кнопка быстрого открытия списка встреч поверх карты */}
+            <button
+              type="button"
+              onClick={() => setMobileMapShowList(true)}
+              className="lg:hidden absolute top-3 left-3 z-[450] h-10 px-3.5 rounded-xl bg-card/95 backdrop-blur-md text-ink font-bold text-xs shadow-lg border border-line-2 flex items-center gap-2 cursor-pointer"
+            >
+              <List className="w-4 h-4 text-brand" />
+              <span>Список рядом ({displayedEvents.length})</span>
+            </button>
+
             <SportikusLeafletMap
               events={mapEvents}
               selectedCity={city}
               selectedEvent={selectedEvent}
               searchedAddressPin={searchedAddressPin}
+              mobileMapVisible={!mobileMapShowList}
               onSelectEvent={(ev) => {
                 setSelectedEvent(ev);
                 setJoinFeedback(null);
@@ -948,10 +994,6 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
 
                     <div className="absolute bottom-4 left-5 right-5">
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <span className="px-2.5 py-1 rounded-lg bg-white/20 backdrop-blur-md text-white text-xs font-semibold flex items-center gap-1.5">
-                          <span>{getSportEmoji(selectedEvent.sport.name)}</span>
-                          <span>{selectedEvent.sport.name}</span>
-                        </span>
                         <span className="px-2.5 py-1 rounded-lg bg-brand text-white text-xs font-bold">
                           {selectedEvent.joinMode === 'OPEN' ? 'Открытая запись' : 'По заявке'}
                         </span>
@@ -985,7 +1027,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                             {formatDateTime(selectedEvent.startsAt)}
                           </div>
                           <div className="text-xs text-muted">
-                            Часовой пояс: {getRegionInfo(selectedEvent.city)?.tzLabel || 'МСК (UTC+3)'}
+                            {selectedEvent.sport.name} · Часовой пояс: {getRegionInfo(selectedEvent.city)?.tzLabel || 'МСК (UTC+3)'}
                           </div>
                         </div>
                       </div>
@@ -997,7 +1039,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-bold text-ink">
                             {isOnlineEvent(selectedEvent.city, selectedEvent.locationAddress)
-                              ? '🌐 Онлайн-мероприятие'
+                              ? 'Онлайн-мероприятие'
                               : selectedEvent.city}
                           </div>
                           <div className="text-xs text-muted break-words">
@@ -1014,7 +1056,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                                 className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-ink hover:underline"
                               >
                                 <MapPin className="w-3 h-3" />
-                                <span>Открыть в 2ГИС</span>
+                                <span>Построить маршрут</span>
                                 <ExternalLink className="w-2.5 h-2.5" />
                               </a>
                               <a
@@ -1026,7 +1068,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                                 className="inline-flex items-center gap-1 text-[11px] font-bold text-muted hover:text-ink hover:underline"
                               >
                                 <Navigation className="w-3 h-3" />
-                                <span>Яндекс Карты</span>
+                                <span>Навигатор</span>
                                 <ExternalLink className="w-2.5 h-2.5" />
                               </a>
                             </div>
@@ -1063,7 +1105,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                           Уровень: {SKILL_LABELS[selectedEvent.skillLevel] || selectedEvent.skillLevel}
                         </span>
                         <span>
-                          {selectedEvent.recurringOccurrence ? '🔄 Повторяющаяся встреча' : 'Разовая встреча'}
+                          {selectedEvent.recurringOccurrence ? 'Повторяющаяся встреча' : 'Разовая встреча'}
                         </span>
                       </div>
                     </div>
@@ -1085,7 +1127,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                             </div>
                             <div className="text-xs text-muted">
                               {selectedEvent.organizationId
-                                ? 'Спортивная организация / сообщество'
+                                ? 'Организация / сообщество'
                                 : 'Организатор встречи'}
                             </div>
                           </div>
@@ -1095,7 +1137,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                             to={`/organizations/${selectedEvent.organizationId}`}
                             className="text-xs font-bold text-brand-ink hover:underline shrink-0"
                           >
-                            Организация →
+                            Перейти →
                           </Link>
                         )}
                       </div>
@@ -1128,7 +1170,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
           </div>
         </div>
       ) : (
-        /* КАТАЛОГ ВСТРЕЧ (ЕДИНАЯ СЕТКА БЕЗ КАТЕГОРИЙ СПОРТА) */
+        /* КАТАЛОГ ВСТРЕЧ */
         <div className="flex-1 flex flex-col justify-between">
           <div className="max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1137,7 +1179,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                   {city ? `Каталог встреч — ${city}` : 'Каталог спортивных встреч'}
                 </h1>
                 <p className="text-xs sm:text-sm text-muted mt-0.5">
-                  Найдено {displayedEvents.length} мероприятий с привязкой к точкам 2ГИС
+                  Найдено мероприятий: {displayedEvents.length}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1147,7 +1189,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                   className="h-10 px-4 rounded-xl bg-card hover:bg-surface border border-line-2 text-ink text-xs font-bold inline-flex items-center gap-2 transition-colors cursor-pointer shadow-2xs"
                 >
                   <MapIcon className="w-4 h-4 text-brand" />
-                  <span>Открыть на карте 2ГИС</span>
+                  <span>Открыть на карте</span>
                 </button>
                 <Link
                   to={user ? '/events/new' : '/login'}
@@ -1222,7 +1264,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
           <footer className="mt-12 border-t border-line bg-card py-5 px-4 sm:px-6 lg:px-8">
             <div className="max-w-[1400px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted">
               <div>
-                <span className="font-bold text-ink">Точка Сбора</span> — спортивные сборы на карте 2ГИС, организации и напарники
+                <span className="font-bold text-ink">Точка Сбора</span> — спортивные сборы, сообщества, организации и напарники
               </div>
               <div className="flex flex-wrap items-center justify-center gap-4">
                 <Link to="/terms" className="hover:text-ink font-medium">
@@ -1383,7 +1425,8 @@ const SportikusLeafletMap: React.FC<{
   selectedEvent: EventCardDto | null;
   searchedAddressPin: GeocodedPlace | null;
   onSelectEvent: (ev: EventCardDto) => void;
-}> = ({ events, selectedCity, selectedEvent, searchedAddressPin, onSelectEvent }) => {
+  mobileMapVisible?: boolean;
+}> = ({ events, selectedCity, selectedEvent, searchedAddressPin, onSelectEvent, mobileMapVisible }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersLayerRef = useRef<any>(null);
@@ -1437,6 +1480,14 @@ const SportikusLeafletMap: React.FC<{
   }, []);
 
   useEffect(() => {
+    if (mapInstanceRef.current) {
+      setTimeout(() => {
+        mapInstanceRef.current?.invalidateSize();
+      }, 80);
+    }
+  }, [mobileMapVisible]);
+
+  useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
     const zoom = searchedAddressPin ? 15 : selectedEvent ? 14 : 12;
@@ -1453,7 +1504,6 @@ const SportikusLeafletMap: React.FC<{
 
     layer.clearLayers();
 
-    // Если пользователь выбрал конкретный адрес в поиске 2ГИС — ставим указатель-капельку на точные координаты
     if (searchedAddressPin) {
       const addrIcon = L.divIcon({
         className: 'custom-2gis-address-pin',
@@ -1554,7 +1604,7 @@ const SportikusLeafletMap: React.FC<{
           className="px-3 py-1.5 rounded-xl bg-card/95 backdrop-blur-xs border border-line-2 shadow-md text-xs font-bold text-ink hover:border-brand flex items-center gap-1.5 transition-colors"
         >
           <span className="w-2 h-2 rounded-full bg-brand" />
-          <span>Карта 2ГИС</span>
+          <span>Открыть на карте</span>
           <ExternalLink className="w-3 h-3 text-muted" />
         </a>
       </div>
@@ -1609,17 +1659,17 @@ export const RecommendedPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 bg-card p-1 rounded-2xl border border-line-2">
+        <div className="flex items-center gap-1.5 bg-card p-1 rounded-2xl border border-line-2 overflow-x-auto no-scrollbar max-w-full">
           {[
             { id: 'events', label: 'Подборка событий' },
             { id: 'partners', label: 'Напарники и друзья' },
-            { id: 'clubs', label: `Организации (${organizations.length})` },
+            { id: 'clubs', label: `Сообщества и организации (${organizations.length})` },
           ].map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setSection(tab.id as 'events' | 'partners' | 'clubs')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 section === tab.id
                   ? 'bg-ink text-card shadow-xs'
                   : 'text-muted hover:text-ink'
@@ -1642,7 +1692,7 @@ export const RecommendedPage: React.FC = () => {
                     key={s.sportId}
                     className="px-3 py-1 rounded-full bg-brand-tint text-brand-ink text-xs font-bold"
                   >
-                    {getSportEmoji(s.sportName)} {s.sportName}
+                    {s.sportName}
                   </span>
                 ))}
               </div>
@@ -1689,15 +1739,24 @@ export const RecommendedPage: React.FC = () => {
 
       {section === 'clubs' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold text-ink">Проверенные организации и открытые сообщества</h2>
-            <Link
-              to="/organizations"
-              className="text-xs font-bold text-brand-ink hover:underline inline-flex items-center gap-1"
-            >
-              <span>Открыть каталог организаций</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+            <div className="flex items-center gap-4">
+              <Link
+                to="/communities"
+                className="text-xs font-bold text-brand-ink hover:underline inline-flex items-center gap-1"
+              >
+                <span>Каталог сообществ</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+              <Link
+                to="/organizations"
+                className="text-xs font-bold text-brand-ink hover:underline inline-flex items-center gap-1"
+              >
+                <span>Каталог организаций</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {organizations.map((org) => (
@@ -1711,7 +1770,7 @@ export const RecommendedPage: React.FC = () => {
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-brand-tint text-brand-ink text-[11px] font-bold">
                       <BadgeCheck className="w-3.5 h-3.5" />
                       <span>
-                        {org.orgType === 'COMMUNITY' ? 'Открытое комьюнити' : 'Официальная организация'}
+                        {org.orgType === 'COMMUNITY' ? 'Открытое сообщество' : 'Официальная организация'}
                       </span>
                     </span>
                     <span className="text-xs font-semibold text-muted">{org.city}</span>
@@ -1741,7 +1800,12 @@ export const MyEventsPage: React.FC = () => {
   const [participating, setParticipating] = useState<EventCardDto[]>([]);
   const [organizing, setOrganizing] = useState<EventCardDto[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'participating' | 'organizing' | 'recurring'>('participating');
+  const [tab, setTab] = useState<'participating' | 'archive' | 'organizing' | 'recurring' | 'calendar'>('participating');
+
+  const today = useMemo(() => new Date(), []);
+  const [calYear, setCalYear] = useState(() => today.getFullYear());
+  const [calMonth, setCalMonth] = useState(() => today.getMonth());
+  const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -1759,15 +1823,181 @@ export const MyEventsPage: React.FC = () => {
       .finally(() => setLoading(false));
   }, [user]);
 
+  const nowMs = Date.now();
+
+  const isPastOrCompleted = (ev: EventCardDto) => {
+    const startMs = new Date(ev.startsAt).getTime();
+    return ev.status === 'COMPLETED' || (!Number.isNaN(startMs) && startMs < nowMs);
+  };
+
+  // Предстоящие записи пользователя
+  const upcomingParticipating = useMemo(
+    () =>
+      participating
+        .filter((ev) => !isPastOrCompleted(ev))
+        .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
+    [participating, nowMs]
+  );
+
+  // Архив прошедших записей и организованных встреч
+  const archivedEvents = useMemo(() => {
+    const combined = [...participating, ...organizing];
+    const seen = new Set<string>();
+    return combined
+      .filter((ev) => {
+        if (!isPastOrCompleted(ev) || seen.has(ev.id)) return false;
+        seen.add(ev.id);
+        return true;
+      })
+      .sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime());
+  }, [participating, organizing, nowMs]);
+
+  // Все события пользователя для интерактивного календаря
+  const allMyEvents = useMemo(() => {
+    const combined = [...participating, ...organizing];
+    const seen = new Set<string>();
+    return combined
+      .filter((ev) => {
+        if (seen.has(ev.id)) return false;
+        seen.add(ev.id);
+        return true;
+      })
+      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+  }, [participating, organizing]);
+
+  const recurring = useMemo(() => {
+    return allMyEvents.filter((ev) => ev.recurringOccurrence);
+  }, [allMyEvents]);
+
+  const toDayKey = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const eventsByDayKey = useMemo(() => {
+    const map = new Map<string, EventCardDto[]>();
+    allMyEvents.forEach((ev) => {
+      const dt = new Date(ev.startsAt);
+      if (Number.isNaN(dt.getTime())) return;
+      const key = toDayKey(dt);
+      const list = map.get(key) || [];
+      list.push(ev);
+      map.set(key, list);
+    });
+    return map;
+  }, [allMyEvents]);
+
+  const calendarCells = useMemo(() => {
+    const firstDayOfMonth = new Date(calYear, calMonth, 1);
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    // Понедельник = 0 ... Воскресенье = 6
+    const startWeekday = (firstDayOfMonth.getDay() + 6) % 7;
+    const prevMonthDays = new Date(calYear, calMonth, 0).getDate();
+
+    const cells: Array<{
+      date: Date;
+      dayNum: number;
+      key: string;
+      inCurrentMonth: boolean;
+      isToday: boolean;
+      events: EventCardDto[];
+    }> = [];
+
+    const todayKey = toDayKey(new Date());
+
+    for (let i = startWeekday - 1; i >= 0; i--) {
+      const d = new Date(calYear, calMonth - 1, prevMonthDays - i);
+      const key = toDayKey(d);
+      cells.push({
+        date: d,
+        dayNum: d.getDate(),
+        key,
+        inCurrentMonth: false,
+        isToday: key === todayKey,
+        events: eventsByDayKey.get(key) || [],
+      });
+    }
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(calYear, calMonth, day);
+      const key = toDayKey(d);
+      cells.push({
+        date: d,
+        dayNum: day,
+        key,
+        inCurrentMonth: true,
+        isToday: key === todayKey,
+        events: eventsByDayKey.get(key) || [],
+      });
+    }
+
+    const remaining = (7 - (cells.length % 7)) % 7;
+    for (let day = 1; day <= remaining; day++) {
+      const d = new Date(calYear, calMonth + 1, day);
+      const key = toDayKey(d);
+      cells.push({
+        date: d,
+        dayNum: day,
+        key,
+        inCurrentMonth: false,
+        isToday: key === todayKey,
+        events: eventsByDayKey.get(key) || [],
+      });
+    }
+
+    return cells;
+  }, [calYear, calMonth, eventsByDayKey]);
+
+  const monthEvents = useMemo(() => {
+    return allMyEvents.filter((ev) => {
+      const d = new Date(ev.startsAt);
+      return d.getFullYear() === calYear && d.getMonth() === calMonth;
+    });
+  }, [allMyEvents, calYear, calMonth]);
+
+  const selectedDayEvents = useMemo(() => {
+    if (!selectedDayKey) return null;
+    return eventsByDayKey.get(selectedDayKey) || [];
+  }, [selectedDayKey, eventsByDayKey]);
+
+  const handlePrevMonth = () => {
+    setSelectedDayKey(null);
+    if (calMonth === 0) {
+      setCalMonth(11);
+      setCalYear((y) => y - 1);
+    } else {
+      setCalMonth((m) => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    setSelectedDayKey(null);
+    if (calMonth === 11) {
+      setCalMonth(0);
+      setCalYear((y) => y + 1);
+    } else {
+      setCalMonth((m) => m + 1);
+    }
+  };
+
+  const handleGoToday = () => {
+    const now = new Date();
+    setCalYear(now.getFullYear());
+    setCalMonth(now.getMonth());
+    setSelectedDayKey(toDayKey(now));
+  };
+
   if (!user) {
     return (
       <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
         <div className="w-14 h-14 rounded-2xl bg-card border border-line flex items-center justify-center mx-auto text-brand">
           <Calendar className="w-7 h-7" />
         </div>
-        <h1 className="font-display text-2xl font-extrabold text-ink">Мои сборы</h1>
+        <h1 className="font-display text-2xl font-extrabold text-ink">Мои записи и расписание</h1>
         <p className="text-sm text-muted">
-          Войдите в аккаунт, чтобы видеть свои предстоящие тренировки, заявки и созданные события.
+          Войдите в аккаунт, чтобы видеть свои предстоящие тренировки, архив прошедших встреч и интерактивный календарь.
         </p>
         <div className="flex justify-center gap-3 pt-2">
           <Link
@@ -1787,57 +2017,75 @@ export const MyEventsPage: React.FC = () => {
     );
   }
 
-  const recurring = useMemo(() => {
-    const combined = [...organizing, ...participating];
-    const seen = new Set<string>();
-    return combined.filter((ev) => {
-      if (!ev.recurringOccurrence || seen.has(ev.id)) return false;
-      seen.add(ev.id);
-      return true;
-    });
-  }, [organizing, participating]);
-
   const activeList =
     tab === 'participating'
-      ? participating
+      ? upcomingParticipating
+      : tab === 'archive'
+      ? archivedEvents
       : tab === 'organizing'
       ? organizing
       : recurring;
 
+  const monthTitle = new Date(calYear, calMonth, 1).toLocaleDateString('ru-RU', {
+    month: 'long',
+    year: 'numeric',
+  });
+
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-7 space-y-6">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-7 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl font-extrabold text-ink tracking-tight">Мои сборы и расписание</h1>
+          <h1 className="font-display text-2xl font-extrabold text-ink tracking-tight">
+            Мои записи и календарь
+          </h1>
           <p className="text-xs sm:text-sm text-muted mt-0.5">
-            Управляйте своими записями на тренировки и организованными встречами
+            Предстоящие тренировки, архив посещённых сборов и наглядный календарь расписания
           </p>
         </div>
-        <Link
-          to="/events/new"
-          className="h-10 px-4 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Создать сбор</span>
-        </Link>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setTab(tab === 'calendar' ? 'participating' : 'calendar')}
+            className={`h-10 px-4 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 border transition-colors cursor-pointer ${
+              tab === 'calendar'
+                ? 'bg-ink text-card border-ink'
+                : 'bg-card text-ink border-line-2 hover:bg-surface'
+            }`}
+          >
+            <Calendar className="w-4 h-4" />
+            <span>{tab === 'calendar' ? 'К списку карточек' : 'Открыть календарь'}</span>
+          </button>
+          <Link
+            to="/events/new"
+            className="h-10 px-4 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Создать сбор</span>
+          </Link>
+        </div>
       </div>
 
+      {/* Вкладки разделов */}
       <div className="flex border-b border-line overflow-x-auto no-scrollbar">
         {[
-          { id: 'participating', label: 'Я участвую', count: participating.length },
+          { id: 'participating', label: 'Предстоящие записи', count: upcomingParticipating.length },
+          { id: 'calendar', label: 'Календарь расписания', count: allMyEvents.length },
+          { id: 'archive', label: 'Архив прошедших', count: archivedEvents.length },
           { id: 'organizing', label: 'Я организую', count: organizing.length },
-          { id: 'recurring', label: 'Повторяющиеся встречи', count: recurring.length },
+          { id: 'recurring', label: 'Повторяющиеся', count: recurring.length },
         ].map((t) => (
           <button
             key={t.id}
             type="button"
-            onClick={() => setTab(t.id as 'participating' | 'organizing' | 'recurring')}
-            className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            onClick={() => setTab(t.id as typeof tab)}
+            className={`px-4 sm:px-5 py-3 text-xs sm:text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               tab === t.id
                 ? 'border-brand text-ink'
                 : 'border-transparent text-muted hover:text-ink'
             }`}
           >
+            {t.id === 'archive' && <Archive className="w-3.5 h-3.5" />}
+            {t.id === 'calendar' && <Calendar className="w-3.5 h-3.5" />}
             <span>{t.label}</span>
             <span
               className={`font-mono px-2 py-0.5 rounded-full text-xs ${
@@ -1850,7 +2098,234 @@ export const MyEventsPage: React.FC = () => {
         ))}
       </div>
 
-      {loading ? (
+      {/* Интерактивный визуальный календарь всех записей (предстоящих и архивных) */}
+      {tab === 'calendar' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <div className="lg:col-span-8 bg-card rounded-3xl border border-line-2 p-4 sm:p-6 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-lg sm:text-xl font-extrabold text-ink capitalize">
+                  {monthTitle}
+                </h2>
+                <p className="text-xs text-muted">
+                  Нажмите на любой день в календаре, чтобы посмотреть подробности ваших тренировок
+                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handlePrevMonth}
+                  aria-label="Предыдущий месяц"
+                  className="w-9 h-9 rounded-xl border border-line-2 bg-surface hover:bg-card flex items-center justify-center text-ink transition-colors cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGoToday}
+                  className="px-3 h-9 rounded-xl border border-line-2 bg-surface hover:bg-card text-xs font-bold text-ink transition-colors cursor-pointer"
+                >
+                  Сегодня
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextMonth}
+                  aria-label="Следующий месяц"
+                  className="w-9 h-9 rounded-xl border border-line-2 bg-surface hover:bg-card flex items-center justify-center text-ink transition-colors cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Легенда календаря */}
+            <div className="flex flex-wrap items-center gap-4 text-[11px] font-semibold text-muted pt-1">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-brand" />
+                <span>Предстоящая запись</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                <span>Я организатор</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+                <span>Прошедшее (в архиве)</span>
+              </span>
+            </div>
+
+            {/* Сетка дней недели */}
+            <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-bold text-muted uppercase tracking-wider pt-1">
+              {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
+                <div key={d} className="py-1">
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            {/* Ячейки месяца */}
+            <div className="grid grid-cols-7 gap-1.5">
+              {calendarCells.map((cell) => {
+                const isSelected = selectedDayKey === cell.key;
+                const hasEvents = cell.events.length > 0;
+                return (
+                  <button
+                    key={cell.key}
+                    type="button"
+                    onClick={() => setSelectedDayKey(isSelected ? null : cell.key)}
+                    className={`min-h-[74px] sm:min-h-[92px] p-1.5 sm:p-2 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                      isSelected
+                        ? 'border-brand ring-2 ring-brand/25 bg-brand-tint/25'
+                        : cell.isToday
+                        ? 'border-brand/60 bg-brand-tint/10'
+                        : cell.inCurrentMonth
+                        ? 'border-line bg-surface/50 hover:border-line-2 hover:bg-surface'
+                        : 'border-transparent bg-surface/20 opacity-45 hover:opacity-75'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span
+                        className={`w-6 h-6 rounded-lg text-xs font-bold inline-flex items-center justify-center ${
+                          cell.isToday
+                            ? 'bg-brand text-white'
+                            : cell.inCurrentMonth
+                            ? 'text-ink'
+                            : 'text-muted'
+                        }`}
+                      >
+                        {cell.dayNum}
+                      </span>
+                      {hasEvents && (
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-card border border-line text-ink">
+                          {cell.events.length}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="space-y-1 w-full mt-1 overflow-hidden">
+                      {cell.events.slice(0, 2).map((ev) => {
+                        const past = isPastOrCompleted(ev);
+                        const isOrg = organizing.some((o) => o.id === ev.id);
+                        const pillClass = past
+                          ? 'bg-slate-200/80 text-slate-700'
+                          : isOrg
+                          ? 'bg-amber-500/15 text-amber-800 border border-amber-500/30'
+                          : 'bg-brand text-white';
+                        const timeStr = new Date(ev.startsAt).toLocaleTimeString('ru-RU', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        });
+                        return (
+                          <div
+                            key={ev.id}
+                            className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold truncate ${pillClass}`}
+                            title={`${timeStr} · ${ev.title}`}
+                          >
+                            <span className="hidden sm:inline">{timeStr} </span>
+                            {ev.title}
+                          </div>
+                        );
+                      })}
+                      {cell.events.length > 2 && (
+                        <div className="text-[10px] font-bold text-muted pl-1">
+                          + ещё {cell.events.length - 2}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Правая колонка выбранного дня или событий за месяц */}
+          <div className="lg:col-span-4 bg-card rounded-3xl border border-line-2 p-5 shadow-xs space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-display font-bold text-base text-ink">
+                  {selectedDayKey
+                    ? `События ${new Date(selectedDayKey + 'T12:00:00').toLocaleDateString('ru-RU', {
+                        day: 'numeric',
+                        month: 'long',
+                      })}`
+                    : 'События в этом месяце'}
+                </h3>
+                <p className="text-xs text-muted">
+                  {selectedDayKey
+                    ? 'Записи на выбранную дату'
+                    : `Всего тренировок за месяц: ${monthEvents.length}`}
+                </p>
+              </div>
+              {selectedDayKey && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDayKey(null)}
+                  className="text-xs font-bold text-brand-ink hover:underline cursor-pointer"
+                >
+                  Весь месяц
+                </button>
+              )}
+            </div>
+
+            {(selectedDayEvents ?? monthEvents).length === 0 ? (
+              <div className="p-6 rounded-2xl bg-surface text-center space-y-2">
+                <Calendar className="w-7 h-7 text-muted mx-auto stroke-[1.75]" />
+                <div className="text-xs font-bold text-ink">
+                  {selectedDayKey ? 'В этот день записей нет' : 'В выбранном месяце нет записей'}
+                </div>
+                <p className="text-[11px] text-muted">
+                  Выберите другую дату в календаре или запишитесь на новую тренировку в каталоге.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[540px] overflow-y-auto pr-1">
+                {(selectedDayEvents ?? monthEvents).map((ev) => {
+                  const past = isPastOrCompleted(ev);
+                  const isOrg = organizing.some((o) => o.id === ev.id);
+                  return (
+                    <Link
+                      key={ev.id}
+                      to={`/events/${ev.id}`}
+                      className="block p-3.5 rounded-2xl border border-line-2 bg-surface/60 hover:bg-surface hover:border-brand transition-all space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            past
+                              ? 'bg-slate-200 text-slate-700'
+                              : isOrg
+                              ? 'bg-amber-500/15 text-amber-800'
+                              : 'bg-brand-tint text-brand-ink'
+                          }`}
+                        >
+                          {past ? 'В архиве (прошло)' : isOrg ? 'Вы организатор' : 'Записан'}
+                        </span>
+                        <span className="text-[11px] font-mono font-semibold text-muted">
+                          {ev.sport.name}
+                        </span>
+                      </div>
+                      <div className="font-bold text-sm text-ink leading-snug">{ev.title}</div>
+                      <div className="flex flex-col gap-1 text-xs text-muted">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-brand shrink-0" />
+                          <span>{formatDateTime(ev.startsAt)}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-brand shrink-0" />
+                          <span className="truncate">
+                            {ev.city}, {ev.locationAddress}
+                          </span>
+                        </span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {[1, 2, 3].map((n) => (
             <div key={n} className="h-[320px] rounded-[22px] bg-card border border-line animate-pulse" />
@@ -1860,32 +2335,66 @@ export const MyEventsPage: React.FC = () => {
         <div className="bg-card rounded-[22px] border border-line-2 p-10 text-center space-y-3">
           <div className="text-base font-bold text-ink">
             {tab === 'participating'
-              ? 'У вас пока нет активных записей на события'
+              ? 'У вас пока нет предстоящих записей на события'
+              : tab === 'archive'
+              ? 'Архив прошедших тренировок пока пуст'
               : tab === 'organizing'
               ? 'Вы пока не организовали ни одного события'
               : 'Нет повторяющихся встреч'}
           </div>
           <p className="text-xs text-muted max-w-md mx-auto">
             {tab === 'participating'
-              ? 'Откройте карту 2ГИС или каталог встреч, чтобы выбрать тренировку рядом с вами.'
-              : 'Создайте свою тренировку или спортивный сбор с привязкой к точке на карте 2ГИС.'}
+              ? 'Завершенные сборы автоматически переносятся во вкладку «Архив прошедших» и отображаются в календаре.'
+              : tab === 'archive'
+              ? 'Здесь сохраняются все тренировки и матчи, в которых вы принимали участие ранее.'
+              : 'Создайте свою тренировку или спортивный сбор с привязкой к точному адресу на карте.'}
           </p>
-          <div className="pt-2">
+          <div className="pt-2 flex flex-wrap justify-center gap-2.5">
+            {tab === 'participating' && archivedEvents.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setTab('archive')}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-surface border border-line-2 hover:bg-card text-ink text-xs font-bold cursor-pointer"
+              >
+                <Archive className="w-4 h-4 text-brand" />
+                <span>Открыть архив прошедших ({archivedEvents.length})</span>
+              </button>
+            )}
             <Link
-              to={tab === 'participating' ? '/events?view=list' : '/events/new'}
+              to={tab === 'participating' || tab === 'archive' ? '/events?view=list' : '/events/new'}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold"
             >
-              {tab === 'participating' ? 'Найти события' : '+ Создать сбор'}
+              {tab === 'participating' || tab === 'archive' ? 'Найти события' : '+ Создать сбор'}
             </Link>
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {activeList.map((ev, idx) => (
-            <EventCard key={ev.id} event={ev} index={idx} />
-          ))}
+        <div className="space-y-4">
+          {tab === 'archive' && (
+            <div className="p-4 rounded-2xl bg-surface border border-line-2 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <Archive className="w-4 h-4 text-brand shrink-0" />
+                <span className="text-xs font-semibold text-ink">
+                  В архиве хранится история всех посещённых и завершённых тренировок. Вы также можете просмотреть их по датам в календаре.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTab('calendar')}
+                className="text-xs font-bold text-brand-ink hover:underline cursor-pointer"
+              >
+                Показать на календаре →
+              </button>
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {activeList.map((ev, idx) => (
+              <EventCard key={ev.id} event={ev} index={idx} />
+            ))}
+          </div>
         </div>
       )}
     </div>
   );
 };
+

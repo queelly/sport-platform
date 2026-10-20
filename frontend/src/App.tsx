@@ -155,10 +155,18 @@ const AppShell: React.FC = () => {
             />
 
             <Route
+              path="/communities"
+              element={
+                <PageContainer>
+                  <OrganizationsListPage mode="COMMUNITIES" />
+                </PageContainer>
+              }
+            />
+            <Route
               path="/organizations"
               element={
                 <PageContainer>
-                  <OrganizationsListPage />
+                  <OrganizationsListPage mode="ORGANIZATIONS" />
                 </PageContainer>
               }
             />

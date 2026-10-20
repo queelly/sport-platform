@@ -246,7 +246,7 @@ export const RegisterPage: React.FC = () => {
         const auth = await apiFetch<AuthResponse>('/api/v1/auth/register/organization', {
           method: 'POST',
           body: JSON.stringify({
-            representativeName: displayName,
+            representativeName: organizationName,
             email,
             password,
             termsAccepted,
@@ -282,7 +282,7 @@ export const RegisterPage: React.FC = () => {
         </div>
         <h1 className="text-2xl font-extrabold text-ink tracking-tight">Создать аккаунт</h1>
         <p className="text-sm text-muted mt-1">
-          Выберите личный профиль участника или заявку спортивной организации
+          Выберите личный профиль участника или обезличенный аккаунт спортивной организации
         </p>
       </div>
 
@@ -324,7 +324,7 @@ export const RegisterPage: React.FC = () => {
             }`}
           >
             <Building2 className="w-4 h-4" />
-            <span>Организация</span>
+            <span>Аккаунт организации</span>
           </button>
         </div>
 
@@ -335,29 +335,38 @@ export const RegisterPage: React.FC = () => {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-1">
-                {mode === 'USER' ? 'Имя и фамилия *' : 'ФИО представителя *'}
-              </label>
-              <input
-                type="text"
-                required
-                minLength={2}
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Иван Петров"
-                className="w-full h-11 px-3.5 rounded-xl bg-surface border border-transparent focus:border-brand focus:bg-card text-sm text-ink outline-none"
-              />
-            </div>
+          {mode === 'USER' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-1">
+                  Имя и фамилия *
+                </label>
+                <input
+                  type="text"
+                  required
+                  minLength={2}
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Иван Петров"
+                  className="w-full h-11 px-3.5 rounded-xl bg-surface border border-transparent focus:border-brand focus:bg-card text-sm text-ink outline-none"
+                />
+              </div>
 
+              <div>
+                <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-1">
+                  Город / регион *
+                </label>
+                <RegionSelect value={city} onChange={setCity} />
+              </div>
+            </div>
+          ) : (
             <div>
               <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-1">
-                Город / регион *
+                Город / регион организации *
               </label>
               <RegionSelect value={city} onChange={setCity} />
             </div>
-          </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
@@ -406,7 +415,7 @@ export const RegisterPage: React.FC = () => {
           {mode === 'ORG' && (
             <div className="pt-4 border-t border-line space-y-4">
               <div className="p-3.5 rounded-xl bg-brand-tint text-brand-ink text-xs font-medium">
-                <strong>Верификация организации:</strong> заполните карточку организации для проверки модератором. Открытое комьюнити также можно создать в 1 клик из обычного аккаунта.
+                <strong>Обезличенный аккаунт организации:</strong> аккаунт создается непосредственно от имени организации (без привязки к физическому лицу). Сообщества по интересам создаются обычными участниками в разделе «Сообщества».
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -419,22 +428,24 @@ export const RegisterPage: React.FC = () => {
                     required
                     value={organizationName}
                     onChange={(e) => setOrganizationName(e.target.value)}
-                    placeholder="Беговая организация «Импульс»"
+                    placeholder="Спортивная организация «Импульс»"
                     className="w-full h-11 px-3.5 rounded-xl bg-surface border border-transparent focus:border-brand focus:bg-card text-sm text-ink outline-none"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-1">
-                    Тип объединения *
+                    Тип организации *
                   </label>
                   <CustomSelect
                     value={orgType}
                     onChange={setOrgType}
-                    options={Object.entries(ORG_TYPE_LABELS).map(([k, v]) => ({
-                      value: k,
-                      label: v,
-                    }))}
+                    options={Object.entries(ORG_TYPE_LABELS)
+                      .filter(([k]) => k !== 'COMMUNITY')
+                      .map(([k, v]) => ({
+                        value: k,
+                        label: v,
+                      }))}
                   />
                 </div>
               </div>

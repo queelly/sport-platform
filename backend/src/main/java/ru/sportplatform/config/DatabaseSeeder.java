@@ -177,20 +177,22 @@ public class DatabaseSeeder implements CommandLineRunner {
         addSportInterest(dmitry, football, SkillLevel.COMPETITIVE, true, false, "Любительская лига 8x8");
         addSportInterest(dmitry, volleyball, SkillLevel.AMATEUR, false, false, "Доигровщик");
 
-        // 2. Представители организаций и 3 состояния организаций (Одобрена, На проверке, Отклонена для проверки переподачи)
-        User clubOwnerApproved = createUser("club@sportplatform.ru", "Игорь Ветров (Беговой клуб «Темп»)", "Москва", "Лужники",
-                "Основатель и старший координатор городского бегового сообщества «Темп Москва».",
+        // 2. Аккаунты организаций (обезличенные) и 3 состояния организаций (Одобрена, На проверке, Отклонена)
+        User clubOwnerApproved = createUser("club@sportplatform.ru", "Спортивная организация «Темп»", "Москва", "Лужники",
+                "Официальный аккаунт городской спортивной организации «Темп».",
                 "Групповые беговые тренировки и ОФП", "Ежедневно", testPwdHash);
+        clubOwnerApproved.setShowInPartnerSearch(false);
+        clubOwnerApproved = userRepository.save(clubOwnerApproved);
 
         Organization approvedOrg = new Organization();
         approvedOrg.setOwner(clubOwnerApproved);
-        approvedOrg.setName("Городской беговой и мультиспортивный клуб «Темп»");
+        approvedOrg.setName("Спортивная организация «Темп»");
         approvedOrg.setOrgType(OrganizationType.SPORTS_CLUB);
         approvedOrg.setCity("Москва");
-        approvedOrg.setDescription("Крупнейшее открытое беговое и триатлон-сообщество в Лужниках. Проводим еженедельные бесплатные субботние пробежки, интервальные тренировки на дорожке и открытые игровые сборы.");
-        approvedOrg.setRepresentativeName("Игорь Ветров");
+        approvedOrg.setDescription("Крупнейшая спортивная и беговая организация в Лужниках. Проводим еженедельные бесплатные субботние пробежки, интервальные тренировки на дорожке и открытые игровые сборы.");
+        approvedOrg.setRepresentativeName("Спортивная организация «Темп»");
         approvedOrg.setModerationContact("+7 (999) 111-22-33 (приватный контакт для администрации)");
-        approvedOrg.setPublicContacts("Telegram/VK: @temp_run_moscow, тел. дежурного координатора: +7 (495) 000-10-20");
+        approvedOrg.setPublicContacts("VK: @temp_run_moscow, тел. координатора: +7 (495) 000-10-20");
         approvedOrg.setWebsiteUrl("https://temp-sport-club.example.ru");
         approvedOrg.setSocialUrl("https://vk.com/temp_run_club");
         approvedOrg.setVerificationLink("https://vk.com/temp_run_club");
@@ -202,18 +204,20 @@ public class DatabaseSeeder implements CommandLineRunner {
         approvedOrg = organizationRepository.save(approvedOrg);
         saveHistory(approvedOrg, 1, OrganizationStatus.APPROVED, "Организация проверена и одобрена администратором", admin.getId());
 
-        User clubOwnerPending = createUser("arena@sportplatform.ru", "Елена Крылова (Клуб «Волейбол-Сити»)", "Санкт-Петербург", "Петроградский",
-                "Координатор любительской школы и клуба волейбола «Волейбол-Сити».",
+        User clubOwnerPending = createUser("arena@sportplatform.ru", "Спортивная организация «Волейбол-Сити»", "Санкт-Петербург", "Петроградский",
+                "Официальный аккаунт школы и спортивной организации волейбола «Волейбол-Сити».",
                 "Игровые сборы и турниры выходного дня", "Вт, Чт, Вс", testPwdHash);
+        clubOwnerPending.setShowInPartnerSearch(false);
+        clubOwnerPending = userRepository.save(clubOwnerPending);
 
         Organization pendingOrg = new Organization();
         pendingOrg.setOwner(clubOwnerPending);
-        pendingOrg.setName("Сообщество любительского волейбола «Волейбол-Сити»");
-        pendingOrg.setOrgType(OrganizationType.COMMUNITY);
+        pendingOrg.setName("Спортивная организация «Волейбол-Сити»");
+        pendingOrg.setOrgType(OrganizationType.SPORTS_CLUB);
         pendingOrg.setCity("Санкт-Петербург");
         pendingOrg.setDescription("Регулярные сборы по классическому и пляжному волейболу для игроков уровней Начинающий+ и Любитель. Делим на равные составы на месте.");
-        pendingOrg.setRepresentativeName("Елена Крылова");
-        pendingOrg.setModerationContact("+7 (921) 555-44-33, elena@volleycity.example.ru");
+        pendingOrg.setRepresentativeName("Спортивная организация «Волейбол-Сити»");
+        pendingOrg.setModerationContact("+7 (921) 555-44-33, info@volleycity.example.ru");
         pendingOrg.setPublicContacts("https://vk.com/volleycity_spb");
         pendingOrg.setVerificationLink("https://vk.com/volleycity_spb");
         pendingOrg.setStatus(OrganizationStatus.PENDING_REVIEW);
@@ -222,21 +226,23 @@ public class DatabaseSeeder implements CommandLineRunner {
         pendingOrg = organizationRepository.save(pendingOrg);
         saveHistory(pendingOrg, 1, OrganizationStatus.PENDING_REVIEW, "Ожидает первичной проверки администратором", null);
 
-        User clubOwnerRejected = createUser("start@sportplatform.ru", "Антон Белов (Секция «Корт-Мастер»)", "Москва", "Сокол",
-                "Представитель теннисного клуба «Корт-Мастер».",
+        User clubOwnerRejected = createUser("start@sportplatform.ru", "Спортивная секция «Корт-Мастер»", "Москва", "Сокол",
+                "Официальный аккаунт теннисной секции «Корт-Мастер».",
                 "Спарринги и групповые тренировки", "Сб, Вс", testPwdHash);
+        clubOwnerRejected.setShowInPartnerSearch(false);
+        clubOwnerRejected = userRepository.save(clubOwnerRejected);
 
         Organization rejectedOrg = new Organization();
         rejectedOrg.setOwner(clubOwnerRejected);
-        rejectedOrg.setName("Теннисное объединение «Корт-Мастер»");
+        rejectedOrg.setName("Спортивная секция «Корт-Мастер»");
         rejectedOrg.setOrgType(OrganizationType.SECTION);
         rejectedOrg.setCity("Москва");
         rejectedOrg.setDescription("Совместная аренда кортов и проведение любительских матчей по выходным.");
-        rejectedOrg.setRepresentativeName("Антон Белов");
+        rejectedOrg.setRepresentativeName("Спортивная секция «Корт-Мастер»");
         rejectedOrg.setModerationContact("+7 (916) 777-88-99");
         rejectedOrg.setPublicContacts("Уточняется");
         rejectedOrg.setStatus(OrganizationStatus.REJECTED);
-        rejectedOrg.setRejectionReason("Пожалуйста, укажите ссылку на публичную страницу или расписание кортов для подтверждения подлинности клуба, а также дополните публичные контакты для участников.");
+        rejectedOrg.setRejectionReason("Пожалуйста, укажите ссылку на публичную страницу или расписание кортов для подтверждения подлинности организации, а также дополните публичные контакты для участников.");
         rejectedOrg.setSubmissionVersion(1);
         rejectedOrg.setReviewedByAdminId(admin.getId());
         rejectedOrg.setReviewedAt(Instant.now().minus(1, ChronoUnit.DAYS));
@@ -244,15 +250,51 @@ public class DatabaseSeeder implements CommandLineRunner {
         rejectedOrg = organizationRepository.save(rejectedOrg);
         saveHistory(rejectedOrg, 1, OrganizationStatus.REJECTED, rejectedOrg.getRejectionReason(), admin.getId());
 
+        // 2b. Открытые пользовательские сообщества (COMMUNITY), созданные обычными участниками
+        Organization userCommunityRun = new Organization();
+        userCommunityRun.setOwner(alexey);
+        userCommunityRun.setName("Беговое и баскетбольное комьюнити «Лужники Run & Hoops»");
+        userCommunityRun.setOrgType(OrganizationType.COMMUNITY);
+        userCommunityRun.setCity("Москва");
+        userCommunityRun.setDescription("Открытое сообщество участников для вечерних игр в стритбол 3x3, баскетбол 5x5 и совместных пробежек по набережной Лужников.");
+        userCommunityRun.setRepresentativeName(alexey.getDisplayName());
+        userCommunityRun.setModerationContact(alexey.getEmail());
+        userCommunityRun.setPublicContacts("Общий чат участников в ВК");
+        userCommunityRun.setSocialUrl("https://vk.com/luzhniki_run_hoops");
+        userCommunityRun.setStatus(OrganizationStatus.APPROVED);
+        userCommunityRun.setSubmissionVersion(1);
+        userCommunityRun.setReviewedAt(Instant.now().minus(5, ChronoUnit.DAYS));
+        userCommunityRun.setSports(Set.of(basketball, running));
+        userCommunityRun = organizationRepository.save(userCommunityRun);
+        saveHistory(userCommunityRun, 1, OrganizationStatus.APPROVED, "Создание пользовательского спортивного сообщества", alexey.getId());
+
+        Organization userCommunityTennis = new Organization();
+        userCommunityTennis.setOwner(maria);
+        userCommunityTennis.setName("Теннисное сообщество «Корты Парка Горького»");
+        userCommunityTennis.setOrgType(OrganizationType.COMMUNITY);
+        userCommunityTennis.setCity("Москва");
+        userCommunityTennis.setDescription("Сообщество любителей большого тенниса и утреннего плавания. Ищем напарников по уровню NTRP и бронируем корты вместе.");
+        userCommunityTennis.setRepresentativeName(maria.getDisplayName());
+        userCommunityTennis.setModerationContact(maria.getEmail());
+        userCommunityTennis.setPublicContacts("VK: @tennis_gorky_community");
+        userCommunityTennis.setSocialUrl("https://vk.com/tennis_gorky_community");
+        userCommunityTennis.setStatus(OrganizationStatus.APPROVED);
+        userCommunityTennis.setSubmissionVersion(1);
+        userCommunityTennis.setReviewedAt(Instant.now().minus(4, ChronoUnit.DAYS));
+        userCommunityTennis.setSports(Set.of(tennis, swimming));
+        userCommunityTennis = organizationRepository.save(userCommunityTennis);
+        saveHistory(userCommunityTennis, 1, OrganizationStatus.APPROVED, "Создание пользовательского спортивного сообщества", maria.getId());
+
         // 3. Разовые и регулярные мероприятия
         Instant now = Instant.now();
 
-        // Событие 1: Разовое личное мероприятие со свободной записью (OPEN)
+        // Событие 1: Разовое мероприятие от пользовательского сообщества со свободной записью (OPEN)
         Event evBasketball = new Event();
         evBasketball.setTitle("Пятничный баскетбол 5x5 в Лужниках (Свободный вход)");
         evBasketball.setDescription("Дружеская вечерняя игра на открытом корте с отличным покрытием. Делимся на 3 команды по 5 человек, играем до 16 очков или 10 минут. Мячи Molten 7-ка есть.");
         evBasketball.setSport(basketball);
         evBasketball.setOrganizer(alexey);
+        evBasketball.setOrganization(userCommunityRun);
         evBasketball.setCity("Москва");
         evBasketball.setLocationAddress("Лужнецкая набережная, 24, площадка «Под мостом»");
         evBasketball.setLatitude(55.7158);
@@ -274,6 +316,7 @@ public class DatabaseSeeder implements CommandLineRunner {
         evTennis.setDescription("Собираем 4 игроков близкого уровня на 2 часа парной игры со сменой партнёров. Запись по заявке, чтобы подобрать ровный состав.");
         evTennis.setSport(tennis);
         evTennis.setOrganizer(maria);
+        evTennis.setOrganization(userCommunityTennis);
         evTennis.setCity("Москва");
         evTennis.setLocationAddress("Пресненский Вал, 27, Теннисный центр «Пресня», корт №3");
         evTennis.setLatitude(55.7684);
@@ -291,8 +334,8 @@ public class DatabaseSeeder implements CommandLineRunner {
 
         // Событие 3: Еженедельная тренировка от одобренной организации «Темп»
         EventSeries runSeries = new EventSeries();
-        runSeries.setTitle("Субботняя набережная 10 км с клубом «Темп»");
-        runSeries.setDescription("Еженедельная клубная пробежка по набережным Москвы-реки в трёх темповых группах (5:00, 5:40 и 6:15 мин/км) с разминкой и заминкой от координаторов клуба.");
+        runSeries.setTitle("Субботняя набережная 10 км с организацией «Темп»");
+        runSeries.setDescription("Еженедельная пробежка по набережным Москвы-реки в трёх темповых группах (5:00, 5:40 и 6:15 мин/км) с разминкой и заминкой от координаторов.");
         runSeries.setSport(running);
         runSeries.setOrganizer(clubOwnerApproved);
         runSeries.setOrganization(approvedOrg);
@@ -334,7 +377,31 @@ public class DatabaseSeeder implements CommandLineRunner {
         evFootball.setStatus(EventStatus.PUBLISHED);
         evFootball = eventRepository.save(evFootball);
 
-        // 4. Записи и заявки на мероприятия (CONFIRMED, PENDING, REJECTED)
+        // Событие 5 (Прошедшее / Архив): Прошедшая пробежка 5 дней назад для отображения в архиве и календаре
+        Event evPastRun = new Event();
+        evPastRun.setTitle("Воскресный кросс 8 км по Воробьёвым горам");
+        evPastRun.setDescription("Прошедшая совместная тренировка по видовой набережной с разминкой и растяжкой.");
+        evPastRun.setSport(running);
+        evPastRun.setOrganizer(alexey);
+        evPastRun.setOrganization(userCommunityRun);
+        evPastRun.setCity("Москва");
+        evPastRun.setLocationAddress("Воробьёвская набережная, смотровая площадка");
+        evPastRun.setLatitude(55.7103);
+        evPastRun.setLongitude(37.5426);
+        evPastRun.setStartsAt(now.minus(5, ChronoUnit.DAYS));
+        evPastRun.setEndsAt(now.minus(5, ChronoUnit.DAYS).plus(90, ChronoUnit.MINUTES));
+        evPastRun.setJoinMode(JoinMode.OPEN);
+        evPastRun.setSkillLevel(SkillLevel.ANY);
+        evPastRun.setActivityFormat("Кросс");
+        evPastRun.setParticipationConditions("Бесплатно");
+        evPastRun.setWhatToBring("Кроссовки, ветровка");
+        evPastRun.setMaxParticipants(20);
+        evPastRun.setStatus(EventStatus.COMPLETED);
+        evPastRun = eventRepository.save(evPastRun);
+
+        // 4. Записи и заявки на мероприятия (CONFIRMED, PENDING, REJECTED + Архивная запись)
+        createParticipation(evPastRun, maria, ParticipationStatus.CONFIRMED, "Отлично пробежали!", null);
+        createParticipation(evPastRun, alexey, ParticipationStatus.CONFIRMED, "Темп выдержали на 100%", null);
         createParticipation(evBasketball, maria, ParticipationStatus.CONFIRMED, "Буду вовремя!", null);
         createParticipation(evBasketball, dmitry, ParticipationStatus.CONFIRMED, "Беру с собой насос и второй мяч", null);
 

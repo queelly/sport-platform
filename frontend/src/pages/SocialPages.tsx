@@ -435,7 +435,7 @@ export const MyProfilePage: React.FC = () => {
                   : 'Участник / Организатор встреч и сообществ'}
               </div>
               <label className="inline-block mt-1.5 cursor-pointer text-xs font-bold text-blue-600 hover:underline">
-                <span>Изменить фото профиля (применяется мгновенно)</span>
+                <span>Изменить фото профиля</span>
                 <input
                   type="file"
                   accept=".jpg,.jpeg,.png,.webp,.gif"
@@ -448,10 +448,16 @@ export const MyProfilePage: React.FC = () => {
 
           <div className="flex flex-wrap gap-2">
             <Link
+              to="/my"
+              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold"
+            >
+              Календарь и архив записей
+            </Link>
+            <Link
               to="/notifications"
               className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold"
             >
-              Настройки VK-бота и уведомлений
+              Настройки уведомлений
             </Link>
             <Link
               to="/events/new"
@@ -661,7 +667,7 @@ export const MyProfilePage: React.FC = () => {
                   onChange={(e) => setNotifyVk(e.target.checked)}
                   className="rounded border-slate-300 text-blue-600"
                 />
-                <span className="font-medium text-slate-800">Разрешить отправку уведомлений в VK-бот</span>
+                <span className="font-medium text-slate-800">Разрешить отправку уведомлений ВКонтакте</span>
               </label>
             </div>
           </div>
@@ -679,9 +685,14 @@ export const MyProfilePage: React.FC = () => {
       {/* My Participations & Organized Events */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <section className="space-y-4">
-          <h2 className="font-display font-extrabold text-xl text-slate-900">
-            Мои записи и заявки на участие ({participatingEvents.length})
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-display font-extrabold text-xl text-slate-900">
+              Мои записи ({participatingEvents.length})
+            </h2>
+            <Link to="/my" className="text-xs font-bold text-blue-600 hover:underline">
+              Календарь и архив прошедших →
+            </Link>
+          </div>
           {participatingEvents.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-200 p-6 text-xs text-slate-500">
               Вы ещё не записались ни на одно мероприятие.
