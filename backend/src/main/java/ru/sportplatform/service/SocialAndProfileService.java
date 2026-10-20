@@ -271,9 +271,10 @@ public class SocialAndProfileService {
                 .toList();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<DirectMessageDto> listDirectMessages(UUID currentUserId, UUID friendUserId) {
         ensureAcceptedFriendship(currentUserId, friendUserId);
+        directMessageRepository.markMessagesAsRead(friendUserId, currentUserId);
         return directMessageRepository.findConversationBetween(currentUserId, friendUserId)
                 .stream()
                 .map(this::toDirectMessageDto)
@@ -296,6 +297,7 @@ public class SocialAndProfileService {
         msg.setSender(sender);
         msg.setRecipient(recipient);
         msg.setContent(req.content().trim());
+        msg.setRead(false);
         msg = directMessageRepository.save(msg);
 
         return toDirectMessageDto(msg);
@@ -321,6 +323,7 @@ public class SocialAndProfileService {
                 avatar,
                 m.getRecipient().getId(),
                 m.getContent(),
+                m.isRead(),
                 m.getCreatedAt()
         );
     }
@@ -451,6 +454,10 @@ public class SocialAndProfileService {
                 ? "/api/v1/attachments/" + other.getAvatarAttachmentId() + "/content"
                 : null;
 
+        long unreadMessagesCount = f.getStatus() == FriendshipStatus.ACCEPTED
+                ? directMessageRepository.countBySenderIdAndRecipientIdAndReadFalse(other.getId(), viewerId)
+                : 0L;
+
         return new FriendshipDto(
                 f.getId(),
                 other.getId(),
@@ -461,6 +468,7 @@ public class SocialAndProfileService {
                 f.getStatus(),
                 incoming,
                 f.getMessage(),
+                unreadMessagesCount,
                 f.getCreatedAt(),
                 f.getUpdatedAt()
         );

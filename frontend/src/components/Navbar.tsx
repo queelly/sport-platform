@@ -244,7 +244,7 @@ export const AppSidebar: React.FC<{
           >
             <span className="flex items-center gap-2.5">
               <Building2 className="w-4 h-4 shrink-0" />
-              <span>Клубы и сообщества</span>
+              <span>Организации и сообщества</span>
             </span>
           </Link>
 
@@ -532,32 +532,32 @@ export const Navbar: React.FC<{
 
   return (
     <>
-      <header className="h-14 bg-card border-b border-line-2 px-3 sm:px-6 flex items-center justify-between gap-3 relative z-40 shrink-0">
+      <header className="h-14 bg-card border-b border-line-2 px-2.5 sm:px-6 flex items-center justify-between gap-1.5 sm:gap-3 relative z-40 shrink-0">
         {/* Левая часть: Кнопка мобильного меню + быстрый выбор города */}
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1">
           {onOpenMobileSidebar && (
             <button
               type="button"
               onClick={onOpenMobileSidebar}
               aria-label="Открыть меню разделов"
-              className="lg:hidden h-9 px-2.5 rounded-xl bg-surface hover:bg-surface-2 border border-line-2 text-ink flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+              className="lg:hidden h-9 w-9 sm:w-auto sm:px-2.5 rounded-xl bg-surface hover:bg-surface-2 border border-line-2 text-ink flex items-center justify-center gap-1.5 text-xs font-bold shrink-0 cursor-pointer"
             >
-              <Menu className="w-4 h-4 text-brand" />
-              <span>Разделы</span>
+              <Menu className="w-4 h-4 text-brand shrink-0" />
+              <span className="hidden sm:inline">Разделы</span>
             </button>
           )}
 
           <button
             type="button"
             onClick={() => setCityModalOpen(true)}
-            className="h-9 px-3 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 flex items-center gap-1.5 text-ink transition-colors cursor-pointer"
+            className="h-9 px-2.5 sm:px-3 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 flex items-center gap-1.5 text-ink transition-colors min-w-0 max-w-[165px] xs:max-w-[190px] sm:max-w-[260px] cursor-pointer"
           >
             <MapPin className="w-3.5 h-3.5 text-brand shrink-0" />
-            <span className="text-xs font-bold truncate max-w-[160px] sm:max-w-[220px]">
-              {selectedRegion || 'Все регионы России'}
+            <span className="text-xs font-bold truncate">
+              {selectedRegion || 'Все регионы РФ'}
             </span>
             {currentRegionInfo && (
-              <span className="hidden sm:inline font-mono text-[10px] font-bold text-muted bg-card px-1.5 py-0.5 rounded border border-line">
+              <span className="hidden md:inline font-mono text-[10px] font-bold text-muted bg-card px-1.5 py-0.5 rounded border border-line shrink-0">
                 {currentRegionInfo.tzLabel.split(' ')[0]}
               </span>
             )}
@@ -566,13 +566,37 @@ export const Navbar: React.FC<{
         </div>
 
         {/* Правая часть: Масштаб шрифта (100% / 112% / 124%), Тема, Уведомления, Профиль */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Переключатель размера шрифта в 1 клик (без лишних фильтров) */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Компактная кнопка размера шрифта для мобильных экранов */}
+          <button
+            type="button"
+            onClick={() =>
+              setSettings((prev) => ({
+                ...prev,
+                fontSize:
+                  prev.fontSize === 'normal' ? 'lg' : prev.fontSize === 'lg' ? 'xl' : 'normal',
+              }))
+            }
+            title="Изменить размер шрифта"
+            aria-label="Изменить размер шрифта"
+            className="sm:hidden h-9 px-2 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 text-ink flex items-center gap-1 font-mono text-[11px] font-bold shrink-0 cursor-pointer"
+          >
+            <Type className="w-3.5 h-3.5 text-brand shrink-0" />
+            <span>
+              {settings.fontSize === 'normal'
+                ? '100%'
+                : settings.fontSize === 'lg'
+                ? '112%'
+                : '124%'}
+            </span>
+          </button>
+
+          {/* Переключатель размера шрифта в 1 клик на планшетах и ПК */}
           <div
-            className="flex items-center bg-surface/80 border border-line-2 rounded-xl p-0.5"
+            className="hidden sm:flex items-center bg-surface/80 border border-line-2 rounded-xl p-0.5"
             title="Масштаб текста интерфейса"
           >
-            <span className="px-2 text-[11px] font-bold text-muted hidden sm:inline-flex items-center gap-1">
+            <span className="px-2 text-[11px] font-bold text-muted hidden md:inline-flex items-center gap-1">
               <Type className="w-3.5 h-3.5 text-brand" />
               <span>Шрифт:</span>
             </span>
@@ -612,7 +636,7 @@ export const Navbar: React.FC<{
             }
             title={settings.theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
             aria-label="Переключить тему"
-            className="w-9 h-9 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 text-ink flex items-center justify-center transition-colors cursor-pointer"
+            className="w-9 h-9 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 text-ink flex items-center justify-center transition-colors shrink-0 cursor-pointer"
           >
             {settings.theme === 'dark' ? (
               <Sun className="w-4 h-4 text-amber-400" />
@@ -634,7 +658,7 @@ export const Navbar: React.FC<{
                 }}
                 title="Уведомления"
                 aria-label="Уведомления"
-                className="relative w-9 h-9 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 text-ink flex items-center justify-center transition-colors cursor-pointer"
+                className="relative w-9 h-9 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 text-ink flex items-center justify-center transition-colors shrink-0 cursor-pointer"
               >
                 <Bell className="w-4 h-4" />
                 {unreadNotificationsCount > 0 && (
@@ -728,7 +752,7 @@ export const Navbar: React.FC<{
               <button
                 type="button"
                 onClick={() => setProfileMenuOpen((v) => !v)}
-                className="h-9 pl-1.5 pr-2.5 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 flex items-center gap-2 transition-colors cursor-pointer"
+                className="h-9 pl-1.5 pr-2 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer"
               >
                 {user.avatarUrl ? (
                   <img
@@ -742,10 +766,10 @@ export const Navbar: React.FC<{
                     {user.displayName.charAt(0).toUpperCase()}
                   </span>
                 )}
-                <span className="hidden sm:inline text-xs font-bold text-ink max-w-[110px] truncate">
+                <span className="hidden md:inline text-xs font-bold text-ink max-w-[110px] truncate">
                   {user.displayName.split(' ')[0]}
                 </span>
-                <ChevronDown className="w-3.5 h-3.5 text-muted" />
+                <ChevronDown className="w-3.5 h-3.5 text-muted shrink-0" />
               </button>
 
               {profileMenuOpen && (
@@ -785,7 +809,7 @@ export const Navbar: React.FC<{
                   >
                     <span className="flex items-center gap-2.5">
                       <Building2 className="w-4 h-4 text-brand" />
-                      <span>Мои клубы и сообщества</span>
+                      <span>Мои организации и сообщества</span>
                     </span>
                     {myOrganizations.length > 0 && (
                       <span className="px-1.5 py-0.5 rounded-md bg-brand-tint text-brand-ink font-mono text-[10px] font-bold">
@@ -858,7 +882,7 @@ export const Navbar: React.FC<{
 
       {/* Модальное окно выбора региона / города России */}
       {cityModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 anim-fade">
+        <div className="fixed inset-0 !m-0 z-[300] bg-black/55 backdrop-blur-sm flex items-center justify-center p-4 anim-fade">
           <div className="bg-card border border-line-2 rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -882,12 +906,12 @@ export const Navbar: React.FC<{
               type="text"
               value={cityQuery}
               onChange={(e) => setCityQuery(e.target.value)}
-              placeholder="Найти город (например: Москва, Санкт-Петербург, Казань)..."
+              placeholder="Найти регион или город (например: Бурятия, Улан-Удэ, Москва, Казань)..."
               autoFocus
               className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-line-2 text-sm text-ink outline-none focus:border-brand"
             />
 
-            <div className="max-h-72 overflow-y-auto space-y-1 pr-1">
+            <div className="max-h-80 overflow-y-auto space-y-1 pr-1">
               <button
                 type="button"
                 onClick={() => {
@@ -914,15 +938,15 @@ export const Navbar: React.FC<{
                       setSelectedGlobalRegion(reg.value);
                       setCityModalOpen(false);
                     }}
-                    className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                    className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
                       active
                         ? 'bg-brand text-white font-bold'
                         : 'hover:bg-surface text-ink'
                     }`}
                   >
-                    <span className="font-semibold">{reg.label}</span>
+                    <span className="font-semibold text-left truncate">{reg.label}</span>
                     <span
-                      className={`font-mono text-[11px] px-2 py-0.5 rounded-md ${
+                      className={`font-mono text-[11px] px-2 py-0.5 rounded-md shrink-0 ${
                         active ? 'bg-white/20 text-white' : 'bg-surface text-muted'
                       }`}
                     >
@@ -989,7 +1013,7 @@ export const MobileTabBar: React.FC = () => {
         }`}
       >
         <Building2 className="w-4 h-4" />
-        <span>Клубы</span>
+        <span>Организации</span>
       </Link>
     </nav>
   );

@@ -40,6 +40,7 @@ import { getSelectedGlobalRegion } from '../components/Navbar';
 import {
   GeocodedPlace,
   KNOWN_2GIS_VENUES,
+  renderTeardropPinSvg,
   searchRealAddresses2Gis,
   VoiceSearchButton,
 } from '../components/UiControls';
@@ -1084,7 +1085,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                             </div>
                             <div className="text-xs text-muted">
                               {selectedEvent.organizationId
-                                ? 'Спортивный клуб / сообщество'
+                                ? 'Спортивная организация / сообщество'
                                 : 'Организатор встречи'}
                             </div>
                           </div>
@@ -1094,7 +1095,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                             to={`/organizations/${selectedEvent.organizationId}`}
                             className="text-xs font-bold text-brand-ink hover:underline shrink-0"
                           >
-                            Клуб →
+                            Организация →
                           </Link>
                         )}
                       </div>
@@ -1221,7 +1222,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
           <footer className="mt-12 border-t border-line bg-card py-5 px-4 sm:px-6 lg:px-8">
             <div className="max-w-[1400px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted">
               <div>
-                <span className="font-bold text-ink">Точка Сбора</span> — спортивные сборы на карте 2ГИС, клубы и напарники
+                <span className="font-bold text-ink">Точка Сбора</span> — спортивные сборы на карте 2ГИС, организации и напарники
               </div>
               <div className="flex flex-wrap items-center justify-center gap-4">
                 <Link to="/terms" className="hover:text-ink font-medium">
@@ -1452,20 +1453,13 @@ const SportikusLeafletMap: React.FC<{
 
     layer.clearLayers();
 
-    // Если пользователь выбрал конкретный адрес в поиске 2ГИС — ставим маркер адреса
+    // Если пользователь выбрал конкретный адрес в поиске 2ГИС — ставим указатель-капельку на точные координаты
     if (searchedAddressPin) {
       const addrIcon = L.divIcon({
         className: 'custom-2gis-address-pin',
-        html: `<div style="
-          display:inline-flex;align-items:center;gap:5px;
-          padding:5px 11px;border-radius:999px;
-          font-family:'Golos Text',sans-serif;font-weight:700;font-size:12px;
-          background:#FF5A26;color:#FFFFFF;border:2px solid #FFFFFF;
-          box-shadow:0 6px 18px rgba(255,90,38,0.45);
-          transform:translate(-50%,-50%);white-space:nowrap;
-        ">📍 ${searchedAddressPin.address.split(',')[0]}</div>`,
-        iconSize: [140, 32],
-        iconAnchor: [70, 16],
+        html: `<div title="${searchedAddressPin.address.replace(/"/g, '&quot;')}">${renderTeardropPinSvg('#FF5A26', 36, 46)}</div>`,
+        iconSize: [36, 46],
+        iconAnchor: [18, 45],
       });
       L.marker([searchedAddressPin.lat, searchedAddressPin.lng], { icon: addrIcon }).addTo(layer);
     }
@@ -1473,32 +1467,18 @@ const SportikusLeafletMap: React.FC<{
     events.forEach((ev) => {
       const coords = getRealEventCoords(ev);
       const isSelected = selectedEvent?.id === ev.id;
-      const emoji = getSportEmoji(ev.sport.name);
-      const bg = isSelected ? '#00B956' : '#FFFFFF';
-      const color = isSelected ? '#FFFFFF' : '#121417';
-      const border = isSelected ? '3px solid #FFFFFF' : '2.5px solid #00B956';
-      const scale = isSelected ? 'scale(1.18)' : 'scale(1)';
+      const pinColor = isSelected ? '#FF5A26' : '#00B956';
+      const w = isSelected ? 38 : 32;
+      const h = isSelected ? 48 : 42;
 
       const icon = L.divIcon({
         className: 'custom-2gis-pin',
-        html: `<div style="
-          width: 40px;
-          height: 40px;
-          border-radius: 9999px;
-          background: ${bg};
-          color: ${color};
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 18px;
-          border: ${border};
-          box-shadow: 0 6px 18px rgba(18, 20, 23, 0.24);
-          transform: ${scale};
-          transition: transform 0.15s ease, background 0.15s ease;
-          cursor: pointer;
-        " title="${ev.title.replace(/"/g, '&quot;')} — ${ev.locationAddress.replace(/"/g, '&quot;')}">${emoji}</div>`,
-        iconSize: [40, 40],
-        iconAnchor: [20, 20],
+        html: `<div style="cursor:pointer;transition:transform 0.15s ease;" title="${ev.title.replace(
+          /"/g,
+          '&quot;'
+        )} — ${ev.locationAddress.replace(/"/g, '&quot;')}">${renderTeardropPinSvg(pinColor, w, h)}</div>`,
+        iconSize: [w, h],
+        iconAnchor: [w / 2, h - 1],
       });
 
       const marker = L.marker([coords.lat, coords.lng], { icon });
@@ -1625,7 +1605,7 @@ export const RecommendedPage: React.FC = () => {
         <div>
           <h1 className="font-display text-2xl font-extrabold text-ink tracking-tight">Для вас</h1>
           <p className="text-xs sm:text-sm text-muted mt-0.5">
-            Персональные рекомендации тренировок, поиск напарников и проверенные спортивные клубы
+            Персональные рекомендации тренировок, поиск напарников и проверенные спортивные организации
           </p>
         </div>
 
@@ -1633,7 +1613,7 @@ export const RecommendedPage: React.FC = () => {
           {[
             { id: 'events', label: 'Подборка событий' },
             { id: 'partners', label: 'Напарники и друзья' },
-            { id: 'clubs', label: `Клубы (${organizations.length})` },
+            { id: 'clubs', label: `Организации (${organizations.length})` },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -1710,12 +1690,12 @@ export const RecommendedPage: React.FC = () => {
       {section === 'clubs' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-ink">Проверенные клубы и открытые сообщества</h2>
+            <h2 className="text-lg font-bold text-ink">Проверенные организации и открытые сообщества</h2>
             <Link
               to="/organizations"
               className="text-xs font-bold text-brand-ink hover:underline inline-flex items-center gap-1"
             >
-              <span>Открыть каталог клубов</span>
+              <span>Открыть каталог организаций</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -1731,7 +1711,7 @@ export const RecommendedPage: React.FC = () => {
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-brand-tint text-brand-ink text-[11px] font-bold">
                       <BadgeCheck className="w-3.5 h-3.5" />
                       <span>
-                        {org.orgType === 'COMMUNITY' ? 'Открытое комьюнити' : 'Официальный клуб'}
+                        {org.orgType === 'COMMUNITY' ? 'Открытое комьюнити' : 'Официальная организация'}
                       </span>
                     </span>
                     <span className="text-xs font-semibold text-muted">{org.city}</span>

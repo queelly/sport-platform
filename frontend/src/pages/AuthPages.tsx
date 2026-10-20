@@ -53,8 +53,8 @@ export const LoginPage: React.FC = () => {
       icon: User,
     },
     {
-      label: 'Спортивный клуб',
-      sub: 'Беговой клуб «Импульс»',
+      label: 'Спортивная организация',
+      sub: 'Спортивная организация «Импульс»',
       email: 'club@sportplatform.ru',
       pass: 'SportPass123!',
       icon: Building2,
@@ -282,7 +282,7 @@ export const RegisterPage: React.FC = () => {
         </div>
         <h1 className="text-2xl font-extrabold text-ink tracking-tight">Создать аккаунт</h1>
         <p className="text-sm text-muted mt-1">
-          Выберите личный профиль участника или заявку спортивного клуба
+          Выберите личный профиль участника или заявку спортивной организации
         </p>
       </div>
 
@@ -324,7 +324,7 @@ export const RegisterPage: React.FC = () => {
             }`}
           >
             <Building2 className="w-4 h-4" />
-            <span>Спортивный клуб</span>
+            <span>Организация</span>
           </button>
         </div>
 
@@ -406,20 +406,20 @@ export const RegisterPage: React.FC = () => {
           {mode === 'ORG' && (
             <div className="pt-4 border-t border-line space-y-4">
               <div className="p-3.5 rounded-xl bg-brand-tint text-brand-ink text-xs font-medium">
-                <strong>Верификация клуба:</strong> заполните карточку организации для проверки модератором. Открытое комьюнити также можно создать в 1 клик из обычного аккаунта.
+                <strong>Верификация организации:</strong> заполните карточку организации для проверки модератором. Открытое комьюнити также можно создать в 1 клик из обычного аккаунта.
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-1">
-                    Название клуба *
+                    Название организации *
                   </label>
                   <input
                     type="text"
                     required
                     value={organizationName}
                     onChange={(e) => setOrganizationName(e.target.value)}
-                    placeholder="Беговой клуб «Импульс»"
+                    placeholder="Беговая организация «Импульс»"
                     className="w-full h-11 px-3.5 rounded-xl bg-surface border border-transparent focus:border-brand focus:bg-card text-sm text-ink outline-none"
                   />
                 </div>
@@ -441,7 +441,7 @@ export const RegisterPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-1">
-                  Описание клуба *
+                  Описание организации *
                 </label>
                 <textarea
                   rows={3}
@@ -495,7 +495,7 @@ export const RegisterPage: React.FC = () => {
                       setVerificationLink(e.target.value);
                       setSocialUrl(e.target.value);
                     }}
-                    placeholder="https://vk.com/your_club"
+                    placeholder="https://vk.com/your_org"
                     className="w-full h-11 px-3.5 rounded-xl bg-surface border border-transparent focus:border-brand focus:bg-card text-sm text-ink outline-none"
                   />
                 </div>
@@ -516,7 +516,7 @@ export const RegisterPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-muted uppercase tracking-wider mb-1.5">
-                  Виды спорта клуба
+                  Виды спорта организации
                 </label>
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {sports.map((s) => {
@@ -571,7 +571,7 @@ export const RegisterPage: React.FC = () => {
                 ? 'Создание аккаунта...'
                 : mode === 'USER'
                 ? 'Зарегистрироваться'
-                : 'Отправить заявку клуба'}
+                : 'Отправить заявку организации'}
             </span>
           </button>
         </form>

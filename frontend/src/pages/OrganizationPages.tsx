@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -15,6 +16,7 @@ import {
   Plus,
   RefreshCw,
   Shield,
+  Trash2,
   Users,
   X,
 } from 'lucide-react';
@@ -109,10 +111,10 @@ export const OrganizationsListPage: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-display font-extrabold text-2xl sm:text-3xl text-slate-900">
-            Спортивные клубы и сообщества
+            Спортивные организации и сообщества
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Вступайте в проверенные клубы и открытые сообщества по интересам или создайте собственное сообщество
+            Вступайте в проверенные организации и открытые сообщества по интересам или создайте собственное сообщество
           </p>
         </div>
 
@@ -132,14 +134,14 @@ export const OrganizationsListPage: React.FC = () => {
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-sm"
             >
               <Building2 className="w-4 h-4" />
-              <span>Зарегистрировать клуб или аккаунт</span>
+              <span>Зарегистрировать организацию или аккаунт</span>
             </Link>
           )}
         </div>
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => setFilterType('ALL')}
@@ -160,7 +162,7 @@ export const OrganizationsListPage: React.FC = () => {
               : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
           }`}
         >
-          Официальные клубы и федерации ({orgs.filter((o) => o.orgType !== 'COMMUNITY').length})
+          Официальные организации и федерации ({orgs.filter((o) => o.orgType !== 'COMMUNITY').length})
         </button>
         <button
           type="button"
@@ -183,7 +185,7 @@ export const OrganizationsListPage: React.FC = () => {
         </div>
       ) : filteredOrgs.length === 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200 p-10 text-center text-sm text-slate-600 space-y-3">
-          <div>В этой категории пока нет клубов или сообществ.</div>
+          <div>В этой категории пока нет организаций или сообществ.</div>
           {user && (
             <button
               type="button"
@@ -248,18 +250,19 @@ export const OrganizationsListPage: React.FC = () => {
       )}
 
       {/* Create Community Modal (#13) */}
-      {showCreateCommunity && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl border border-slate-200 max-w-xl w-full p-6 sm:p-8 shadow-2xl space-y-5 my-8">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-display font-extrabold text-xl text-slate-900">
-                  Создать открытое сообщество
-                </h3>
-                <p className="text-xs text-slate-600 mt-0.5">
-                  Любой участник может создать сообщество по интересам, приглашать друзей, назначать администраторов и публиковать мероприятия от имени сообщества
-                </p>
-              </div>
+      {showCreateCommunity &&
+        createPortal(
+          <div className="fixed inset-0 !m-0 z-[300] bg-slate-900/65 backdrop-blur-sm overflow-y-auto flex items-start justify-center p-4 sm:p-6">
+            <div className="bg-white rounded-3xl border border-slate-200 max-w-xl w-full p-6 sm:p-8 shadow-2xl space-y-5 my-auto">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-display font-extrabold text-xl text-slate-900">
+                    Создать открытое сообщество
+                  </h3>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    Любой участник может создать сообщество по интересам, приглашать друзей, назначать администраторов и публиковать мероприятия от имени сообщества
+                  </p>
+                </div>
               <button
                 type="button"
                 onClick={() => setShowCreateCommunity(false)}
@@ -386,7 +389,8 @@ export const OrganizationsListPage: React.FC = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -395,6 +399,7 @@ export const OrganizationsListPage: React.FC = () => {
 export const OrganizationPublicPage: React.FC = () => {
   const { orgId } = useParams<{ orgId: string }>();
   const { user, refreshMe } = useAuth();
+  const navigate = useNavigate();
 
   const [org, setOrg] = useState<OrganizationDto | null>(null);
   const [events, setEvents] = useState<EventCardDto[]>([]);
@@ -402,6 +407,8 @@ export const OrganizationPublicPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [roleFeedback, setRoleFeedback] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const loadData = async () => {
     if (!orgId) return;
@@ -463,6 +470,20 @@ export const OrganizationPublicPage: React.FC = () => {
     }
   };
 
+  const handleDeleteOrganization = async () => {
+    if (!org) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/v1/organizations/${org.id}`, { method: 'DELETE' });
+      await refreshMe();
+      navigate('/organizations');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Не удалось удалить объединение');
+      setDeleting(false);
+    }
+  };
+
   if (loading) return <div className="h-80 rounded-3xl bg-slate-200 animate-pulse" />;
 
   if (error || !org) {
@@ -480,6 +501,9 @@ export const OrganizationPublicPage: React.FC = () => {
 
   const statusInfo = ORG_STATUS_LABELS[org.status] || { label: org.status, color: 'bg-slate-100 text-slate-700' };
   const canManage = Boolean(org.managedByViewer) || (user != null && user.id === org.ownerUserId);
+  const isOwner = Boolean(
+    user && (user.id === org.ownerUserId || org.viewerMemberRole === 'OWNER' || user.globalRole === 'ADMIN')
+  );
 
   return (
     <div className="space-y-8 pb-16">
@@ -520,7 +544,7 @@ export const OrganizationPublicPage: React.FC = () => {
                       : `Вы подписаны (${org.subscribersCount})`
                     : org.orgType === 'COMMUNITY'
                     ? `Вступить в сообщество (${org.subscribersCount})`
-                    : `Подписаться на анонсы клуба (${org.subscribersCount})`}
+                    : `Подписаться на анонсы организации (${org.subscribersCount})`}
                 </span>
               </button>
             )}
@@ -534,7 +558,40 @@ export const OrganizationPublicPage: React.FC = () => {
               </Link>
             )}
 
-            {user && (
+            {isOwner && !confirmDelete && (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{org.orgType === 'COMMUNITY' ? 'Удалить сообщество' : 'Удалить организацию'}</span>
+              </button>
+            )}
+
+            {isOwner && confirmDelete && (
+              <div className="inline-flex flex-wrap items-center gap-1.5 p-1.5 rounded-xl bg-rose-50 border border-rose-200">
+                <span className="text-xs font-bold text-rose-900 px-1.5">Удалить навсегда?</span>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={handleDeleteOrganization}
+                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold"
+                >
+                  {deleting ? 'Удаление...' : 'Да, удалить'}
+                </button>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => setConfirmDelete(false)}
+                  className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-semibold"
+                >
+                  Отмена
+                </button>
+              </div>
+            )}
+
+            {user && !isOwner && (
               <Link
                 to={`/support?targetType=ORGANIZATION&targetId=${org.id}&subject=${encodeURIComponent(
                   'Обращение по организации: ' + org.name
@@ -627,7 +684,7 @@ export const OrganizationPublicPage: React.FC = () => {
             >
               <Plus className="w-4 h-4" />
               <span>
-                Создать мероприятие от {org.orgType === 'COMMUNITY' ? 'сообщества' : 'клуба'}
+                Создать мероприятие от {org.orgType === 'COMMUNITY' ? 'сообщества' : 'организации'}
               </span>
             </Link>
           )}
@@ -747,6 +804,8 @@ export const MyOrganizationCabinetPage: React.FC = () => {
   const [selectedOrg, setSelectedOrg] = useState<OrganizationDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -766,6 +825,7 @@ export const MyOrganizationCabinetPage: React.FC = () => {
 
   const populateForm = (o: OrganizationDto) => {
     setSelectedOrg(o);
+    setConfirmDelete(false);
     setName(o.name);
     setOrgType(o.orgType);
     setCity(o.city);
@@ -787,6 +847,8 @@ export const MyOrganizationCabinetPage: React.FC = () => {
       setOrgs(list);
       if (list.length > 0) {
         populateForm(list[0]);
+      } else {
+        setSelectedOrg(null);
       }
     } catch {
       // ignore
@@ -801,6 +863,23 @@ export const MyOrganizationCabinetPage: React.FC = () => {
 
   const toggleSport = (id: string) => {
     setSelectedSportIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const handleDeleteCurrentOrg = async () => {
+    if (!selectedOrg) return;
+    setDeleting(true);
+    setError(null);
+    setFeedback(null);
+    try {
+      await apiFetch(`/api/v1/organizations/${selectedOrg.id}`, { method: 'DELETE' });
+      await refreshMe();
+      await loadMyOrgs();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Не удалось удалить объединение');
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
   };
 
   const handleSaveAndResubmit = async (e: React.FormEvent) => {
@@ -851,13 +930,13 @@ export const MyOrganizationCabinetPage: React.FC = () => {
           За вашим аккаунтом пока не закреплена спортивная организация или сообщество
         </div>
         <p className="text-xs text-slate-600">
-          Вы можете создать открытое сообщество в разделе «Клубы» или подать заявку официальной организации.
+          Вы можете создать открытое сообщество в разделе «Организации» или подать заявку официальной организации.
         </p>
         <Link
           to="/organizations"
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold"
         >
-          Перейти в раздел «Клубы и сообщества»
+          Перейти в раздел «Организации и сообщества»
         </Link>
       </div>
     );
@@ -873,7 +952,7 @@ export const MyOrganizationCabinetPage: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-display font-extrabold text-2xl sm:text-3xl text-slate-900">
-            Кабинет управления клубом / сообществом
+            Кабинет управления организацией / сообществом
           </h1>
           <p className="text-sm text-slate-600">
             Управление профилем объединения, отслеживание статуса модерации и публикация мероприятий
@@ -896,23 +975,56 @@ export const MyOrganizationCabinetPage: React.FC = () => {
           </div>
         )}
 
-        {selectedOrg.status === 'APPROVED' && (
-          <div className="flex gap-2">
-            <Link
-              to={`/organizations/${selectedOrg.id}`}
-              className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 bg-white"
+        <div className="flex flex-wrap items-center gap-2">
+          {selectedOrg.status === 'APPROVED' && (
+            <>
+              <Link
+                to={`/organizations/${selectedOrg.id}`}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 bg-white"
+              >
+                Открыть публичную страницу
+              </Link>
+              <Link
+                to={`/events/new?orgId=${selectedOrg.id}`}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Опубликовать мероприятие</span>
+              </Link>
+            </>
+          )}
+
+          {!confirmDelete ? (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold"
             >
-              Открыть публичную страницу
-            </Link>
-            <Link
-              to={`/events/new?orgId=${selectedOrg.id}`}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Опубликовать мероприятие</span>
-            </Link>
-          </div>
-        )}
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{selectedOrg.orgType === 'COMMUNITY' ? 'Удалить сообщество' : 'Удалить организацию'}</span>
+            </button>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 p-1.5 rounded-xl bg-rose-50 border border-rose-200">
+              <span className="text-xs font-bold text-rose-900 px-1.5">Удалить?</span>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleDeleteCurrentOrg}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold"
+              >
+                {deleting ? '...' : 'Да'}
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmDelete(false)}
+                className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-semibold"
+              >
+                Отмена
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Status Alert Banner */}

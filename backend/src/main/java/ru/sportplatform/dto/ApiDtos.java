@@ -509,6 +509,7 @@ public final class ApiDtos {
             FriendshipStatus status,
             boolean incoming,
             String message,
+            long unreadMessagesCount,
             Instant createdAt,
             Instant updatedAt
     ) {}
@@ -520,6 +521,7 @@ public final class ApiDtos {
             String senderAvatarUrl,
             UUID recipientUserId,
             String content,
+            boolean read,
             Instant createdAt
     ) {}
 

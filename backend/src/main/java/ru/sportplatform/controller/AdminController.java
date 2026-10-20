@@ -57,6 +57,26 @@ public class AdminController {
         return ResponseEntity.ok(organizationService.moderateOrganization(orgId, admin.id(), req));
     }
 
+    @PostMapping("/organizations/{orgId}/delete")
+    public ResponseEntity<java.util.Map<String, String>> deleteOrganizationPost(
+            @PathVariable UUID orgId,
+            @Valid @RequestBody AdminReasonRequest req
+    ) {
+        var admin = SecurityUtils.requirePrincipal();
+        organizationService.deleteOrganizationByAdmin(orgId, admin.id(), req.reason());
+        return ResponseEntity.ok(java.util.Map.of("message", "Организация / сообщество удалено модератором"));
+    }
+
+    @DeleteMapping("/organizations/{orgId}")
+    public ResponseEntity<java.util.Map<String, String>> deleteOrganizationDelete(
+            @PathVariable UUID orgId,
+            @Valid @RequestBody AdminReasonRequest req
+    ) {
+        var admin = SecurityUtils.requirePrincipal();
+        organizationService.deleteOrganizationByAdmin(orgId, admin.id(), req.reason());
+        return ResponseEntity.ok(java.util.Map.of("message", "Организация / сообщество удалено модератором"));
+    }
+
     // --- 2. МОДЕРАЦИЯ МЕРОПРИЯТИЙ И СООБЩЕНИЙ ---
     @GetMapping("/events")
     public ResponseEntity<List<EventCardDto>> listAllEvents() {

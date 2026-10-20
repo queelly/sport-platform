@@ -121,7 +121,7 @@ export const SKILL_LABELS: Record<string, string> = {
 };
 
 export const ORG_TYPE_LABELS: Record<string, string> = {
-  SPORTS_CLUB: 'Спортивный клуб',
+  SPORTS_CLUB: 'Спортивная организация',
   COMMUNITY: 'Городское сообщество',
   FEDERATION: 'Спортивная федерация',
   SECTION: 'Секция / Студия',

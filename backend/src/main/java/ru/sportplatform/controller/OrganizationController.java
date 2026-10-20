@@ -81,4 +81,11 @@ public class OrganizationController {
         var viewer = SecurityUtils.requirePrincipal();
         return ResponseEntity.ok(organizationService.toggleSubscription(orgId, viewer));
     }
+
+    @DeleteMapping("/{orgId}")
+    public ResponseEntity<java.util.Map<String, String>> deleteOrganization(@PathVariable UUID orgId) {
+        var viewer = SecurityUtils.requirePrincipal();
+        organizationService.deleteOrganizationByOwner(orgId, viewer);
+        return ResponseEntity.ok(java.util.Map.of("message", "Организация / сообщество успешно удалено"));
+    }
 }

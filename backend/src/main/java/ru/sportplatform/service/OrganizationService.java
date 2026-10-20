@@ -20,6 +20,8 @@ public class OrganizationService {
     private final OrganizationRepository organizationRepository;
     private final OrganizationApplicationHistoryRepository historyRepository;
     private final OrganizationSubscriptionRepository subscriptionRepository;
+    private final EventRepository eventRepository;
+    private final EventSeriesRepository seriesRepository;
     private final UserRepository userRepository;
     private final SportRepository sportRepository;
     private final SportService sportService;
@@ -30,6 +32,8 @@ public class OrganizationService {
             OrganizationRepository organizationRepository,
             OrganizationApplicationHistoryRepository historyRepository,
             OrganizationSubscriptionRepository subscriptionRepository,
+            EventRepository eventRepository,
+            EventSeriesRepository seriesRepository,
             UserRepository userRepository,
             SportRepository sportRepository,
             SportService sportService,
@@ -39,6 +43,8 @@ public class OrganizationService {
         this.organizationRepository = organizationRepository;
         this.historyRepository = historyRepository;
         this.subscriptionRepository = subscriptionRepository;
+        this.eventRepository = eventRepository;
+        this.seriesRepository = seriesRepository;
         this.userRepository = userRepository;
         this.sportRepository = sportRepository;
         this.sportService = sportService;
@@ -225,7 +231,7 @@ public class OrganizationService {
                     org.getOwner(),
                     NotificationType.ORG_APPROVED,
                     "Организация «" + org.getName() + "» одобрена!",
-                    "Поздравляем! Ваша организация прошла проверку. Теперь доступна публичная страница клуба и публикация мероприятий от имени организации.",
+                    "Поздравляем! Ваша организация прошла проверку. Теперь доступна публичная страница организации и публикация мероприятий от её имени.",
                     "/organizations/" + org.getId()
             );
         } else {
@@ -239,6 +245,71 @@ public class OrganizationService {
         }
 
         return toDto(org, new UserPrincipal(admin.getId(), admin.getEmail(), admin.getDisplayName(), admin.getGlobalRole()));
+    }
+
+    @Transactional
+    public void deleteOrganizationByOwner(UUID orgId, UserPrincipal viewer) {
+        Organization org = organizationRepository.findById(orgId)
+                .orElseThrow(() -> ApiException.notFound("Организация или сообщество не найдено"));
+
+        boolean isOwner = org.getOwner().getId().equals(viewer.id());
+        if (!isOwner && !viewer.isAdmin()) {
+            throw ApiException.forbidden("Только создатель может удалить своё сообщество или организацию");
+        }
+
+        cleanupAndDeleteOrganization(org);
+    }
+
+    @Transactional
+    public void deleteOrganizationByAdmin(UUID orgId, UUID adminId, String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw ApiException.badRequest("Для удаления сообщества или организации необходимо указать причину");
+        }
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> ApiException.unauthorized("Администратор не найден"));
+        Organization org = organizationRepository.findById(orgId)
+                .orElseThrow(() -> ApiException.notFound("Организация или сообщество не найдено"));
+
+        String orgName = org.getName();
+        String prevState = org.getStatus().name();
+        User owner = org.getOwner();
+
+        auditLogService.record(
+                admin,
+                "DELETE_ORGANIZATION",
+                "ORGANIZATION",
+                org.getId(),
+                prevState,
+                "DELETED",
+                "Удалено администратором («" + orgName + "»): " + reason.trim()
+        );
+
+        notificationService.notifyUser(
+                owner,
+                NotificationType.ORG_REJECTED,
+                "Сообщество / организация «" + orgName + "» удалена модератором",
+                "Причина удаления: " + reason.trim(),
+                "/organizations"
+        );
+
+        cleanupAndDeleteOrganization(org);
+    }
+
+    private void cleanupAndDeleteOrganization(Organization org) {
+        UUID orgId = org.getId();
+        for (Event ev : eventRepository.findByOrganizationIdOrderByStartsAtAsc(orgId)) {
+            ev.setOrganization(null);
+            eventRepository.save(ev);
+        }
+        for (EventSeries s : seriesRepository.findByOrganizationId(orgId)) {
+            s.setOrganization(null);
+            seriesRepository.save(s);
+        }
+        subscriptionRepository.deleteAll(subscriptionRepository.findByOrganizationId(orgId));
+        historyRepository.deleteAll(historyRepository.findByOrganizationIdOrderByVersionNumberDesc(orgId));
+        org.getSports().clear();
+        organizationRepository.save(org);
+        organizationRepository.delete(org);
     }
 
     @Transactional(readOnly = true)

@@ -9,4 +9,5 @@ import java.util.UUID;
 public interface EventSeriesRepository extends JpaRepository<EventSeries, UUID> {
     List<EventSeries> findByActiveTrue();
     List<EventSeries> findByOrganizerIdOrderByCreatedAtDesc(UUID organizerId);
+    List<EventSeries> findByOrganizationId(UUID organizationId);
 }

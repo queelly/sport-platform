@@ -817,7 +817,21 @@ export const KNOWN_2GIS_VENUES: GeocodedPlace[] = [
     lng: 49.1609,
     subtitle: 'Ново-Савиновский район',
   },
+  {
+    city: 'Улан-Удэ',
+    address: 'Улица Рылеева, 2, Физкультурно-спортивный комплекс (ФСК)',
+    lat: 51.8414,
+    lng: 107.6089,
+    subtitle: 'Республика Бурятия · Железнодорожный район',
+  },
 ];
+
+export function renderTeardropPinSvg(fillColor = '#00B956', width = 32, height = 42): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 32 42" style="display:block;filter:drop-shadow(0 4px 8px rgba(15,23,42,0.32));">
+    <path d="M16 1.5C8.54 1.5 2.5 7.54 2.5 15C2.5 24.75 16 40.5 16 40.5C16 40.5 29.5 24.75 29.5 15C29.5 7.54 23.46 1.5 16 1.5Z" fill="${fillColor}" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/>
+    <circle cx="16" cy="15" r="5.5" fill="#FFFFFF"/>
+  </svg>`;
+}
 
 function formatNominatimAddress(item: any, fallbackCity: string): GeocodedPlace {
   const addr = item.address || {};
@@ -1027,16 +1041,9 @@ export const MapAddressPicker: React.FC<MapAddressPickerProps> = ({
 
       const pinIcon = L.divIcon({
         className: 'sp-2gis-picker-pin',
-        html: `<div style="
-          display:inline-flex;align-items:center;gap:5px;
-          padding:5px 10px;border-radius:999px;
-          font-family:'Golos Text',sans-serif;font-weight:700;font-size:12px;
-          background:#00B956;color:#FFFFFF;border:2px solid #FFFFFF;
-          box-shadow:0 6px 18px rgba(0,185,86,0.45);
-          transform:translate(-50%,-50%);white-space:nowrap;cursor:grab;
-        ">📍 Точка сбора</div>`,
-        iconSize: [110, 30],
-        iconAnchor: [55, 15],
+        html: `<div style="cursor:grab;">${renderTeardropPinSvg('#00B956', 34, 44)}</div>`,
+        iconSize: [34, 44],
+        iconAnchor: [17, 43],
       });
 
       const marker = L.marker([currentLat, currentLng], {
@@ -1234,7 +1241,7 @@ export const MapAddressPicker: React.FC<MapAddressPickerProps> = ({
           <div className="px-3 py-1.5 rounded-xl bg-card/95 backdrop-blur-md border border-line-2 shadow-sm text-[11px] font-semibold text-ink">
             {reverseLoading
               ? '⏳ Определяем точный адрес точки 2ГИС...'
-              : '👆 Кликните в любое место на карте 2ГИС или перетащите маркер для точной привязки'}
+              : '👆 Кликните в любое место на карте 2ГИС или перетащите указатель для точной привязки'}
           </div>
           <button
             type="button"
@@ -1324,16 +1331,9 @@ export const Embedded2GisMiniMap: React.FC<{
 
       const pinIcon = L.divIcon({
         className: 'sp-2gis-detail-pin',
-        html: `<div style="
-          display:inline-flex;align-items:center;gap:5px;
-          padding:5px 11px;border-radius:999px;
-          font-family:'Golos Text',sans-serif;font-weight:700;font-size:12px;
-          background:#00B956;color:#FFFFFF;border:2px solid #FFFFFF;
-          box-shadow:0 6px 18px rgba(0,185,86,0.45);
-          transform:translate(-50%,-50%);white-space:nowrap;
-        ">📍 Место сбора</div>`,
-        iconSize: [110, 30],
-        iconAnchor: [55, 15],
+        html: `<div>${renderTeardropPinSvg('#00B956', 34, 44)}</div>`,
+        iconSize: [34, 44],
+        iconAnchor: [17, 43],
       });
 
       markerRef.current = L.marker([coords.lat, coords.lng], { icon: pinIcon }).addTo(map);

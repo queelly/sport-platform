@@ -95,6 +95,16 @@ public class EventController {
         return ResponseEntity.ok(eventService.decideParticipation(eventId, participationId, viewer, req));
     }
 
+    @DeleteMapping("/{eventId}/participations/{participationId}")
+    public ResponseEntity<EventDetailDto> removeParticipant(
+            @PathVariable UUID eventId,
+            @PathVariable UUID participationId,
+            @RequestParam(required = false) String reason
+    ) {
+        var viewer = SecurityUtils.requirePrincipal();
+        return ResponseEntity.ok(eventService.removeParticipantByOrganizer(eventId, participationId, viewer, reason));
+    }
+
     @PostMapping("/{eventId}/cancel-participation")
     public ResponseEntity<EventDetailDto> cancelMyParticipation(@PathVariable UUID eventId) {
         var viewer = SecurityUtils.requirePrincipal();

@@ -15,6 +15,7 @@ import {
   Send,
   ShieldAlert,
   Ticket,
+  Trash2,
   X,
 } from 'lucide-react';
 import {
@@ -186,6 +187,35 @@ export const AdminDashboardPage: React.FC = () => {
       await loadAdminData();
     } catch (err) {
       setAdminError(err instanceof ApiError ? err.message : 'Ошибка модерации организации');
+    } finally {
+      setModeratingOrgId(null);
+    }
+  };
+
+  const handleDeleteOrg = async (org: OrganizationDto) => {
+    setAdminError(null);
+    setAdminFeedback(null);
+    const customReason = orgReasons[org.id]?.trim() || '';
+    if (!customReason) {
+      setAdminError(
+        'Для удаления организации или сообщества необходимо обязательно указать причину в текстовом поле карточки.'
+      );
+      return;
+    }
+
+    setModeratingOrgId(org.id);
+    try {
+      await apiFetch(`/api/v1/admin/organizations/${org.id}/delete`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: customReason }),
+      });
+      setOrgReasons((prev) => ({ ...prev, [org.id]: '' }));
+      setAdminFeedback(
+        `${org.orgType === 'COMMUNITY' ? 'Сообщество' : 'Организация'} «${org.name}» удалена (причина: ${customReason}).`
+      );
+      await loadAdminData();
+    } catch (err) {
+      setAdminError(err instanceof ApiError ? err.message : 'Ошибка удаления организации');
     } finally {
       setModeratingOrgId(null);
     }
@@ -502,7 +532,7 @@ export const AdminDashboardPage: React.FC = () => {
                     onChange={(e) =>
                       setOrgReasons((prev) => ({ ...prev, [org.id]: e.target.value }))
                     }
-                    placeholder="Комментарий модератора или причина отказа / приостановки..."
+                    placeholder="Комментарий модератора или обязательная причина отказа / приостановки / удаления..."
                     className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
                   />
 
@@ -561,6 +591,21 @@ export const AdminDashboardPage: React.FC = () => {
                         </button>
                       </>
                     )}
+
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => handleDeleteOrg(org)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold"
+                      title="Удалить объединение (требуется указать причину в поле слева)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>
+                        {org.orgType === 'COMMUNITY'
+                          ? 'Удалить сообщество (с причиной)'
+                          : 'Удалить организацию (с причиной)'}
+                      </span>
+                    </button>
                   </div>
                 </div>
               </div>

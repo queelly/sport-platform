@@ -37,6 +37,13 @@ import {
 } from '../types';
 import { CustomSelect } from '../components/UiControls';
 
+const GENERAL_SUPPORT_CATEGORIES: Record<string, string> = {
+  TECHNICAL_ISSUE: 'Техническая проблема',
+  ACCOUNT_ISSUE: 'Проблема с аккаунтом',
+  NOTIFICATION_ISSUE: 'Проблема с уведомлениями / VK',
+  OTHER: 'Другое обращение в поддержку',
+};
+
 export const SupportPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -49,31 +56,26 @@ export const SupportPage: React.FC = () => {
   const [chatConv, setChatConv] = useState<SupportConversationDto | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Directories for target selection in complaints (#22, #25)
-  const [usersList, setUsersList] = useState<PublicUserProfileDto[]>([]);
-  const [orgsList, setOrgsList] = useState<OrganizationDto[]>([]);
-  const [eventsList, setEventsList] = useState<EventCardDto[]>([]);
-
-  // New Ticket Form
+  // Contextual complaint parameters passed from a specific user profile, event, discussion message, or organization
   const initialTargetType = searchParams.get('targetType') || '';
   const initialTargetId = searchParams.get('targetId') || '';
+  const initialSubject = searchParams.get('subject') || '';
+  const isContextualComplaint = Boolean(initialTargetType && initialTargetId);
 
-  const [category, setCategory] = useState<string>(
-    initialTargetType === 'EVENT'
-      ? 'EVENT_COMPLAINT'
-      : initialTargetType === 'USER'
-      ? 'USER_COMPLAINT'
-      : initialTargetType === 'ORGANIZATION'
-      ? 'ORGANIZATION_COMPLAINT'
-      : 'TECHNICAL_ISSUE'
+  const resolveCategoryFromTarget = (tType: string) => {
+    if (tType === 'EVENT') return 'EVENT_COMPLAINT';
+    if (tType === 'USER' || tType === 'DISCUSSION_MESSAGE') return 'USER_COMPLAINT';
+    if (tType === 'ORGANIZATION') return 'ORGANIZATION_COMPLAINT';
+    return 'TECHNICAL_ISSUE';
+  };
+
+  const [category, setCategory] = useState<string>(() =>
+    resolveCategoryFromTarget(initialTargetType)
   );
-  const [subject, setSubject] = useState(searchParams.get('subject') || '');
+  const [subject, setSubject] = useState(initialSubject);
   const [description, setDescription] = useState('');
   const [targetType, setTargetType] = useState<string>(initialTargetType);
   const [targetId, setTargetId] = useState<string>(initialTargetId);
-  const [lockedContextualTarget, setLockedContextualTarget] = useState<boolean>(
-    Boolean(initialTargetType && initialTargetId)
-  );
   const [attachmentId, setAttachmentId] = useState<string | null>(null);
   const [attachmentName, setAttachmentName] = useState<string>('');
   const [creatingTicket, setCreatingTicket] = useState(false);
@@ -96,22 +98,16 @@ export const SupportPage: React.FC = () => {
     if (location.pathname.endsWith('/chat') || searchParams.get('tab') === 'CHAT') {
       setTab('CHAT');
     }
-  }, [location.pathname, searchParams]);
-
-  const loadDirectories = async () => {
-    try {
-      const [uList, oList, eList] = await Promise.all([
-        apiFetch<PublicUserProfileDto[]>('/api/v1/users'),
-        apiFetch<OrganizationDto[]>('/api/v1/organizations'),
-        apiFetch<EventCardDto[]>('/api/v1/events'),
-      ]);
-      setUsersList(uList);
-      setOrgsList(oList);
-      setEventsList(eList);
-    } catch {
-      // ignore
+    const nextType = searchParams.get('targetType') || '';
+    const nextId = searchParams.get('targetId') || '';
+    const nextSubject = searchParams.get('subject') || '';
+    setTargetType(nextType);
+    setTargetId(nextId);
+    setCategory(resolveCategoryFromTarget(nextType));
+    if (nextSubject) {
+      setSubject(nextSubject);
     }
-  };
+  }, [location.pathname, searchParams]);
 
   const loadSupportData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -135,7 +131,6 @@ export const SupportPage: React.FC = () => {
 
   useEffect(() => {
     loadSupportData(false);
-    loadDirectories();
 
     // Real-time background polling every 3s (#21, #24)
     const interval = setInterval(() => {
@@ -143,30 +138,6 @@ export const SupportPage: React.FC = () => {
     }, 3000);
     return () => clearInterval(interval);
   }, []);
-
-  // Auto-sync targetType when category changes manually (unless locked by contextual link)
-  useEffect(() => {
-    if (lockedContextualTarget) return;
-    if (category === 'USER_COMPLAINT') {
-      if (targetType !== 'USER') {
-        setTargetType('USER');
-        setTargetId('');
-      }
-    } else if (category === 'ORGANIZATION_COMPLAINT') {
-      if (targetType !== 'ORGANIZATION') {
-        setTargetType('ORGANIZATION');
-        setTargetId('');
-      }
-    } else if (category === 'EVENT_COMPLAINT') {
-      if (targetType !== 'EVENT') {
-        setTargetType('EVENT');
-        setTargetId('');
-      }
-    } else {
-      setTargetType('');
-      setTargetId('');
-    }
-  }, [category, lockedContextualTarget]);
 
   // Smart scroll ticket messages: only scroll if ticket switched, initial load, or user is near bottom (#16)
   useEffect(() => {
@@ -230,14 +201,16 @@ export const SupportPage: React.FC = () => {
           category,
           subject,
           description,
-          targetType: targetType || null,
-          targetId: targetId || null,
+          targetType: isContextualComplaint ? targetType : null,
+          targetId: isContextualComplaint ? targetId : null,
           attachmentId,
         }),
       });
       setTickets((prev) => [created, ...prev]);
       setSelectedTicketId(created.id);
-      setSubject('');
+      if (!isContextualComplaint) {
+        setSubject('');
+      }
       setDescription('');
       setAttachmentId(null);
       setAttachmentName('');
@@ -296,7 +269,7 @@ export const SupportPage: React.FC = () => {
             Центр поддержки пользователей
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Два отдельных канала с автообновлением в реальном времени: тикеты для жалоб и обращений или живой чат с техподдержкой
+            Технические обращения в поддержку, отслеживание ваших тикетов и живой чат с администратором
           </p>
         </div>
 
@@ -309,7 +282,7 @@ export const SupportPage: React.FC = () => {
             }`}
           >
             <Ticket className="w-3.5 h-3.5" />
-            <span>Система тикетов и жалоб ({tickets.length})</span>
+            <span>Мои тикеты и обращения ({tickets.length})</span>
           </button>
 
           <button
@@ -334,124 +307,43 @@ export const SupportPage: React.FC = () => {
               className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-3.5"
             >
               <h2 className="font-display font-bold text-base text-slate-900">
-                Создать новый тикет / жалобу
+                {isContextualComplaint ? 'Отправка жалобы модератору' : 'Создать обращение в поддержку'}
               </h2>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Категория *</label>
-                <CustomSelect
-                  size="sm"
-                  value={category}
-                  onChange={setCategory}
-                  options={Object.entries(TICKET_CATEGORY_LABELS).map(([k, v]) => ({
-                    value: k,
-                    label: v,
-                  }))}
-                />
-              </div>
-
-              {lockedContextualTarget && targetId && (
-                <div className="p-3 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-between gap-2 text-xs text-blue-950">
-                  <div>
-                    <span className="font-bold block">Объект обращения прикреплён автоматически:</span>
-                    <span className="text-[11px] text-blue-800">
-                      {targetType === 'EVENT'
-                        ? eventsList.find((ev) => ev.id === targetId)?.title || `Мероприятие #${targetId.slice(0, 8)}`
-                        : targetType === 'USER'
-                        ? usersList.find((u) => u.id === targetId)?.displayName || `Пользователь #${targetId.slice(0, 8)}`
-                        : orgsList.find((o) => o.id === targetId)?.name || `Организация #${targetId.slice(0, 8)}`}
-                    </span>
+              {isContextualComplaint ? (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 space-y-1.5 text-xs text-rose-950">
+                  <div className="font-bold text-rose-900">
+                    Категория: {TICKET_CATEGORY_LABELS[category] || category}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setLockedContextualTarget(false)}
-                    className="px-2.5 py-1 rounded-lg bg-white border border-blue-200 text-blue-700 font-bold text-[11px] hover:bg-blue-100 shrink-0"
-                  >
-                    Изменить
-                  </button>
+                  <div className="text-[11px] text-rose-800">
+                    Объект жалобы зафиксирован ({targetType === 'EVENT'
+                      ? 'Мероприятие'
+                      : targetType === 'USER'
+                      ? 'Профиль пользователя'
+                      : targetType === 'DISCUSSION_MESSAGE'
+                      ? 'Сообщение в обсуждении'
+                      : 'Организация / сообщество'}{' '}
+                    #{targetId.slice(0, 8)}) и не может быть изменён вручную.
+                  </div>
                 </div>
-              )}
-
-              {/* Target entity selector for complaints (#17) */}
-              {!lockedContextualTarget && category === 'USER_COMPLAINT' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    На какого пользователя подаётся жалоба?
-                  </label>
-                  <CustomSelect
-                    size="sm"
-                    value={targetId}
-                    onChange={(val) => {
-                      setTargetType('USER');
-                      setTargetId(val);
-                      const found = usersList.find((u) => u.id === val);
-                      if (found && !subject.trim()) {
-                        setSubject(`Жалоба на пользователя: ${found.displayName}`);
-                      }
-                    }}
-                    options={[
-                      { value: '', label: '— Выберите пользователя из списка —' },
-                      ...usersList.map((u) => ({
-                        value: u.id,
-                        label: `${u.displayName} (${u.city || 'Россия'})`,
-                      })),
-                    ]}
-                  />
-                </div>
-              )}
-
-              {!lockedContextualTarget && category === 'ORGANIZATION_COMPLAINT' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    На какую организацию / сообщество жалоба?
-                  </label>
-                  <CustomSelect
-                    size="sm"
-                    value={targetId}
-                    onChange={(val) => {
-                      setTargetType('ORGANIZATION');
-                      setTargetId(val);
-                      const found = orgsList.find((o) => o.id === val);
-                      if (found && !subject.trim()) {
-                        setSubject(`Жалоба на организацию: ${found.name}`);
-                      }
-                    }}
-                    options={[
-                      { value: '', label: '— Выберите клуб или сообщество —' },
-                      ...orgsList.map((o) => ({
-                        value: o.id,
-                        label: `${o.name} (${o.city})`,
-                      })),
-                    ]}
-                  />
-                </div>
-              )}
-
-              {!lockedContextualTarget && category === 'EVENT_COMPLAINT' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Какое мероприятие вызывает вопросы?
-                  </label>
-                  <CustomSelect
-                    size="sm"
-                    value={targetId}
-                    onChange={(val) => {
-                      setTargetType('EVENT');
-                      setTargetId(val);
-                      const found = eventsList.find((ev) => ev.id === val);
-                      if (found && !subject.trim()) {
-                        setSubject(`Обращение по мероприятию: ${found.title}`);
-                      }
-                    }}
-                    options={[
-                      { value: '', label: '— Выберите мероприятие —' },
-                      ...eventsList.map((ev) => ({
-                        value: ev.id,
-                        label: `${ev.title} (${ev.city})`,
-                      })),
-                    ]}
-                  />
-                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Категория вопроса *</label>
+                    <CustomSelect
+                      size="sm"
+                      value={category}
+                      onChange={setCategory}
+                      options={Object.entries(GENERAL_SUPPORT_CATEGORIES).map(([k, v]) => ({
+                        value: k,
+                        label: v,
+                      }))}
+                    />
+                  </div>
+                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 leading-relaxed">
+                    Чтобы пожаловаться на конкретного пользователя, мероприятие, организацию или сообщение, нажмите кнопку <strong>«Пожаловаться»</strong> непосредственно на соответствующей странице.
+                  </div>
+                </>
               )}
 
               <div>
@@ -459,10 +351,13 @@ export const SupportPage: React.FC = () => {
                 <input
                   type="text"
                   required
+                  readOnly={isContextualComplaint}
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   placeholder="Кратко укажите суть обращения"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
+                  className={`w-full px-3 py-2 rounded-xl border border-slate-300 text-xs ${
+                    isContextualComplaint ? 'bg-slate-100 text-slate-700 cursor-not-allowed' : ''
+                  }`}
                 />
               </div>
 

@@ -463,6 +463,7 @@ public class EventService {
             }
         }
 
+        boolean wasConfirmed = part.getStatus() == ParticipationStatus.CONFIRMED;
         part.setStatus(req.decision());
         part.setOrganizerComment(req.comment());
         participationRepository.save(part);
@@ -480,14 +481,73 @@ public class EventService {
             notificationService.notifyUser(
                     part.getUser(),
                     NotificationType.PARTICIPATION_REJECTED,
-                    "Заявка на «" + event.getTitle() + "» отклонена",
-                    "К сожалению, организатор отклонил вашу заявку."
+                    wasConfirmed ? "Ваше участие во встрече «" + event.getTitle() + "» отменено организатором" : "Заявка на «" + event.getTitle() + "» отклонена",
+                    (wasConfirmed ? "Организатор исключил вас из списка участников встречи." : "К сожалению, организатор отклонил вашу заявку.")
                             + (req.comment() != null && !req.comment().isBlank() ? " Причина: " + req.comment() : ""),
                     "/events/" + event.getId()
             );
+            if (wasConfirmed && event.getJoinMode() == JoinMode.OPEN) {
+                promoteNextFromWaitlist(event);
+            }
         }
 
         return getEventDetail(eventId, organizerViewer);
+    }
+
+    @Transactional
+    public EventDetailDto removeParticipantByOrganizer(UUID eventId, UUID participationId, UserPrincipal organizerViewer, String reason) {
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> ApiException.notFound("Мероприятие не найдено"));
+
+        if (!canManageEvent(event, organizerViewer)) {
+            throw ApiException.forbidden("Только организатор мероприятия может удалять участников");
+        }
+
+        EventParticipation part = participationRepository.findById(participationId)
+                .orElseThrow(() -> ApiException.notFound("Участник не найден"));
+
+        if (!part.getEvent().getId().equals(eventId)) {
+            throw ApiException.badRequest("Запись участника не относится к этому мероприятию");
+        }
+
+        boolean wasConfirmed = part.getStatus() == ParticipationStatus.CONFIRMED;
+        part.setStatus(ParticipationStatus.REJECTED);
+        part.setOrganizerComment(reason != null && !reason.isBlank() ? reason.trim() : "Исключён организатором");
+        participationRepository.save(part);
+
+        notificationService.notifyUser(
+                part.getUser(),
+                NotificationType.PARTICIPATION_REJECTED,
+                "Ваше участие во встрече «" + event.getTitle() + "» отменено организатором",
+                "Организатор исключил вас из списка участников мероприятия."
+                        + (reason != null && !reason.isBlank() ? " Причина: " + reason.trim() : ""),
+                "/events/" + event.getId()
+        );
+
+        if (wasConfirmed && event.getJoinMode() == JoinMode.OPEN) {
+            promoteNextFromWaitlist(event);
+        }
+
+        return getEventDetail(eventId, organizerViewer);
+    }
+
+    private void promoteNextFromWaitlist(Event event) {
+        List<EventParticipation> waitlist = participationRepository.findByEventIdAndStatusOrderByCreatedAtAsc(event.getId(), ParticipationStatus.WAITLISTED);
+        for (EventParticipation candidate : waitlist) {
+            if (findConflictingEvent(candidate.getUser().getId(), event).isEmpty()) {
+                candidate.setStatus(ParticipationStatus.CONFIRMED);
+                participationRepository.save(candidate);
+
+                notificationService.notifyUser(
+                        candidate.getUser(),
+                        NotificationType.WAITLIST_PROMOTED,
+                        "Освободилось место на «" + event.getTitle() + "»!",
+                        "Вы автоматически переведены из листа ожидания в основной состав участников.",
+                        "/events/" + event.getId()
+                );
+                break;
+            }
+        }
     }
 
     @Transactional
@@ -502,22 +562,7 @@ public class EventService {
         participationRepository.save(part);
 
         if (wasConfirmed && event.getJoinMode() == JoinMode.OPEN) {
-            List<EventParticipation> waitlist = participationRepository.findByEventIdAndStatusOrderByCreatedAtAsc(eventId, ParticipationStatus.WAITLISTED);
-            for (EventParticipation candidate : waitlist) {
-                if (findConflictingEvent(candidate.getUser().getId(), event).isEmpty()) {
-                    candidate.setStatus(ParticipationStatus.CONFIRMED);
-                    participationRepository.save(candidate);
-
-                    notificationService.notifyUser(
-                            candidate.getUser(),
-                            NotificationType.WAITLIST_PROMOTED,
-                            "Освободилось место на «" + event.getTitle() + "»!",
-                            "Вы автоматически переведены из листа ожидания в основной состав участников.",
-                            "/events/" + event.getId()
-                    );
-                    break;
-                }
-            }
+            promoteNextFromWaitlist(event);
         }
 
         return getEventDetail(eventId, viewer);

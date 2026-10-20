@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Calendar,
@@ -117,9 +118,9 @@ const DirectChatModal: React.FC<{
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl border border-slate-200 max-w-lg w-full p-5 sm:p-6 shadow-2xl flex flex-col max-h-[85vh]">
+  return createPortal(
+    <div className="fixed inset-0 !m-0 z-[300] bg-slate-900/65 backdrop-blur-sm overflow-y-auto flex items-start justify-center p-4 sm:p-6">
+      <div className="bg-white rounded-3xl border border-slate-200 max-w-lg w-full p-5 sm:p-6 shadow-2xl flex flex-col max-h-[85vh] my-auto">
         <div className="flex items-center justify-between gap-3 pb-3.5 border-b border-slate-100">
           <div>
             <div className="text-[11px] font-extrabold text-[#16B672] uppercase tracking-wider">
@@ -199,7 +200,8 @@ const DirectChatModal: React.FC<{
           </button>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -1067,6 +1069,19 @@ export const PartnersAndFriendsPage: React.FC = () => {
   }, [sportId, city, skillLevel, user]);
 
   useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(async () => {
+      try {
+        const fList = await apiFetch<FriendshipDto[]>('/api/v1/friends');
+        setFriendships(fList);
+      } catch {
+        // ignore
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  useEffect(() => {
     const timer = setTimeout(() => {
       loadData(false);
     }, 320);
@@ -1135,6 +1150,10 @@ export const PartnersAndFriendsPage: React.FC = () => {
   const incomingRequests = friendships.filter((f) => f.status === 'PENDING' && f.incoming);
   const outgoingRequests = friendships.filter((f) => f.status === 'PENDING' && !f.incoming);
   const acceptedFriends = friendships.filter((f) => f.status === 'ACCEPTED');
+  const totalUnreadDirectCount = acceptedFriends.reduce(
+    (sum, f) => sum + (f.unreadMessagesCount || 0),
+    0
+  );
 
   const deckList = partners.length > 0 ? partners : recommendedPartners;
   const currentMatchCard = deckList.length > 0 ? deckList[matchIndex % deckList.length] : null;
@@ -1196,6 +1215,14 @@ export const PartnersAndFriendsPage: React.FC = () => {
             {incomingRequests.length > 0 && (
               <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px]">
                 +{incomingRequests.length}
+              </span>
+            )}
+            {totalUnreadDirectCount > 0 && (
+              <span
+                className="px-1.5 py-0.5 rounded-full bg-[#16B672] text-white text-[10px]"
+                title="Непрочитанные личные сообщения от знакомых"
+              >
+                💬 {totalUnreadDirectCount}
               </span>
             )}
           </button>
@@ -1538,7 +1565,15 @@ export const PartnersAndFriendsPage: React.FC = () => {
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#16B672] text-white text-xs font-bold"
                             >
                               <MessageCircle className="w-3.5 h-3.5" />
-                              <span>Личный чат</span>
+                              <span>
+                                Личный чат
+                                {(() => {
+                                  const unread =
+                                    acceptedFriends.find((f) => f.friendUserId === p.id)
+                                      ?.unreadMessagesCount || 0;
+                                  return unread > 0 ? ` (${unread})` : '';
+                                })()}
+                              </span>
                             </button>
                           )}
                         </div>
@@ -1651,7 +1686,15 @@ export const PartnersAndFriendsPage: React.FC = () => {
                           className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white text-xs font-bold"
                         >
                           <MessageCircle className="w-3.5 h-3.5" />
-                          <span>Чат</span>
+                          <span>
+                            Чат
+                            {(() => {
+                              const unread =
+                                acceptedFriends.find((f) => f.friendUserId === p.id)
+                                  ?.unreadMessagesCount || 0;
+                              return unread > 0 ? ` (${unread})` : '';
+                            })()}
+                          </span>
                         </button>
                       </div>
                     )}
@@ -1760,65 +1803,75 @@ export const PartnersAndFriendsPage: React.FC = () => {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {acceptedFriends.map((f) => (
-                  <div
-                    key={f.id}
-                    className="bg-white rounded-2xl border border-slate-200 p-5 flex items-center justify-between gap-4"
-                  >
-                    <div className="space-y-1.5">
-                      <Link
-                        to={`/users/${f.friendUserId}`}
-                        className="font-display font-bold text-base text-slate-900 hover:text-blue-600"
-                      >
-                        {f.friendDisplayName}
-                      </Link>
-                      <div className="text-xs text-slate-500">{f.friendCity || 'Москва'}</div>
-                      <div className="flex flex-wrap gap-1">
-                        {f.friendSports.map((s) => {
-                          const isCommon = viewerSportIds.has(s.sportId);
-                          return (
-                            <span
-                              key={s.sportId}
-                              className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
-                                isCommon
-                                  ? 'bg-[#E7F8F0] text-[#11995E] border border-[#16B672]'
-                                  : 'bg-blue-50 text-blue-700'
-                              }`}
-                            >
-                              {isCommon ? '🤝 ' : ''}
-                              {s.sportName}
+                {acceptedFriends.map((f) => {
+                  const unreadCount = f.unreadMessagesCount || 0;
+                  return (
+                    <div
+                      key={f.id}
+                      className="bg-white rounded-2xl border border-slate-200 p-5 flex items-center justify-between gap-4"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            to={`/users/${f.friendUserId}`}
+                            className="font-display font-bold text-base text-slate-900 hover:text-blue-600"
+                          >
+                            {f.friendDisplayName}
+                          </Link>
+                          {unreadCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-600 text-white text-[11px] font-extrabold">
+                              Непрочитанных: {unreadCount}
                             </span>
-                          );
-                        })}
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-500">{f.friendCity || 'Москва'}</div>
+                        <div className="flex flex-wrap gap-1">
+                          {f.friendSports.map((s) => {
+                            const isCommon = viewerSportIds.has(s.sportId);
+                            return (
+                              <span
+                                key={s.sportId}
+                                className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                                  isCommon
+                                    ? 'bg-[#E7F8F0] text-[#11995E] border border-[#16B672]'
+                                    : 'bg-blue-50 text-blue-700'
+                                }`}
+                              >
+                                {isCommon ? '🤝 ' : ''}
+                                {s.sportName}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveChatFriend({
+                              userId: f.friendUserId,
+                              displayName: f.friendDisplayName,
+                            })
+                          }
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white text-xs font-bold shadow-xs"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>Написать{unreadCount > 0 ? ` (${unreadCount})` : ''}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveOrCancel(f.id)}
+                          title="Удалить из списка знакомых"
+                          className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold"
+                        >
+                          <UserMinus className="w-3.5 h-3.5" />
+                          <span>Удалить</span>
+                        </button>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setActiveChatFriend({
-                            userId: f.friendUserId,
-                            displayName: f.friendDisplayName,
-                          })
-                        }
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white text-xs font-bold shadow-xs"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5" />
-                        <span>Написать</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveOrCancel(f.id)}
-                        title="Удалить из списка знакомых"
-                        className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold"
-                      >
-                        <UserMinus className="w-3.5 h-3.5" />
-                        <span>Удалить</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
@@ -1830,7 +1883,10 @@ export const PartnersAndFriendsPage: React.FC = () => {
         <DirectChatModal
           friendUserId={activeChatFriend.userId}
           friendDisplayName={activeChatFriend.displayName}
-          onClose={() => setActiveChatFriend(null)}
+          onClose={() => {
+            setActiveChatFriend(null);
+            loadData(true);
+          }}
         />
       )}
     </div>

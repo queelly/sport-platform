@@ -22,6 +22,9 @@ public class DirectMessage {
     @Column(nullable = false, length = 2500)
     private String content;
 
+    @Column(name = "is_read", nullable = false)
+    private boolean read = false;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -39,6 +42,8 @@ public class DirectMessage {
     public void setRecipient(User recipient) { this.recipient = recipient; }
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
+    public boolean isRead() { return read; }
+    public void setRead(boolean read) { this.read = read; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 }
