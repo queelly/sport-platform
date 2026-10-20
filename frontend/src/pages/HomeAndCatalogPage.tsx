@@ -1,24 +1,31 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight,
   BadgeCheck,
   Calendar,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
   Compass,
   ExternalLink,
   Globe,
-  Heart,
-  Map,
+  List,
+  LocateFixed,
+  Map as MapIcon,
   MapPin,
+  Minus,
   Navigation,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Repeat,
-  Search,
   SlidersHorizontal,
   Sparkles,
-  Sun,
-  Trophy,
   Users,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { apiFetch, formatDateTime, SKILL_LABELS } from '../api';
@@ -28,18 +35,87 @@ import {
   getRegionInfo,
   isOnlineEvent,
   OrganizationDto,
-  PublicUserProfileDto,
 } from '../types';
-import { EventCard, ScenicSportIllustration } from '../components/EventCard';
-import { CustomSelect, RegionSelect, VoiceSearchButton } from '../components/UiControls';
+import { EventCard, getSportCoverUrl, getSportEmoji } from '../components/EventCard';
 import { getSelectedGlobalRegion } from '../components/Navbar';
+import { PartnersAndFriendsPage } from './SocialPages';
+
+declare global {
+  interface Window {
+    L?: any;
+  }
+}
+
+function getEventCategoryBadge(
+  activityFormat?: string,
+  title?: string
+): { label: string; shortLabel: string } {
+  const combined = `${activityFormat || ''} ${title || ''}`.toLowerCase();
+  if (combined.includes('соревн') || combined.includes('турнир') || combined.includes('кубок')) {
+    return { label: '🏆 Соревнования', shortLabel: 'Соревнования' };
+  }
+  if (combined.includes('фест') || combined.includes('праздник')) {
+    return { label: '🎉 Фестивали', shortLabel: 'Фестивали' };
+  }
+  if (combined.includes('квест') || combined.includes('ориентир')) {
+    return { label: '🧭 Квесты', shortLabel: 'Квесты' };
+  }
+  return { label: '🏃 Спортивные тренировки', shortLabel: 'Тренировка' };
+}
+
+function getDeterministicEventCoords(ev: EventCardDto): { lat: number; lng: number } {
+  const info = getRegionInfo(ev.city);
+  const baseLat = info?.lat ?? 55.7558;
+  const baseLng = info?.lng ?? 37.6173;
+  let hash = 0;
+  const seed = `${ev.id}-${ev.locationAddress}`;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+  }
+  const latOffset = ((hash % 1000) / 1000) * 0.055 - 0.0275;
+  const lngOffset = (((hash >> 10) % 1000) / 1000) * 0.085 - 0.0425;
+  return {
+    lat: Number((baseLat + latOffset).toFixed(5)),
+    lng: Number((baseLng + lngOffset).toFixed(5)),
+  };
+}
+
+function formatShortTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '19:00';
+  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatRelativeDayLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const todayStr = now.toDateString();
+  const tom = new Date(now);
+  tom.setDate(now.getDate() + 1);
+  if (d.toDateString() === todayStr) return 'Сегодня';
+  if (d.toDateString() === tom.toDateString()) return 'Завтра';
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '');
+}
 
 export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalogOnly = false }) => {
   const { user, sports } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const viewParam = searchParams.get('view');
+  const viewMode: 'map' | 'list' = catalogOnly
+    ? viewParam === 'map'
+      ? 'map'
+      : 'list'
+    : viewParam === 'list'
+    ? 'list'
+    : 'map';
+
+  const urlQuery = searchParams.get('q') || '';
+
   const [events, setEvents] = useState<EventCardDto[]>([]);
   const [recommendedEvents, setRecommendedEvents] = useState<EventCardDto[]>([]);
-  const [organizations, setOrganizations] = useState<OrganizationDto[]>([]);
-  const [partners, setPartners] = useState<PublicUserProfileDto[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filters
@@ -48,13 +124,23 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
   const [joinMode, setJoinMode] = useState<string>('');
   const [skillLevel, setSkillLevel] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
+  const [formatFilter, setFormatFilter] = useState<'' | 'OFFLINE' | 'ONLINE'>('');
   const [recurringFilter, setRecurringFilter] = useState<string>('');
   const [onlyAvailable, setOnlyAvailable] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [showFiltersPanel, setShowFiltersPanel] = useState<boolean>(catalogOnly);
-  const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
-  const [selectedMapEvent, setSelectedMapEvent] = useState<EventCardDto | null>(null);
-  const [selectedDayOffset, setSelectedDayOffset] = useState<number | null>(null);
+  const [datePreset, setDatePreset] = useState<'' | 'today' | 'tomorrow' | 'weekend' | string>('');
+
+  // Popover / Modal states
+  const [openDropdown, setOpenDropdown] = useState<null | 'date' | 'sport' | 'category' | 'format'>(null);
+  const [showFiltersModal, setShowFiltersModal] = useState(false);
+  const [calendarMonthOffset, setCalendarMonthOffset] = useState(0);
+
+  // Map split view states
+  const [listCollapsed, setListCollapsed] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<EventCardDto | null>(null);
+  const [joiningEventId, setJoiningEventId] = useState<string | null>(null);
+  const [joinFeedback, setJoinFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const filterBarRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const onRegionChange = (e: Event) => {
@@ -63,6 +149,16 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
     };
     window.addEventListener('sp-region-change', onRegionChange);
     return () => window.removeEventListener('sp-region-change', onRegionChange);
+  }, []);
+
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (filterBarRef.current && !filterBarRef.current.contains(e.target as Node)) {
+        setOpenDropdown(null);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
   }, []);
 
   const fetchCatalog = async () => {
@@ -76,23 +172,14 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
       if (recurringFilter === 'true') params.set('recurring', 'true');
       if (recurringFilter === 'false') params.set('recurring', 'false');
       if (onlyAvailable) params.set('onlyAvailableSpots', 'true');
-      if (searchQuery.trim()) params.set('q', searchQuery.trim());
+      if (urlQuery.trim()) params.set('q', urlQuery.trim());
 
-      const [evList, allEvList, orgList, partnerList] = await Promise.all([
+      const [evList, allEvList] = await Promise.all([
         apiFetch<EventCardDto[]>(`/api/v1/events?${params.toString()}`),
         apiFetch<EventCardDto[]>('/api/v1/events'),
-        apiFetch<OrganizationDto[]>('/api/v1/organizations'),
-        apiFetch<PublicUserProfileDto[]>('/api/v1/partners/search').catch(() => [] as PublicUserProfileDto[]),
       ]);
       setEvents(evList);
       setRecommendedEvents(allEvList);
-      setOrganizations(orgList);
-      setPartners(partnerList);
-      const firstOffline =
-        evList.find((ev) => !isOnlineEvent(ev.city, ev.locationAddress)) ||
-        allEvList.find((ev) => !isOnlineEvent(ev.city, ev.locationAddress)) ||
-        null;
-      setSelectedMapEvent(firstOffline);
     } catch {
       // ignore
     } finally {
@@ -102,1080 +189,1726 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
 
   useEffect(() => {
     fetchCatalog();
-  }, [selectedSportId, city, joinMode, skillLevel, recurringFilter, onlyAvailable]);
+  }, [selectedSportId, city, joinMode, skillLevel, recurringFilter, onlyAvailable, urlQuery]);
 
-  // Debounced live search when typing searchQuery
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchCatalog();
-    }, 320);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+  const setViewMode = (nextView: 'map' | 'list') => {
+    const next = new URLSearchParams(searchParams);
+    next.set('view', nextView);
+    setSearchParams(next);
+  };
 
   const handleResetFilters = () => {
     setSelectedSportId('');
-    setCity('');
     setJoinMode('');
     setSkillLevel('');
     setCategoryFilter('');
+    setFormatFilter('');
     setRecurringFilter('');
     setOnlyAvailable(false);
-    setSearchQuery('');
-    setSelectedDayOffset(null);
+    setDatePreset('');
+    if (urlQuery) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('q');
+      setSearchParams(next);
+    }
   };
 
-  // Exclude online events without physical address from map view (#7)
-  const mapEvents = useMemo(() => {
-    const base = events.length > 0 ? events : recommendedEvents;
-    return base.filter((ev) => !isOnlineEvent(ev.city, ev.locationAddress));
-  }, [events, recommendedEvents]);
-
-  const activeMapCoords = useMemo(() => {
-    const targetCity =
-      selectedMapEvent && !isOnlineEvent(selectedMapEvent.city, selectedMapEvent.locationAddress)
-        ? selectedMapEvent.city
-        : city && city !== 'Онлайн'
-        ? city
-        : 'Москва';
-    const info = getRegionInfo(targetCity);
-    return {
-      lat: info?.lat ?? 55.7558,
-      lon: info?.lng ?? 37.6173,
-      city: targetCity,
-      address: selectedMapEvent?.locationAddress || '',
-    };
-  }, [selectedMapEvent, city]);
-
-  // Next 12 days strip for Reference 2 "Event Dates 🚀"
-  const dateStripDays = useMemo(() => {
-    const today = new Date();
-    const weekNames = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
-    return Array.from({ length: 12 }, (_, idx) => {
-      const d = new Date(today);
-      d.setDate(today.getDate() + idx);
-      return {
-        offset: idx,
-        dateObj: d,
-        dayName: weekNames[d.getDay()],
-        dayNum: d.getDate(),
-        isoDate: d.toISOString().slice(0, 10),
-      };
-    });
-  }, []);
-
-  // Filtered events by date strip and category/online filter
+  // Filtered events with client-side date/category/format filters
   const displayedEvents = useMemo(() => {
     let list = events;
-    if (categoryFilter === 'ONLINE') {
-      list = list.filter((ev) => isOnlineEvent(ev.city, ev.locationAddress));
-    } else if (categoryFilter) {
-      list = list.filter((ev) =>
-        (ev.activityFormat || '').toLowerCase().includes(categoryFilter.toLowerCase())
-      );
-    }
-    if (selectedDayOffset === null) return list;
-    const targetIso = dateStripDays[selectedDayOffset]?.isoDate;
-    if (!targetIso) return list;
-    const matching = list.filter((ev) => ev.startsAt.slice(0, 10) === targetIso);
-    return matching;
-  }, [events, categoryFilter, selectedDayOffset, dateStripDays]);
 
-  // Mini calendar days for Bento Widget #1 (Översikt)
-  const eventDayNumbers = useMemo(() => {
-    const set = new Set<number>();
-    recommendedEvents.forEach((ev) => {
+    if (formatFilter === 'ONLINE') {
+      list = list.filter((ev) => isOnlineEvent(ev.city, ev.locationAddress));
+    } else if (formatFilter === 'OFFLINE') {
+      list = list.filter((ev) => !isOnlineEvent(ev.city, ev.locationAddress));
+    }
+
+    if (categoryFilter) {
+      list = list.filter((ev) => {
+        const cat = getEventCategoryBadge(ev.activityFormat, ev.title);
+        return (
+          (ev.activityFormat || '').toLowerCase().includes(categoryFilter.toLowerCase()) ||
+          cat.label.toLowerCase().includes(categoryFilter.toLowerCase())
+        );
+      });
+    }
+
+    if (datePreset) {
+      const now = new Date();
+      const todayIso = now.toISOString().slice(0, 10);
+      const tom = new Date(now);
+      tom.setDate(now.getDate() + 1);
+      const tomIso = tom.toISOString().slice(0, 10);
+
+      if (datePreset === 'today') {
+        list = list.filter((ev) => ev.startsAt.slice(0, 10) === todayIso);
+      } else if (datePreset === 'tomorrow') {
+        list = list.filter((ev) => ev.startsAt.slice(0, 10) === tomIso);
+      } else if (datePreset === 'weekend') {
+        list = list.filter((ev) => {
+          const d = new Date(ev.startsAt);
+          const day = d.getDay();
+          return day === 0 || day === 6;
+        });
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(datePreset)) {
+        list = list.filter((ev) => ev.startsAt.slice(0, 10) === datePreset);
+      }
+    }
+
+    return list;
+  }, [events, formatFilter, categoryFilter, datePreset]);
+
+  // Exclude online events without physical address from map pins (#7)
+  const mapEvents = useMemo(() => {
+    const source = displayedEvents.length > 0 ? displayedEvents : events;
+    return source.filter((ev) => !isOnlineEvent(ev.city, ev.locationAddress));
+  }, [displayedEvents, events]);
+
+  // Categorized sections for Feed View ("Сегодня", "Завтра", "На этой неделе", "Предстоящие встречи")
+  const feedSections = useMemo(() => {
+    const today: EventCardDto[] = [];
+    const tomorrow: EventCardDto[] = [];
+    const thisWeek: EventCardDto[] = [];
+    const upcoming: EventCardDto[] = [];
+
+    const now = new Date();
+    const todayStr = now.toDateString();
+    const tom = new Date(now);
+    tom.setDate(now.getDate() + 1);
+    const tomStr = tom.toDateString();
+    const weekLimit = new Date(now);
+    weekLimit.setDate(now.getDate() + 7);
+
+    displayedEvents.forEach((ev) => {
       const d = new Date(ev.startsAt);
-      if (!Number.isNaN(d.getTime())) {
-        set.add(d.getDate());
+      if (d.toDateString() === todayStr) {
+        today.push(ev);
+      } else if (d.toDateString() === tomStr) {
+        tomorrow.push(ev);
+      } else if (d <= weekLimit && d >= now) {
+        thisWeek.push(ev);
+      } else {
+        upcoming.push(ev);
       }
     });
-    return set;
-  }, [recommendedEvents]);
 
-  const featuredEvent = events[0] || recommendedEvents[0] || null;
+    return [
+      { id: 'today', title: 'Сегодня', items: today },
+      { id: 'tomorrow', title: 'Завтра', items: tomorrow },
+      { id: 'week', title: 'На этой неделе', items: thisWeek },
+      { id: 'upcoming', title: 'Предстоящие события', items: upcoming },
+    ].filter((sec) => sec.items.length > 0);
+  }, [displayedEvents]);
 
-  const currentDateFormatted = useMemo(() => {
-    return new Intl.DateTimeFormat('ru-RU', {
-      day: 'numeric',
-      month: 'long',
-      weekday: 'short',
-    }).format(new Date());
-  }, []);
+  const activeFiltersCount = useMemo(() => {
+    let c = 0;
+    if (selectedSportId) c++;
+    if (categoryFilter) c++;
+    if (formatFilter) c++;
+    if (joinMode) c++;
+    if (skillLevel) c++;
+    if (onlyAvailable) c++;
+    if (recurringFilter) c++;
+    if (datePreset) c++;
+    if (urlQuery.trim()) c++;
+    return c;
+  }, [
+    selectedSportId,
+    categoryFilter,
+    formatFilter,
+    joinMode,
+    skillLevel,
+    onlyAvailable,
+    recurringFilter,
+    datePreset,
+    urlQuery,
+  ]);
+
+  const selectedSportObj = useMemo(
+    () => sports.find((s) => s.id === selectedSportId),
+    [sports, selectedSportId]
+  );
+
+  const dateFilterLabel = useMemo(() => {
+    if (!datePreset) return 'Когда';
+    if (datePreset === 'today') return 'Сегодня';
+    if (datePreset === 'tomorrow') return 'Завтра';
+    if (datePreset === 'weekend') return 'Выходные';
+    return new Date(datePreset).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  }, [datePreset]);
+
+  // Mini calendar days for "Когда" dropdown
+  const calendarView = useMemo(() => {
+    const base = new Date();
+    const year = base.getFullYear();
+    const month = base.getMonth() + calendarMonthOffset;
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const monthTitle = firstDay.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+    const startWeekday = (firstDay.getDay() + 6) % 7; // Mon=0..Sun=6
+    const days: Array<{ day: number; iso: string } | null> = [];
+    for (let i = 0; i < startWeekday; i++) days.push(null);
+    for (let d = 1; d <= lastDay.getDate(); d++) {
+      const dt = new Date(firstDay.getFullYear(), firstDay.getMonth(), d, 12, 0, 0);
+      days.push({ day: d, iso: dt.toISOString().slice(0, 10) });
+    }
+    return { monthTitle, days };
+  }, [calendarMonthOffset]);
+
+  const handleQuickJoin = async (ev: EventCardDto) => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    setJoiningEventId(ev.id);
+    setJoinFeedback(null);
+    try {
+      await apiFetch(`/api/v1/events/${ev.id}/join`, { method: 'POST' });
+      setJoinFeedback({
+        type: 'ok',
+        text:
+          ev.joinMode === 'APPROVAL_REQUIRED'
+            ? 'Заявка отправлена организатору!'
+            : 'Вы успешно записаны на событие!',
+      });
+      await fetchCatalog();
+    } catch (e: any) {
+      setJoinFeedback({
+        type: 'err',
+        text: e?.message || 'Не удалось записаться (проверьте пересечение расписания)',
+      });
+    } finally {
+      setJoiningEventId(null);
+    }
+  };
 
   return (
-    <div className="space-y-6 pb-8">
-      {/* TOP SCENIC WELCOME HEADER + TRAVENLY SEARCH BAR (Ref 1 + Ref 2) */}
-      <section className="bento-card overflow-hidden relative p-5 sm:p-7 bg-gradient-to-r from-[#D9F2E6] via-[#E9F8F1] to-[#D4EEFC] border border-white">
-        {/* Decorative soft scenic hills in background */}
-        <svg
-          viewBox="0 0 900 220"
-          preserveAspectRatio="none"
-          className="absolute inset-0 w-full h-full pointer-events-none select-none opacity-55 a11y-decorative"
-        >
-          <circle cx="780" cy="48" r="32" fill="#FFF6BA" />
-          <path d="M0 175 Q220 95 470 155 T900 125 L900 220 L0 220 Z" fill="#9EE2B8" opacity="0.55" />
-          <path d="M0 195 Q340 135 660 180 T900 165 L900 220 L0 220 Z" fill="#5BC889" opacity="0.45" />
-        </svg>
-
-        <div className="relative z-10 flex flex-col gap-5">
-          {/* Top greeting row + Right Weather/Region/Date pill (Ref 1 top bar + Ref 2 header) */}
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 backdrop-blur-xs text-[#11995E] text-xs font-extrabold mb-2 shadow-2xs">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Спортивная экосистема «Точка Сбора»</span>
-              </div>
-              <h1 className="font-display font-black text-2xl sm:text-3xl text-[#1A2622] tracking-tight">
-                {user
-                  ? `Привет, ${user.displayName.split(' ')[0]}! 👋`
-                  : 'Добро пожаловать в Точку Сбора! 👋'}
-              </h1>
-              <p className="text-xs sm:text-sm font-semibold text-slate-600 mt-1">
-                Находите спортивные тренировки, соревнования, фестивали, квесты и напарников в своём городе или онлайн
-              </p>
-            </div>
-
-            {/* Right Scenic Info Pill (Ref 1 top-right status widget) */}
-            <div className="flex items-center gap-3 bg-white/90 backdrop-blur-md px-4 py-2.5 rounded-2xl shadow-xs border border-white">
-              <div className="w-9 h-9 rounded-xl bg-[#E7F8F0] text-[#16B672] flex items-center justify-center">
-                <Sun className="w-5 h-5" />
-              </div>
-              <div className="text-xs">
-                <div className="font-display font-extrabold text-slate-900 capitalize">
-                  {currentDateFormatted}
-                </div>
-                <div className="text-[11px] font-bold text-[#16B672] flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />
-                  <span>{city || 'Все регионы РФ'}</span>
-                  <span>•</span>
-                  <span>{getRegionInfo(city)?.tzLabel.split(' ')[0] || 'МСК'}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Travenly Search Bar + Voice Search (#9) */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-            <div className="relative flex-1 flex items-center">
-              <Search className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && fetchCatalog()}
-                placeholder="Найти тренировку, соревнование, площадку или вид спорта (можно голосом)..."
-                className="w-full h-12 pl-11 pr-14 rounded-2xl bg-white border border-white shadow-sm text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#16B672]"
+    <div
+      className={
+        viewMode === 'map'
+          ? 'h-[calc(100dvh-64px)] flex flex-col bg-page overflow-hidden select-none'
+          : 'min-h-[calc(100dvh-64px)] flex flex-col bg-page'
+      }
+    >
+      {/* SPORTIKUS 60PX TOP FILTER BAR */}
+      <div
+        ref={filterBarRef}
+        className="h-[60px] px-4 lg:px-6 bg-card border-b border-line-2 flex items-center justify-between gap-2 shrink-0 relative z-30"
+      >
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+          {/* 1. КОГДА (Date filter popover) */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setOpenDropdown(openDropdown === 'date' ? null : 'date')}
+              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+                datePreset
+                  ? 'bg-ink text-card font-semibold shadow-xs'
+                  : 'bg-surface hover:bg-surface-2 text-ink border border-line/60'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5 opacity-80" />
+              <span className=" whitespace-nowrap">{dateFilterLabel}</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 opacity-60 transition-transform ${
+                  openDropdown === 'date' ? 'rotate-180' : ''
+                }`}
               />
-              <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
-                <VoiceSearchButton
-                  onResult={(spoken) => setSearchQuery(spoken)}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowFiltersPanel((prev) => !prev)}
-                title="Расширенные фильтры"
-                className={`h-12 w-12 rounded-2xl flex items-center justify-center transition-all shadow-sm ${
-                  showFiltersPanel
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-[#16B672] hover:bg-[#11995E] text-white shadow-[#16B672]/25'
-                }`}
-              >
-                <SlidersHorizontal className="w-5 h-5" />
-              </button>
-
-              <button
-                type="button"
-                onClick={fetchCatalog}
-                className="h-12 px-6 rounded-2xl bg-[#16B672] hover:bg-[#11995E] text-white font-display font-extrabold text-sm shadow-md shadow-[#16B672]/25 transition-all cursor-pointer"
-              >
-                Найти
-              </button>
-
-              <Link
-                to={user ? '/events/new' : '/register'}
-                className="h-12 px-4 rounded-2xl bg-white/95 hover:bg-white text-slate-900 font-display font-extrabold text-xs sm:text-sm inline-flex items-center gap-1.5 shadow-sm border border-white transition-all"
-              >
-                <Plus className="w-4 h-4 text-[#16B672]" />
-                <span className="hidden sm:inline">Создать сбор</span>
-              </Link>
-            </div>
-          </div>
-
-          {/* Quick Category Pills (#11: Тренировки, Соревнования, Фестивали, Квесты, Онлайн) */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
-            <button
-              type="button"
-              onClick={() => setCategoryFilter('')}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
-                categoryFilter === ''
-                  ? 'bg-[#16B672] text-white shadow-sm'
-                  : 'bg-white/85 text-slate-700 hover:bg-white'
-              }`}
-            >
-              Все форматы
             </button>
-            {EVENT_CATEGORIES.map((cat) => (
-              <button
-                key={cat.value}
-                type="button"
-                onClick={() => setCategoryFilter(categoryFilter === cat.value ? '' : cat.value)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
-                  categoryFilter === cat.value
-                    ? 'bg-[#16B672] text-white shadow-sm'
-                    : 'bg-white/85 text-slate-700 hover:bg-white'
-                }`}
-              >
-                {cat.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setCategoryFilter(categoryFilter === 'ONLINE' ? '' : 'ONLINE')}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
-                categoryFilter === 'ONLINE'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'bg-white/85 text-indigo-700 hover:bg-white'
-              }`}
-            >
-              🌐 Онлайн-мероприятия
-            </button>
-          </div>
 
-          {/* Collapsible Advanced Filters Drawer */}
-          {showFiltersPanel && (
-            <div className="bg-white/95 backdrop-blur-md rounded-2xl p-4 border border-slate-100 shadow-sm space-y-3 animate-fadeIn">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                <RegionSelect
-                  value={city}
-                  onChange={setCity}
-                  allowAll
-                  allLabel="Все регионы РФ"
-                  placeholder="Выберите город / регион"
-                />
-
-                <CustomSelect
-                  value={selectedSportId}
-                  onChange={setSelectedSportId}
-                  options={[
-                    { value: '', label: 'Все виды спорта' },
-                    ...sports.map((s) => ({ value: s.id, label: s.name })),
-                  ]}
-                />
-
-                <CustomSelect
-                  value={categoryFilter}
-                  onChange={setCategoryFilter}
-                  options={[
-                    { value: '', label: 'Любая категория события' },
-                    ...EVENT_CATEGORIES,
-                    { value: 'ONLINE', label: '🌐 Онлайн-формат' },
-                  ]}
-                />
-
-                <CustomSelect
-                  value={joinMode}
-                  onChange={setJoinMode}
-                  options={[
-                    { value: '', label: 'Любой режим записи' },
-                    { value: 'OPEN', label: 'Свободный вход' },
-                    { value: 'APPROVAL_REQUIRED', label: 'По заявке организатору' },
-                  ]}
-                />
-
-                <CustomSelect
-                  value={skillLevel}
-                  onChange={setSkillLevel}
-                  options={[
-                    { value: '', label: 'Любой уровень подготовки' },
-                    ...Object.entries(SKILL_LABELS).map(([k, v]) => ({
-                      value: k,
-                      label: v,
-                    })),
-                  ]}
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 text-xs">
-                <div className="flex flex-wrap items-center gap-4">
-                  <label className="inline-flex items-center gap-2 cursor-pointer font-bold text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={onlyAvailable}
-                      onChange={(e) => setOnlyAvailable(e.target.checked)}
-                      className="rounded border-slate-300 text-[#16B672] focus:ring-[#16B672]"
-                    />
-                    <span>Только со свободными местами</span>
-                  </label>
-
-                  <div className="flex items-center gap-2 min-w-[240px]">
-                    <Repeat className="w-3.5 h-3.5 text-[#16B672] shrink-0" />
-                    <CustomSelect
-                      size="sm"
-                      value={recurringFilter}
-                      onChange={setRecurringFilter}
-                      options={[
-                        { value: '', label: 'Разовые и повторяющиеся встречи' },
-                        { value: 'false', label: 'Только разовые встречи' },
-                        { value: 'true', label: 'Повторяющиеся встречи' },
-                      ]}
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleResetFilters}
-                  className="px-3 py-1.5 rounded-xl font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                >
-                  Сбросить фильтры
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* REFERENCE 1: 6-WIDGET BENTO DASHBOARD GRID (3 Columns × 2 Rows, shown on '/') */}
-      {!catalogOnly && (
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {/* WIDGET 1: Översikt (Сводка + Мини-календарь месяца) */}
-          <div className="bento-card p-5 flex flex-col justify-between gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-display font-extrabold text-base text-slate-900">
-                  Сводка месяца 📅
-                </h2>
-                <p className="text-[11px] font-semibold text-slate-500">
-                  Календарь активностей и статистика
-                </p>
-              </div>
-              <span className="px-2.5 py-1 rounded-full bg-[#E7F8F0] text-[#11995E] text-[11px] font-extrabold">
-                Активно
-              </span>
-            </div>
-
-            <div className="grid grid-cols-12 gap-3 items-center">
-              {/* Left stats column */}
-              <div className="col-span-5 space-y-2.5 pr-2 border-r border-slate-100">
-                <div>
-                  <div className="text-[11px] font-bold text-slate-400">Активных встреч</div>
-                  <div className="font-display font-black text-xl text-slate-900">
-                    {recommendedEvents.length}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[11px] font-bold text-slate-400">Видов спорта</div>
-                  <div className="font-display font-black text-xl text-[#16B672]">
-                    {sports.length}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[11px] font-bold text-slate-400">Клубов и комьюнити</div>
-                  <div className="font-display font-black text-xl text-slate-900">
-                    {organizations.length}
-                  </div>
-                </div>
-              </div>
-
-              {/* Right mini calendar grid */}
-              <div className="col-span-7">
-                <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-extrabold text-slate-400 mb-1">
-                  {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
-                    <span key={d}>{d}</span>
+            {openDropdown === 'date' && (
+              <div className="fixed sm:absolute left-4 sm:left-0 top-[118px] sm:top-full mt-1.5 w-[300px] bg-card rounded-2xl shadow-2xl border border-line p-4 z-50 anim-fade">
+                <div className="grid grid-cols-2 gap-1.5 mb-3">
+                  {[
+                    { id: '', label: 'Любое время' },
+                    { id: 'today', label: 'Сегодня' },
+                    { id: 'tomorrow', label: 'Завтра' },
+                    { id: 'weekend', label: 'На выходных' },
+                  ].map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        setDatePreset(p.id);
+                        setOpenDropdown(null);
+                      }}
+                      className={`px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors cursor-pointer ${
+                        datePreset === p.id
+                          ? 'bg-brand text-white'
+                          : 'bg-surface hover:bg-surface-2 text-ink'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
                   ))}
                 </div>
-                <div className="grid grid-cols-7 gap-1 text-center">
-                  {Array.from({ length: 28 }, (_, i) => i + 1).map((dayNum) => {
-                    const hasEvent = eventDayNumbers.has(dayNum) || dayNum % 4 === 0;
-                    const isToday = dayNum === new Date().getDate();
-                    return (
-                      <div
-                        key={dayNum}
-                        className={`h-6 rounded-lg flex items-center justify-center text-[10px] font-extrabold transition-colors ${
-                          isToday
-                            ? 'bg-slate-900 text-white'
-                            : hasEvent
-                            ? 'bg-[#16B672] text-white shadow-2xs'
-                            : 'text-slate-600 bg-[#F7FAF8]'
-                        }`}
+
+                <div className="border-t border-line pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-ink capitalize">
+                      {calendarView.monthTitle}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setCalendarMonthOffset((m) => m - 1)}
+                        className="w-6 h-6 rounded-lg hover:bg-surface flex items-center justify-center text-muted hover:text-ink"
                       >
-                        {dayNum}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* WIDGET 2: Uppgifter (Ближайшие встречи с прогресс-барами мест) */}
-          <div className="bento-card p-5 flex flex-col justify-between gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-display font-extrabold text-base text-slate-900">
-                  Набор в группы ⚡
-                </h2>
-                <p className="text-[11px] font-semibold text-slate-500">
-                  Заполненность ближайших тренировок
-                </p>
-              </div>
-              <Link
-                to="/events"
-                className="text-xs font-extrabold text-[#16B672] hover:underline"
-              >
-                Все →
-              </Link>
-            </div>
-
-            <div className="space-y-3">
-              {(events.length > 0 ? events : recommendedEvents).slice(0, 3).map((ev) => {
-                const maxP = ev.maxParticipants || Math.max(12, ev.confirmedParticipantsCount + 4);
-                const pct = Math.min(100, Math.round((ev.confirmedParticipantsCount / maxP) * 100));
-                return (
-                  <Link
-                    key={ev.id}
-                    to={`/events/${ev.id}`}
-                    className="block p-2.5 rounded-2xl bg-[#F7FAF8] hover:bg-[#E7F8F0]/60 transition-colors"
-                  >
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="font-display font-extrabold text-slate-900 truncate">
-                        {ev.title}
-                      </span>
-                      <span className="font-extrabold text-[#11995E] shrink-0">
-                        {ev.confirmedParticipantsCount} / {maxP}
-                      </span>
-                    </div>
-                    <div className="mt-1.5 h-2 rounded-full bg-white overflow-hidden p-0.5">
-                      <div
-                        className="h-full rounded-full bg-[#16B672] transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* WIDGET 3: Senaste bilden (Встреча дня / Избранная площадка) */}
-          <div className="bento-card p-5 flex flex-col justify-between gap-3">
-            <div className="flex items-center justify-between">
-              <h2 className="font-display font-extrabold text-base text-slate-900">
-                Встреча дня 🌟
-              </h2>
-              {featuredEvent && (
-                <span className="px-2.5 py-0.5 rounded-full bg-[#E7F8F0] text-[#11995E] text-[10px] font-extrabold">
-                  {featuredEvent.sport.name}
-                </span>
-              )}
-            </div>
-
-            {featuredEvent ? (
-              <Link
-                to={`/events/${featuredEvent.id}`}
-                className="group relative rounded-2xl overflow-hidden h-44 flex items-end p-3.5 bg-[#DDF4FA]"
-              >
-                <div className="absolute inset-0">
-                  {featuredEvent.coverImageUrl ? (
-                    <img
-                      src={featuredEvent.coverImageUrl}
-                      alt={featuredEvent.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                  ) : (
-                    <ScenicSportIllustration sportName={featuredEvent.sport.name} variant={1} />
-                  )}
-                </div>
-                <div className="relative z-10 w-full bg-white/95 backdrop-blur-md rounded-xl p-3 shadow-sm flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-display font-extrabold text-xs text-slate-900 truncate">
-                      {featuredEvent.title}
-                    </div>
-                    <div className="text-[11px] font-semibold text-slate-500 truncate mt-0.5">
-                      {featuredEvent.city} • {formatDateTime(featuredEvent.startsAt)}
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCalendarMonthOffset((m) => m + 1)}
+                        className="w-6 h-6 rounded-lg hover:bg-surface flex items-center justify-center text-muted hover:text-ink"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
-                  <div className="w-8 h-8 rounded-full bg-[#16B672] text-white flex items-center justify-center shrink-0">
-                    <ArrowRight className="w-4 h-4" />
+                  <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-muted mb-1">
+                    {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
+                      <div key={d}>{d}</div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {calendarView.days.map((cell, idx) =>
+                      cell ? (
+                        <button
+                          key={cell.iso}
+                          type="button"
+                          onClick={() => {
+                            setDatePreset(cell.iso);
+                            setOpenDropdown(null);
+                          }}
+                          className={`h-8 rounded-lg text-xs font-semibold flex items-center justify-center transition-colors cursor-pointer ${
+                            datePreset === cell.iso
+                              ? 'bg-brand text-white font-bold'
+                              : 'hover:bg-surface text-ink'
+                          }`}
+                        >
+                          {cell.day}
+                        </button>
+                      ) : (
+                        <div key={`empty-${idx}`} />
+                      )
+                    )}
                   </div>
                 </div>
-              </Link>
-            ) : (
-              <div className="h-44 rounded-2xl bg-[#F7FAF8] flex items-center justify-center text-xs text-slate-400">
-                Загрузка события...
               </div>
             )}
           </div>
 
-          {/* WIDGET 4: Samlingar (Коллекция видов спорта со счётчиками и прогресс-баром) */}
-          <div className="bento-card p-5 flex flex-col justify-between gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-display font-extrabold text-base text-slate-900">
-                  Виды спорта 🏆
-                </h2>
-                <p className="text-[11px] font-semibold text-slate-500">
-                  Нажмите для быстрой фильтрации
-                </p>
-              </div>
-              {selectedSportId && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedSportId('')}
-                  className="text-xs font-extrabold text-[#16B672]"
-                >
-                  Все
-                </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-3 gap-2.5">
-              {sports.slice(0, 6).map((s, idx) => {
-                const count = recommendedEvents.filter((e) => e.sport.id === s.id).length;
-                const active = selectedSportId === s.id;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => setSelectedSportId(active ? '' : s.id)}
-                    className={`p-3 rounded-2xl text-left transition-all border ${
-                      active
-                        ? 'bg-[#16B672] text-white border-[#16B672] shadow-sm'
-                        : 'bg-[#F7FAF8] hover:bg-[#E7F8F0]/70 text-slate-800 border-transparent'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <Trophy
-                        className={`w-4 h-4 ${active ? 'text-white' : 'text-[#16B672]'}`}
-                      />
-                      <span
-                        className={`text-[10px] font-extrabold ${
-                          active ? 'text-white/90' : 'text-slate-400'
-                        }`}
-                      >
-                        {count} сб.
-                      </span>
-                    </div>
-                    <div className="font-display font-extrabold text-xs mt-2 truncate">
-                      {s.name}
-                    </div>
-                    <div
-                      className={`mt-1.5 h-1 rounded-full overflow-hidden ${
-                        active ? 'bg-white/30' : 'bg-slate-200'
-                      }`}
-                    >
-                      <div
-                        className={`h-full rounded-full ${
-                          active ? 'bg-white' : 'bg-[#16B672]'
-                        }`}
-                        style={{ width: `${Math.min(100, 35 + ((idx * 19) % 65))}%` }}
-                      />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* WIDGET 5: Min ö (Интерактивная карта площадок города) */}
-          <div className="bento-card p-5 flex flex-col justify-between gap-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-display font-extrabold text-base text-slate-900">
-                  Карта площадок 🗺️
-                </h2>
-                <p className="text-[11px] font-semibold text-slate-500">
-                  {activeMapCoords.city} • Яндекс Карты и 2ГИС
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setViewMode(viewMode === 'map' ? 'grid' : 'map');
-                  document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' });
-                }}
-                className="px-3 py-1.5 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white text-xs font-extrabold shadow-xs cursor-pointer"
-              >
-                {viewMode === 'map' ? 'К списку' : 'Открыть карту'}
-              </button>
-            </div>
-
-            <div className="relative h-36 rounded-2xl overflow-hidden border border-slate-100 bg-[#E7F8F0]">
-              <iframe
-                title="Мини-карта площадок"
-                src={`https://yandex.ru/map-widget/v1/?ll=${activeMapCoords.lon}%2C${activeMapCoords.lat}&z=11&pt=${activeMapCoords.lon},${activeMapCoords.lat},pm2rdm`}
-                className="w-full h-full border-0"
-                loading="lazy"
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-2 text-[11px] font-bold">
-              <a
-                href={`https://yandex.ru/maps/?text=${encodeURIComponent(
-                  `${activeMapCoords.city} ${activeMapCoords.address}`
-                )}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-amber-700 hover:underline inline-flex items-center gap-1"
-              >
-                <Navigation className="w-3 h-3" />
-                <span>Яндекс.Карты</span>
-              </a>
-              <a
-                href={`https://2gis.ru/search/${encodeURIComponent(
-                  `${activeMapCoords.city} ${activeMapCoords.address}`
-                )}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[#11995E] hover:underline inline-flex items-center gap-1"
-              >
-                <MapPin className="w-3 h-3" />
-                <span>Открыть в 2ГИС</span>
-              </a>
-            </div>
-          </div>
-
-          {/* WIDGET 6: Invånare (Спортивные напарники 2×4 круглых аватара + кнопка Спорт-Мэтч) */}
-          <div className="bento-card p-5 flex flex-col justify-between gap-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-display font-extrabold text-base text-slate-900">
-                  Участники и напарники 🤝
-                </h2>
-                <p className="text-[11px] font-semibold text-slate-500">
-                  Открыты для совместных тренировок
-                </p>
-              </div>
-              <Link
-                to="/partners"
-                className="px-3 py-1.5 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white text-xs font-extrabold shadow-xs"
-              >
-                Спорт-Мэтч
-              </Link>
-            </div>
-
-            <div className="grid grid-cols-4 gap-2 pt-1">
-              {(partners.length > 0
-                ? partners.slice(0, 8)
-                : [
-                    { id: '1', displayName: 'Алексей', city: 'Москва' },
-                    { id: '2', displayName: 'Мария', city: 'Красноярск' },
-                    { id: '3', displayName: 'Дмитрий', city: 'Санкт-Петербург' },
-                    { id: '4', displayName: 'Екатерина', city: 'Казань' },
-                    { id: '5', displayName: 'Илья', city: 'Новосибирск' },
-                    { id: '6', displayName: 'Анна', city: 'Екатеринбург' },
-                    { id: '7', displayName: 'Максим', city: 'Орёл' },
-                    { id: '8', displayName: 'Ольга', city: 'Краснодар' },
-                  ]
-              ).map((p: any, idx: number) => (
-                <Link
-                  key={p.id || idx}
-                  to={p.id && p.id.length > 5 ? `/users/${p.id}` : '/partners'}
-                  className="flex flex-col items-center text-center group"
-                >
-                  {p.avatarUrl ? (
-                    <img
-                      src={p.avatarUrl}
-                      alt={p.displayName}
-                      className="w-11 h-11 rounded-full object-cover border-2 border-[#E7F8F0] group-hover:border-[#16B672] transition-colors a11y-keep"
-                    />
-                  ) : (
-                    <div className="w-11 h-11 rounded-full bg-[#E7F8F0] text-[#11995E] font-display font-extrabold text-xs flex items-center justify-center border-2 border-white shadow-2xs group-hover:bg-[#16B672] group-hover:text-white transition-colors">
-                      {(p.displayName || 'У').charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <span className="text-[10px] font-bold text-slate-700 mt-1 truncate max-w-[60px]">
-                    {(p.displayName || 'Атлет').split(' ')[0]}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* REFERENCE 2: "Discover World" TALL SCENIC CARDS ROW */}
-      {!catalogOnly && (events.length > 0 || recommendedEvents.length > 0) && (
-        <section className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-display font-extrabold text-xl sm:text-2xl text-slate-900">
-                Популярные спортивные сборы 🌍
-              </h2>
-              <p className="text-xs font-semibold text-slate-500">
-                Главные события недели с открытой регистрацией
-              </p>
-            </div>
-
-            {/* Sport quick pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-              <button
-                type="button"
-                onClick={() => setSelectedSportId('')}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all ${
-                  selectedSportId === ''
-                    ? 'bg-[#16B672] text-white shadow-sm shadow-[#16B672]/25'
-                    : 'bg-white text-slate-600 hover:bg-[#E7F8F0] hover:text-[#11995E]'
+          {/* 2. СПОРТ (Sport filter popover) */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setOpenDropdown(openDropdown === 'sport' ? null : 'sport')}
+              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+                selectedSportId
+                  ? 'bg-ink text-card font-semibold shadow-xs'
+                  : 'bg-surface hover:bg-surface-2 text-ink border border-line/60'
+              }`}
+            >
+              <span>{selectedSportObj ? `${getSportEmoji(selectedSportObj.name)} ${selectedSportObj.name}` : 'Вид спорта'}</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 opacity-60 transition-transform ${
+                  openDropdown === 'sport' ? 'rotate-180' : ''
                 }`}
-              >
-                Рекомендуемые
-              </button>
-              {sports.slice(0, 5).map((s) => (
+              />
+            </button>
+
+            {openDropdown === 'sport' && (
+              <div className="fixed sm:absolute left-4 sm:left-0 top-[118px] sm:top-full mt-1.5 w-64 max-h-80 overflow-y-auto bg-card rounded-2xl shadow-2xl border border-line p-1.5 z-50 anim-fade">
                 <button
                   type="button"
-                  key={s.id}
-                  onClick={() => setSelectedSportId(s.id === selectedSportId ? '' : s.id)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all ${
-                    selectedSportId === s.id
-                      ? 'bg-[#16B672] text-white shadow-sm shadow-[#16B672]/25'
-                      : 'bg-white text-slate-600 hover:bg-[#E7F8F0] hover:text-[#11995E]'
+                  onClick={() => {
+                    setSelectedSportId('');
+                    setOpenDropdown(null);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
+                    !selectedSportId ? 'bg-brand-tint text-brand-ink font-semibold' : 'text-ink hover:bg-surface'
                   }`}
                 >
-                  {s.name}
+                  <span>Все виды спорта</span>
+                  {!selectedSportId && <Check className="w-4 h-4 text-brand" />}
                 </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {(events.length > 0 ? events : recommendedEvents).slice(0, 3).map((ev, idx) => (
-              <EventCard key={ev.id} event={ev} variant="tall" index={idx} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* REFERENCE 2: "Event Dates 🚀" HORIZONTAL DATE CAPSULE STRIP + CATALOG */}
-      <section id="catalog" className="bento-card p-5 sm:p-6 space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-display font-extrabold text-xl text-slate-900">
-              Расписание и каталог встреч 🚀
-            </h2>
-            <p className="text-xs font-semibold text-slate-500">
-              Выберите день недели или просмотрите все доступные тренировки ({displayedEvents.length})
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {city && (
-              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#E7F8F0] text-[#11995E] text-xs font-extrabold">
-                <Globe className="w-3.5 h-3.5" />
-                <span>{city}</span>
-                <button
-                  type="button"
-                  onClick={() => setCity('')}
-                  className="ml-1 hover:text-slate-900"
-                  title="Все регионы"
-                >
-                  ×
-                </button>
-              </div>
-            )}
-
-            <div className="flex items-center gap-1 bg-[#F4F8F6] p-1 rounded-2xl">
-              <button
-                type="button"
-                onClick={() => setViewMode('grid')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
-                  viewMode === 'grid'
-                    ? 'bg-[#16B672] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Список ({displayedEvents.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('map')}
-                className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
-                  viewMode === 'map'
-                    ? 'bg-[#16B672] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Map className="w-3.5 h-3.5" />
-                <span>На карте</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Horizontal Date Capsule Strip (Reference 2 exact vertical green pill highlight) */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          <button
-            type="button"
-            onClick={() => setSelectedDayOffset(null)}
-            className={`px-4 py-3 rounded-full text-xs font-extrabold shrink-0 transition-all cursor-pointer ${
-              selectedDayOffset === null
-                ? 'bg-[#16B672] text-white shadow-md shadow-[#16B672]/30'
-                : 'bg-[#F7FAF8] text-slate-600 hover:bg-[#E7F8F0]'
-            }`}
-          >
-            Все дни
-          </button>
-          {dateStripDays.map((d) => {
-            const active = selectedDayOffset === d.offset;
-            return (
-              <button
-                key={d.offset}
-                type="button"
-                onClick={() => setSelectedDayOffset(active ? null : d.offset)}
-                className={`w-12 py-2.5 rounded-full flex flex-col items-center justify-center gap-1 shrink-0 transition-all cursor-pointer ${
-                  active
-                    ? 'bg-[#16B672] text-white shadow-md shadow-[#16B672]/30 scale-105'
-                    : 'bg-[#F7FAF8] text-slate-600 hover:bg-[#E7F8F0]'
-                }`}
-              >
-                <span className={`text-[10px] font-bold ${active ? 'text-white/90' : 'text-slate-400'}`}>
-                  {d.dayName}
-                </span>
-                <span className="font-display font-black text-xs">{d.dayNum}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Catalog Content: Loading / Map / Empty / Horizontal & Default Cards */}
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {[1, 2, 3, 4].map((n) => (
-              <div key={n} className="h-28 rounded-3xl bg-[#F4F8F6] animate-pulse" />
-            ))}
-          </div>
-        ) : viewMode === 'map' ? (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-xs font-semibold text-slate-600">
-                Выберите площадку слева, чтобы увидеть её на карте или открыть навигатор
-              </div>
-              {selectedMapEvent && (
-                <div className="flex items-center gap-2">
-                  <a
-                    href={`https://yandex.ru/maps/?text=${encodeURIComponent(
-                      `${selectedMapEvent.city}, ${selectedMapEvent.locationAddress}`
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-extrabold transition-colors"
-                  >
-                    <Navigation className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Яндекс Карты</span>
-                    <ExternalLink className="w-3 h-3 opacity-60" />
-                  </a>
-                  <a
-                    href={`https://2gis.ru/search/${encodeURIComponent(
-                      `${selectedMapEvent.city} ${selectedMapEvent.locationAddress}`
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#E7F8F0] hover:bg-[#D2F2E3] text-[#11995E] text-xs font-extrabold transition-colors"
-                  >
-                    <MapPin className="w-3.5 h-3.5 text-[#16B672]" />
-                    <span>Открыть в 2ГИС</span>
-                    <ExternalLink className="w-3 h-3 opacity-60" />
-                  </a>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-              <div className="lg:col-span-5 space-y-2.5 max-h-[440px] overflow-y-auto pr-1">
-                {mapEvents.map((ev) => {
-                  const isSelected = selectedMapEvent?.id === ev.id;
+                {sports.map((s) => {
+                  const active = selectedSportId === s.id;
                   return (
-                    <div
-                      key={ev.id}
-                      onClick={() => setSelectedMapEvent(ev)}
-                      className={`p-4 rounded-2xl border cursor-pointer transition-all ${
-                        isSelected
-                          ? 'bg-[#E7F8F0]/70 border-[#16B672] shadow-xs'
-                          : 'bg-[#F7FAF8] border-transparent hover:border-[#16B672]/40'
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedSportId(active ? '' : s.id);
+                        setOpenDropdown(null);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
+                        active ? 'bg-brand-tint text-brand-ink font-semibold' : 'text-ink hover:bg-surface'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-[11px] font-extrabold text-[#16B672] uppercase">
-                          {ev.sport.name}
-                        </span>
-                        <span className="text-[11px] font-semibold text-slate-400">
-                          {getRegionInfo(ev.city)?.tzLabel || 'МСК'}
-                        </span>
-                      </div>
-                      <div className="font-display font-extrabold text-sm text-slate-900 mt-0.5">
-                        {ev.title}
-                      </div>
-                      <div className="text-xs text-slate-600 flex items-center gap-1.5 mt-1">
-                        <MapPin className="w-3.5 h-3.5 text-[#16B672] shrink-0" />
-                        <span>
-                          {ev.city}, {ev.locationAddress}
-                        </span>
-                      </div>
-                      <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between">
-                        <Link
-                          to={`/events/${ev.id}`}
-                          className="text-xs font-extrabold text-[#11995E] hover:underline"
-                        >
-                          Открыть встречу →
-                        </Link>
-                      </div>
-                    </div>
+                      <span className="flex items-center gap-2">
+                        <span>{getSportEmoji(s.name)}</span>
+                        <span>{s.name}</span>
+                      </span>
+                      {active && <Check className="w-4 h-4 text-brand" />}
+                    </button>
                   );
                 })}
               </div>
-
-              <div className="lg:col-span-7 rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 flex flex-col min-h-[420px]">
-                <iframe
-                  title="Интерактивная карта площадки"
-                  src={`https://yandex.ru/map-widget/v1/?ll=${activeMapCoords.lon}%2C${activeMapCoords.lat}&z=12&pt=${activeMapCoords.lon},${activeMapCoords.lat},pm2rdm`}
-                  className="w-full flex-1 min-h-[370px] border-0"
-                  loading="lazy"
-                />
-                {selectedMapEvent && (
-                  <div className="p-3.5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 text-xs">
-                    <div>
-                      <span className="font-bold text-[#16B672]">{selectedMapEvent.title}:</span>{' '}
-                      <span>
-                        {selectedMapEvent.city}, {selectedMapEvent.locationAddress}
-                      </span>
-                    </div>
-                    <Link
-                      to={`/events/${selectedMapEvent.id}`}
-                      className="px-3.5 py-1.5 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white font-bold"
-                    >
-                      Перейти к записи
-                    </Link>
-                  </div>
-                )}
-              </div>
-            </div>
+            )}
           </div>
-        ) : displayedEvents.length === 0 ? (
-          <div className="space-y-6">
-            <div className="bg-[#F7FAF8] rounded-3xl p-8 text-center space-y-3">
-              <div className="text-lg font-display font-extrabold text-slate-900">
-                По выбранным параметрам точных совпадений не нашлось
-              </div>
-              <p className="text-xs sm:text-sm text-slate-600 max-w-xl mx-auto">
-                {city
-                  ? `В регионе «${city}» по вашему запросу пока нет активных сборов. Посмотрите рекомендуемые встречи ниже или создайте свою тренировку!`
-                  : 'Попробуйте изменить поисковый запрос, сбросить фильтры или выберите одну из рекомендуемых тренировок ниже.'}
-              </p>
-              <div className="pt-2 flex flex-wrap justify-center gap-3">
+
+          {/* 3. КАТЕГОРИЯ (#11: Тренировки, Соревнования, Фестивали, Квесты) */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setOpenDropdown(openDropdown === 'category' ? null : 'category')}
+              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+                categoryFilter
+                  ? 'bg-ink text-card font-semibold shadow-xs'
+                  : 'bg-surface hover:bg-surface-2 text-ink border border-line/60'
+              }`}
+            >
+              <span>{categoryFilter || 'Категория'}</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 opacity-60 transition-transform ${
+                  openDropdown === 'category' ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {openDropdown === 'category' && (
+              <div className="fixed sm:absolute left-4 sm:left-0 top-[118px] sm:top-full mt-1.5 w-64 bg-card rounded-2xl shadow-2xl border border-line p-1.5 z-50 anim-fade">
                 <button
                   type="button"
-                  onClick={handleResetFilters}
-                  className="px-4 py-2.5 rounded-2xl text-xs font-extrabold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
+                  onClick={() => {
+                    setCategoryFilter('');
+                    setOpenDropdown(null);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
+                    !categoryFilter ? 'bg-brand-tint text-brand-ink font-semibold' : 'text-ink hover:bg-surface'
+                  }`}
                 >
-                  Показать все регионы и сбросить фильтры
+                  <span>Все категории</span>
+                  {!categoryFilter && <Check className="w-4 h-4 text-brand" />}
                 </button>
-                <Link
-                  to="/events/new"
-                  className="px-4 py-2.5 rounded-2xl text-xs font-extrabold bg-[#16B672] text-white hover:bg-[#11995E]"
+                {EVENT_CATEGORIES.map((cat) => {
+                  const active = categoryFilter === cat.value;
+                  return (
+                    <button
+                      key={cat.value}
+                      type="button"
+                      onClick={() => {
+                        setCategoryFilter(active ? '' : cat.value);
+                        setOpenDropdown(null);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
+                        active ? 'bg-brand-tint text-brand-ink font-semibold' : 'text-ink hover:bg-surface'
+                      }`}
+                    >
+                      <span>{cat.label}</span>
+                      {active && <Check className="w-4 h-4 text-brand" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* 4. ФОРМАТ (На площадке / Онлайн #7) */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setOpenDropdown(openDropdown === 'format' ? null : 'format')}
+              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+                formatFilter
+                  ? 'bg-ink text-card font-semibold shadow-xs'
+                  : 'bg-surface hover:bg-surface-2 text-ink border border-line/60'
+              }`}
+            >
+              <span>
+                {formatFilter === 'ONLINE'
+                  ? '🌐 Онлайн'
+                  : formatFilter === 'OFFLINE'
+                  ? 'На площадке'
+                  : 'Формат'}
+              </span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 opacity-60 transition-transform ${
+                  openDropdown === 'format' ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {openDropdown === 'format' && (
+              <div className="fixed sm:absolute left-4 sm:left-0 top-[118px] sm:top-full mt-1.5 w-56 bg-card rounded-2xl shadow-2xl border border-line p-1.5 z-50 anim-fade">
+                {[
+                  { id: '', label: 'Любой формат' },
+                  { id: 'OFFLINE', label: '📍 На площадке (офлайн)' },
+                  { id: 'ONLINE', label: '🌐 Онлайн-трансляция' },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setFormatFilter(opt.id as '' | 'OFFLINE' | 'ONLINE');
+                      setOpenDropdown(null);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
+                      formatFilter === opt.id
+                        ? 'bg-brand-tint text-brand-ink font-semibold'
+                        : 'text-ink hover:bg-surface'
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    {formatFilter === opt.id && <Check className="w-4 h-4 text-brand" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Reset filters button */}
+          {activeFiltersCount > 0 && (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="h-9 px-3 rounded-xl text-xs font-semibold text-muted hover:text-ink hover:bg-surface transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Сбросить всё</span>
+            </button>
+          )}
+        </div>
+
+        {/* Right Filter Modal Button + View Switcher */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowFiltersModal(true)}
+            className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+              joinMode || skillLevel || onlyAvailable || recurringFilter
+                ? 'bg-ink text-card font-semibold'
+                : 'bg-surface hover:bg-surface-2 text-ink border border-line/60'
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Фильтры</span>
+            {(joinMode || skillLevel || onlyAvailable || recurringFilter) && (
+              <span className="w-2 h-2 rounded-full bg-brand" />
+            )}
+          </button>
+
+          <div className="hidden sm:flex items-center bg-surface p-0.5 rounded-xl border border-line/60">
+            <button
+              type="button"
+              onClick={() => setViewMode('map')}
+              className={`h-8 px-3 rounded-[10px] text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                viewMode === 'map' ? 'bg-card text-ink shadow-xs' : 'text-muted hover:text-ink'
+              }`}
+            >
+              <MapIcon className="w-3.5 h-3.5" />
+              <span>Карта</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`h-8 px-3 rounded-[10px] text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                viewMode === 'list' ? 'bg-card text-ink shadow-xs' : 'text-muted hover:text-ink'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>Лента</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* MAIN CONTENT: SPLIT MAP VIEW OR CATEGORIZED FEED VIEW */}
+      {viewMode === 'map' ? (
+        <div className="relative flex-1 min-h-0 flex overflow-hidden">
+          {/* LEFT 440PX COLLAPSIBLE EVENT LIST PANEL */}
+          <div
+            className={`${
+              listCollapsed ? 'hidden' : 'flex'
+            } w-full lg:w-[440px] shrink-0 bg-card border-r border-line-2 flex-col h-full z-20`}
+          >
+            {/* Panel Header */}
+            <div className="px-5 py-3.5 border-b border-line-2 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <h2 className="text-[15px] font-bold text-ink truncate">
+                  События рядом
+                </h2>
+                <span className="text-xs font-bold text-muted bg-surface px-2 py-0.5 rounded-md border border-line">
+                  {displayedEvents.length}
+                </span>
+                {city && (
+                  <span className="text-[11px] font-semibold text-brand-ink bg-brand-tint px-2 py-0.5 rounded-md truncate">
+                    {city}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  className="h-8 px-2.5 rounded-lg bg-surface hover:bg-surface-2 text-ink text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  + Создать свою встречу
-                </Link>
+                  <List className="w-3.5 h-3.5" />
+                  <span>Лента</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setListCollapsed(true)}
+                  title="Свернуть список"
+                  className="hidden lg:flex w-8 h-8 rounded-lg bg-surface hover:bg-surface-2 text-muted hover:text-ink items-center justify-center transition-colors cursor-pointer"
+                >
+                  <PanelLeftClose className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
-            {recommendedEvents.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="font-display font-extrabold text-base text-slate-900 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[#16B672]" />
-                  <span>Рекомендуемые ближайшие мероприятия</span>
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {recommendedEvents.slice(0, 6).map((ev, idx) => (
-                    <EventCard key={ev.id} event={ev} variant="horizontal" index={idx} />
+            {/* Scrollable Event Rows */}
+            <div className="flex-1 overflow-y-auto divide-y divide-line">
+              {loading ? (
+                <div className="p-4 space-y-3">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <div key={n} className="h-24 rounded-2xl bg-surface animate-pulse" />
                   ))}
+                </div>
+              ) : displayedEvents.length === 0 ? (
+                <div className="p-8 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-surface text-muted flex items-center justify-center mx-auto">
+                    <Compass className="w-6 h-6" />
+                  </div>
+                  <div className="text-sm font-bold text-ink">
+                    Событий по фильтрам не найдено
+                  </div>
+                  <p className="text-xs text-muted leading-relaxed">
+                    Попробуйте сбросить фильтры, выбрать другой город или создайте собственную тренировку.
+                  </p>
+                  <div className="pt-1 flex flex-wrap justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCity('');
+                        handleResetFilters();
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-surface hover:bg-surface-2 text-ink text-xs font-semibold cursor-pointer"
+                    >
+                      Все города РФ
+                    </button>
+                    <Link
+                      to="/events/new"
+                      className="px-3.5 py-2 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold"
+                    >
+                      + Создать событие
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                displayedEvents.map((ev) => {
+                  const isSelected = selectedEvent?.id === ev.id;
+                  const online = isOnlineEvent(ev.city, ev.locationAddress);
+                  const tzLabel = getRegionInfo(ev.city)?.tzLabel.split(' ')[0] || 'МСК';
+                  const maxCap = ev.maxParticipants || 0;
+                  const confirmed = ev.confirmedParticipantsCount || 0;
+                  const spotsLeft = maxCap > 0 ? Math.max(0, maxCap - confirmed) : 10;
+                  const fillPercent =
+                    maxCap > 0
+                      ? Math.min(100, Math.round((confirmed / maxCap) * 100))
+                      : 35;
+                  const catBadge = getEventCategoryBadge(ev.activityFormat, ev.title);
+
+                  return (
+                    <div
+                      key={ev.id}
+                      onClick={() => {
+                        setSelectedEvent(ev);
+                        setJoinFeedback(null);
+                      }}
+                      className={`px-5 py-4 cursor-pointer transition-colors ${
+                        isSelected ? 'bg-brand-tint/70' : 'hover:bg-surface/70'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3.5">
+                        {/* Left 68px Time/Date Box (Sportikus exact style) */}
+                        <div className="w-[68px] shrink-0 text-center bg-surface rounded-xl py-2 px-1.5 border border-line/80">
+                          <div className="text-[15px] font-bold text-ink leading-tight">
+                            {formatShortTime(ev.startsAt)}
+                          </div>
+                          <div className="text-[11px] font-medium text-muted mt-0.5 truncate">
+                            {formatRelativeDayLabel(ev.startsAt)}
+                          </div>
+                          <div className="text-[9px] font-bold text-brand-ink mt-0.5">
+                            {online ? 'Онлайн' : tzLabel}
+                          </div>
+                        </div>
+
+                        {/* Right Event Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted">
+                              <span>{getSportEmoji(ev.sport.name)}</span>
+                              <span>{ev.sport.name}</span>
+                            </span>
+                            <span className="text-line-2">·</span>
+                            <span className="text-[11px] font-semibold text-muted">
+                              {catBadge.shortLabel}
+                            </span>
+                            <span className="ml-auto text-[11px] font-bold px-2 py-0.5 rounded-md bg-brand-tint text-brand-ink">
+                              {ev.joinMode === 'OPEN' ? 'Открыто' : 'По заявке'}
+                            </span>
+                          </div>
+
+                          <h3 className="font-bold text-ink text-[15px] leading-snug truncate mb-1">
+                            {ev.title}
+                          </h3>
+
+                          <div className="text-xs text-muted truncate mb-2.5 flex items-center gap-1">
+                            {online ? (
+                              <>
+                                <Globe className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                <span className="text-indigo-700 font-medium truncate">
+                                  Онлайн · {ev.locationAddress}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <MapPin className="w-3.5 h-3.5 text-muted shrink-0" />
+                                <span className="truncate">
+                                  {ev.city}, {ev.locationAddress}
+                                </span>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Progress bar */}
+                          <div className="flex items-center gap-3">
+                            <div className="flex-1 h-1.5 bg-surface-2 rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full transition-all duration-300"
+                                style={{
+                                  width: `${fillPercent}%`,
+                                  backgroundColor: spotsLeft === 0 ? '#f59e0b' : '#04D793',
+                                }}
+                              />
+                            </div>
+                            <span className="text-[11px] font-semibold text-muted shrink-0">
+                              {maxCap > 0
+                                ? `${confirmed}/${maxCap} · ${spotsLeft > 0 ? `Свободно ${spotsLeft}` : 'Мест нет'}`
+                                : `Участников: ${confirmed}`}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* RIGHT FULL-BLEED INTERACTIVE LEAFLET MAP */}
+          <div className="relative flex-1 h-full bg-surface overflow-hidden">
+            {listCollapsed && (
+              <button
+                type="button"
+                onClick={() => setListCollapsed(false)}
+                className="absolute top-4 left-4 z-[500] h-10 px-3.5 rounded-xl bg-card text-ink font-semibold text-xs shadow-lg border border-line flex items-center gap-2 hover:bg-surface transition-colors cursor-pointer"
+              >
+                <PanelLeftOpen className="w-4 h-4 text-brand" />
+                <span>Показать список ({displayedEvents.length})</span>
+              </button>
+            )}
+
+            <SportikusLeafletMap
+              events={mapEvents}
+              selectedCity={city}
+              selectedEvent={selectedEvent}
+              onSelectEvent={(ev) => {
+                setSelectedEvent(ev);
+                setJoinFeedback(null);
+              }}
+            />
+
+            {/* RIGHT SLIDE-OVER EVENT PREVIEW DRAWER (Sportikus exact 440px drawer) */}
+            {selectedEvent && (
+              <div className="fixed lg:Status inset-0 lg:inset-y-0 lg:left-auto lg:right-0 z-[600] flex justify-end pointer-events-none">
+                <div
+                  onClick={() => setSelectedEvent(null)}
+                  className="fixed inset-0 bg-black/30 backdrop-blur-[1px] lg:hidden pointer-events-auto"
+                />
+                <div className="relative w-full sm:w-[440px] bg-card h-full shadow-2xl border-l border-line flex flex-col z-10 overflow-hidden anim-drawer pointer-events-auto">
+                  {/* Top 224px Photo Header */}
+                  <div className="relative h-56 shrink-0 bg-surface">
+                    <img
+                      src={getSportCoverUrl(selectedEvent.sport.name, selectedEvent.id)}
+                      alt={selectedEvent.title}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/20" />
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEvent(null)}
+                      aria-label="Закрыть панель"
+                      className="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/45 text-white backdrop-blur-md flex items-center justify-center hover:bg-black/65 transition-colors cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+
+                    <div className="absolute bottom-4 left-5 right-5">
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span className="px-2.5 py-1 rounded-lg bg-white/20 backdrop-blur-md text-white text-xs font-semibold flex items-center gap-1.5">
+                          <span>{getSportEmoji(selectedEvent.sport.name)}</span>
+                          <span>{selectedEvent.sport.name}</span>
+                        </span>
+                        <span
+                          className="px-2.5 py-1 rounded-lg text-white text-xs font-bold"
+                          style={{ backgroundColor: '#04D793' }}
+                        >
+                          {selectedEvent.joinMode === 'OPEN' ? 'Открытая запись' : 'По заявке'}
+                        </span>
+                      </div>
+                      <h2 className="text-xl font-bold text-white leading-tight line-clamp-2">
+                        {selectedEvent.title}
+                      </h2>
+                    </div>
+                  </div>
+
+                  {/* Drawer Scrollable Body */}
+                  <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                    {joinFeedback && (
+                      <div
+                        className={`p-3.5 rounded-xl text-xs font-semibold border ${
+                          joinFeedback.type === 'ok'
+                            ? 'bg-brand-tint text-brand-ink border-brand/30'
+                            : 'bg-rose-50 text-rose-800 border-rose-200'
+                        }`}
+                      >
+                        {joinFeedback.text}
+                      </div>
+                    )}
+
+                    {/* Date & Time + Address Cards */}
+                    <div className="grid grid-cols-1 gap-2.5">
+                      <div className="flex items-center gap-3 p-3 rounded-xl bg-surface">
+                        <div className="w-10 h-10 rounded-lg bg-card flex items-center justify-center text-ink shrink-0 shadow-2xs">
+                          <Clock className="w-5 h-5 text-brand" />
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold text-ink">
+                            {formatDateTime(selectedEvent.startsAt)}
+                          </div>
+                          <div className="text-xs text-muted">
+                            Часовой пояс: {getRegionInfo(selectedEvent.city)?.tzLabel || 'МСК (UTC+3)'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-surface">
+                        <div className="w-10 h-10 rounded-lg bg-card flex items-center justify-center text-ink shrink-0 shadow-2xs">
+                          <MapPin className="w-5 h-5 text-brand" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-bold text-ink">
+                            {isOnlineEvent(selectedEvent.city, selectedEvent.locationAddress)
+                              ? '🌐 Онлайн-мероприятие'
+                              : selectedEvent.city}
+                          </div>
+                          <div className="text-xs text-muted break-words">
+                            {selectedEvent.locationAddress}
+                          </div>
+                          {!isOnlineEvent(selectedEvent.city, selectedEvent.locationAddress) && (
+                            <div className="flex items-center gap-3 mt-2">
+                              <a
+                                href={`https://yandex.ru/maps/?text=${encodeURIComponent(
+                                  `${selectedEvent.city}, ${selectedEvent.locationAddress}`
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-ink hover:underline"
+                              >
+                                <Navigation className="w-3 h-3" />
+                                <span>Яндекс Карты</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                              <a
+                                href={`https://2gis.ru/search/${encodeURIComponent(
+                                  `${selectedEvent.city} ${selectedEvent.locationAddress}`
+                                )}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-ink hover:underline"
+                              >
+                                <span>2ГИС</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Capacity Bar */}
+                    <div className="p-4 rounded-xl border border-line space-y-2.5">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-semibold text-ink">Участники</span>
+                        <span className="font-bold text-ink">
+                          Занято {selectedEvent.confirmedParticipantsCount} из{' '}
+                          {selectedEvent.maxParticipants || '∞'}
+                        </span>
+                      </div>
+                      <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${Math.min(
+                              100,
+                              Math.round(
+                                (selectedEvent.confirmedParticipantsCount /
+                                  Math.max(1, selectedEvent.maxParticipants || 10)) *
+                                  100
+                              )
+                            )}%`,
+                            backgroundColor: '#04D793',
+                          }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted">
+                        <span>
+                          Уровень: {SKILL_LABELS[selectedEvent.skillLevel] || selectedEvent.skillLevel}
+                        </span>
+                        <span>
+                          {selectedEvent.recurringOccurrence ? '🔄 Регулярная встреча' : 'Разовая встреча'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Organizer */}
+                    <div>
+                      <h3 className="text-xs font-bold text-muted uppercase tracking-wider mb-2">
+                        Организатор
+                      </h3>
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-line">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-full bg-brand text-white font-bold flex items-center justify-center shrink-0">
+                            {(selectedEvent.organizationName || selectedEvent.organizerDisplayName)
+                              .slice(0, 1)
+                              .toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-bold text-ink truncate">
+                              {selectedEvent.organizationName || selectedEvent.organizerDisplayName}
+                            </div>
+                            <div className="text-xs text-muted">
+                              {selectedEvent.organizationId
+                                ? 'Спортивный клуб / комьюнити'
+                                : 'Организатор встречи'}
+                            </div>
+                          </div>
+                        </div>
+                        {selectedEvent.organizationId && (
+                          <Link
+                            to={`/organizations/${selectedEvent.organizationId}`}
+                            className="text-xs font-bold text-brand-ink hover:underline shrink-0"
+                          >
+                            Клуб →
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sticky Bottom Actions */}
+                  <div className="p-4 border-t border-line bg-card flex gap-2.5 shrink-0">
+                    <Link
+                      to={`/events/${selectedEvent.id}`}
+                      className="h-11 px-4 rounded-xl bg-surface hover:bg-surface-2 text-ink font-semibold text-sm flex items-center justify-center transition-colors shrink-0"
+                    >
+                      Открыть страницу
+                    </Link>
+                    <button
+                      type="button"
+                      disabled={joiningEventId === selectedEvent.id}
+                      onClick={() => handleQuickJoin(selectedEvent)}
+                      className="flex-1 h-11 rounded-xl text-white font-semibold text-sm flex items-center justify-center transition-all hover:brightness-95 cursor-pointer disabled:opacity-50"
+                      style={{ backgroundColor: '#04D793' }}
+                    >
+                      {joiningEventId === selectedEvent.id
+                        ? 'Отправка...'
+                        : selectedEvent.joinMode === 'OPEN'
+                        ? 'Записаться'
+                        : 'Подать заявку'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
           </div>
-        ) : catalogOnly ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {displayedEvents.map((ev, idx) => (
-              <EventCard key={ev.id} event={ev} variant="default" index={idx} />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {displayedEvents.map((ev, idx) => (
-              <EventCard key={ev.id} event={ev} variant="horizontal" index={idx} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* REFERENCE 1 BOTTOM STRIP: "Anteckningar" (3-Column Clubs & Open Communities Strip) */}
-      {!catalogOnly && organizations.length > 0 && (
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-display font-extrabold text-xl text-slate-900">
-                Проверенные клубы и открытые комьюнити 🏛️
-              </h2>
-              <p className="text-xs font-semibold text-slate-500">
-                Вступайте в городские сообщества и следите за расписанием любимых организаторов
-              </p>
+        </div>
+      ) : (
+        /* FEED VIEW (Sportikus categorized grid view) */
+        <div className="flex-1 flex flex-col justify-between">
+          <div className="max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+            {/* Top summary bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h1 className="text-2xl font-extrabold text-ink tracking-tight">
+                  {city ? `Спортивные события — ${city}` : 'Лента спортивных событий'}
+                </h1>
+                <p className="text-xs sm:text-sm text-muted mt-0.5">
+                  Найдено {displayedEvents.length} мероприятий · Записывайтесь в один клик или откройте карту площадок
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('map')}
+                  className="h-10 px-4 rounded-xl bg-card hover:bg-surface border border-line-2 text-ink text-xs font-bold inline-flex items-center gap-2 transition-colors cursor-pointer shadow-2xs"
+                >
+                  <MapIcon className="w-4 h-4 text-brand" />
+                  <span>Показать на карте</span>
+                </button>
+                <Link
+                  to={user ? '/events/new' : '/login'}
+                  className="h-10 px-4 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-xs"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Создать событие</span>
+                </Link>
+              </div>
             </div>
+
+            {loading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                  <div key={n} className="h-[340px] rounded-[22px] bg-card border border-line animate-pulse" />
+                ))}
+              </div>
+            ) : displayedEvents.length === 0 ? (
+              <div className="space-y-8">
+                <div className="bg-card rounded-[22px] border border-line-2 p-8 text-center space-y-3 max-w-xl mx-auto">
+                  <div className="text-lg font-bold text-ink">
+                    По выбранным фильтрам событий не найдено
+                  </div>
+                  <p className="text-xs sm:text-sm text-muted">
+                    {city
+                      ? `В регионе «${city}» пока нет активных сборов по этим параметрам. Сбросьте фильтры или посмотрите рекомендуемые встречи ниже.`
+                      : 'Попробуйте сбросить фильтры или выберите одну из рекомендуемых встреч ниже.'}
+                  </p>
+                  <div className="pt-2 flex flex-wrap justify-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCity('');
+                        handleResetFilters();
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-2 text-ink text-xs font-bold cursor-pointer"
+                    >
+                      Показать все регионы и сбросить фильтры
+                    </button>
+                    <Link
+                      to="/events/new"
+                      className="px-4 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold"
+                    >
+                      + Создать событие
+                    </Link>
+                  </div>
+                </div>
+
+                {recommendedEvents.length > 0 && (
+                  <section className="space-y-4">
+                    <h2 className="text-lg font-bold text-ink flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-brand" />
+                      <span>Рекомендуемые ближайшие события</span>
+                    </h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                      {recommendedEvents.slice(0, 8).map((ev, i) => (
+                        <EventCard key={ev.id} event={ev} index={i} />
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-9">
+                {feedSections.map((sec) => (
+                  <section key={sec.id} className="space-y-4">
+                    <div className="flex items-center gap-2.5">
+                      <h2 className="text-lg sm:text-xl font-bold text-ink">{sec.title}</h2>
+                      <span className="text-xs font-bold text-muted bg-card px-2.5 py-0.5 rounded-full border border-line">
+                        {sec.items.length}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                      {sec.items.map((ev, idx) => (
+                        <EventCard key={ev.id} event={ev} index={idx} />
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Clean Compact Footer at bottom of Feed View */}
+          <footer className="mt-12 border-t border-line bg-card py-5 px-4 sm:px-6 lg:px-8">
+            <div className="max-w-[1400px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted">
+              <div>
+                <span className="font-bold text-ink">Точка Сбора</span> — спортивные тренировки, соревнования, клубы и напарники
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-4">
+                <Link to="/terms" className="hover:text-ink font-medium">
+                  Пользовательское соглашение
+                </Link>
+                <Link to="/privacy" className="hover:text-ink font-medium">
+                  Политика конфиденциальности
+                </Link>
+                <Link to="/support/chat" className="text-brand-ink hover:underline font-semibold">
+                  Чат с поддержкой
+                </Link>
+                <Link to="/support" className="text-brand-ink hover:underline font-semibold">
+                  Тикеты и обращения
+                </Link>
+              </div>
+            </div>
+          </footer>
+        </div>
+      )}
+
+      {/* ADVANCED FILTERS MODAL (Sportikus Filter Sheet) */}
+      {showFiltersModal && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div
+            onClick={() => setShowFiltersModal(false)}
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs anim-fade"
+          />
+          <div className="relative w-full sm:max-w-lg bg-card rounded-t-3xl sm:rounded-3xl shadow-2xl border border-line overflow-hidden z-10 max-h-[90vh] flex flex-col anim-sheet">
+            <div className="p-5 border-b border-line flex items-center justify-between">
+              <h2 className="text-lg font-bold text-ink">Расширенные фильтры</h2>
+              <button
+                type="button"
+                onClick={() => setShowFiltersModal(false)}
+                className="w-8 h-8 rounded-full bg-surface flex items-center justify-center text-muted hover:text-ink cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-5 flex-1">
+              {/* Skill Level */}
+              <div>
+                <label className="block text-sm font-bold text-ink mb-2.5">
+                  Уровень подготовки
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSkillLevel('')}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      !skillLevel
+                        ? 'bg-ink text-card'
+                        : 'bg-surface text-ink hover:bg-surface-2'
+                    }`}
+                  >
+                    Любой уровень
+                  </button>
+                  {Object.entries(SKILL_LABELS).map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setSkillLevel(skillLevel === k ? '' : k)}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        skillLevel === k
+                          ? 'bg-ink text-card'
+                          : 'bg-surface text-ink hover:bg-surface-2'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Join Mode */}
+              <div>
+                <label className="block text-sm font-bold text-ink mb-2.5">
+                  Формат записи
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: '', label: 'Все' },
+                    { id: 'OPEN', label: 'Открытая запись' },
+                    { id: 'APPROVAL_REQUIRED', label: 'По заявке' },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setJoinMode(m.id)}
+                      className={`px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        joinMode === m.id
+                          ? 'bg-ink text-card'
+                          : 'bg-surface text-ink hover:bg-surface-2'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Toggles */}
+              <div className="space-y-2.5 pt-2 border-t border-line">
+                <label className="flex items-center justify-between p-3 rounded-xl bg-surface cursor-pointer">
+                  <div>
+                    <div className="text-sm font-semibold text-ink">Только со свободными местами</div>
+                    <div className="text-xs text-muted">Скрыть полностью заполненные группы</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={onlyAvailable}
+                    onChange={(e) => setOnlyAvailable(e.target.checked)}
+                    className="w-4 h-4 accent-brand rounded"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between p-3 rounded-xl bg-surface cursor-pointer">
+                  <div>
+                    <div className="text-sm font-semibold text-ink">Только регулярные тренировки</div>
+                    <div className="text-xs text-muted">Еженедельные занятия по расписанию</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={recurringFilter === 'true'}
+                    onChange={(e) => setRecurringFilter(e.target.checked ? 'true' : '')}
+                    className="w-4 h-4 accent-brand rounded"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="p-5 border-t border-line flex gap-3 bg-card">
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="flex-1 h-11 rounded-xl bg-surface hover:bg-surface-2 text-ink font-semibold text-sm transition-colors cursor-pointer"
+              >
+                Сбросить
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFiltersModal(false)}
+                className="flex-1 h-11 rounded-xl bg-brand hover:bg-brand-hover text-white font-semibold text-sm transition-colors cursor-pointer"
+              >
+                Показать ({displayedEvents.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ============================================================================
+ * SPORTIKUS INTERACTIVE LEAFLET MAP WITH CUSTOM SPORT PINS
+ * ============================================================================ */
+const SportikusLeafletMap: React.FC<{
+  events: EventCardDto[];
+  selectedCity: string;
+  selectedEvent: EventCardDto | null;
+  onSelectEvent: (ev: EventCardDto) => void;
+}> = ({ events, selectedCity, selectedEvent, onSelectEvent }) => {
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const markersLayerRef = useRef<any>(null);
+
+  const centerCoords = useMemo(() => {
+    if (selectedEvent && !isOnlineEvent(selectedEvent.city, selectedEvent.locationAddress)) {
+      return getDeterministicEventCoords(selectedEvent);
+    }
+    if (selectedCity && selectedCity !== 'Онлайн') {
+      const info = getRegionInfo(selectedCity);
+      if (info) return { lat: info.lat, lng: info.lng };
+    }
+    if (events.length > 0) {
+      return getDeterministicEventCoords(events[0]);
+    }
+    return { lat: 55.7558, lng: 37.6173 };
+  }, [selectedCity, selectedEvent, events]);
+
+  useEffect(() => {
+    const L = window.L;
+    if (!L || !mapContainerRef.current) return;
+
+    if (!mapInstanceRef.current) {
+      const map = L.map(mapContainerRef.current, {
+        center: [centerCoords.lat, centerCoords.lng],
+        zoom: 12,
+        zoomControl: false,
+      });
+
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const tileSub = isDark ? 'dark_all' : 'light_all';
+      L.tileLayer(`https://{s}.basemaps.cartocdn.com/${tileSub}/{z}/{x}/{y}{r}.png`, {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: 'abcd',
+        maxZoom: 19,
+      }).addTo(map);
+
+      markersLayerRef.current = L.layerGroup().addTo(map);
+      mapInstanceRef.current = map;
+    }
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+        markersLayerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Fly to city/selectedEvent when changed
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    map.setView([centerCoords.lat, centerCoords.lng], selectedEvent ? 13 : 11, {
+      animate: true,
+    });
+  }, [centerCoords.lat, centerCoords.lng, selectedEvent?.id]);
+
+  // Render circular sport markers
+  useEffect(() => {
+    const L = window.L;
+    const map = mapInstanceRef.current;
+    const layer = markersLayerRef.current;
+    if (!L || !map || !layer) return;
+
+    layer.clearLayers();
+
+    events.forEach((ev) => {
+      const coords = getDeterministicEventCoords(ev);
+      const isSelected = selectedEvent?.id === ev.id;
+      const emoji = getSportEmoji(ev.sport.name);
+      const bg = isSelected ? '#04D793' : '#0e1116';
+      const scale = isSelected ? 'scale(1.16)' : 'scale(1)';
+
+      const icon = L.divIcon({
+        className: 'custom-leaflet-pin',
+        html: `<div style="
+          width: 38px;
+          height: 38px;
+          border-radius: 9999px;
+          background: ${bg};
+          color: #ffffff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 18px;
+          border: 2.5px solid #ffffff;
+          box-shadow: 0 6px 16px rgba(0,0,0,0.28);
+          transform: ${scale};
+          transition: transform 0.15s ease, background 0.15s ease;
+          cursor: pointer;
+        " title="${ev.title.replace(/"/g, '&quot;')}">${emoji}</div>`,
+        iconSize: [38, 38],
+        iconAnchor: [19, 19],
+      });
+
+      const marker = L.marker([coords.lat, coords.lng], { icon });
+      marker.on('click', () => onSelectEvent(ev));
+      marker.addTo(layer);
+    });
+  }, [events, selectedEvent?.id]);
+
+  const handleZoom = (delta: number) => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.setZoom(mapInstanceRef.current.getZoom() + delta);
+    }
+  };
+
+  const handleLocateMe = () => {
+    if (!navigator.geolocation || !mapInstanceRef.current) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        mapInstanceRef.current?.setView([pos.coords.latitude, pos.coords.longitude], 13);
+      },
+      () => {}
+    );
+  };
+
+  return (
+    <div className="relative w-full h-full">
+      <div ref={mapContainerRef} className="w-full h-full z-10" />
+
+      {/* Right Map Floating Controls (Sportikus exact layout) */}
+      <div className="absolute right-4 top-1/2 -translate-y-1/2 z-[400] flex flex-col gap-2">
+        <div className="bg-card rounded-xl shadow-lg border border-line overflow-hidden flex flex-col">
+          <button
+            type="button"
+            onClick={() => handleZoom(1)}
+            aria-label="Приблизить карту"
+            className="w-10 h-10 flex items-center justify-center text-ink hover:bg-surface transition-colors border-b border-line cursor-pointer"
+          >
+            <Plus className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleZoom(-1)}
+            aria-label="Отдалить карту"
+            className="w-10 h-10 flex items-center justify-center text-ink hover:bg-surface transition-colors cursor-pointer"
+          >
+            <Minus className="w-5 h-5" />
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleLocateMe}
+          title="Моё местоположение"
+          aria-label="Моё местоположение"
+          className="w-10 h-10 bg-card rounded-xl shadow-lg border border-line flex items-center justify-center text-ink hover:bg-surface transition-colors cursor-pointer"
+        >
+          <LocateFixed className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================================
+ * SPORTIKUS "ДЛЯ ВАС" PAGE (/recommended) — Events + Partners + Clubs in 1 place
+ * ============================================================================ */
+export const RecommendedPage: React.FC = () => {
+  const { user } = useAuth();
+  const [section, setSection] = useState<'events' | 'partners' | 'clubs'>('events');
+  const [events, setEvents] = useState<EventCardDto[]>([]);
+  const [organizations, setOrganizations] = useState<OrganizationDto[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [evList, orgList] = await Promise.all([
+          apiFetch<EventCardDto[]>('/api/v1/events'),
+          apiFetch<OrganizationDto[]>('/api/v1/organizations'),
+        ]);
+        setEvents(evList);
+        setOrganizations(orgList);
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const personalizedEvents = useMemo(() => {
+    if (!user || !user.sportInterests || user.sportInterests.length === 0) {
+      return events;
+    }
+    const favIds = new Set(user.sportInterests.map((s) => s.sportId));
+    const matched = events.filter(
+      (e) => favIds.has(e.sport.id) || (user.city && e.city === user.city)
+    );
+    return matched.length > 0 ? matched : events;
+  }, [events, user]);
+
+  return (
+    <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-7 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-extrabold text-ink tracking-tight">Для вас</h1>
+          <p className="text-xs sm:text-sm text-muted mt-0.5">
+            Персональные рекомендации тренировок, поиск напарников и проверенные спортивные клубы
+          </p>
+        </div>
+
+        <div className="flex items-center gap-1.5 bg-card p-1 rounded-2xl border border-line-2">
+          {[
+            { id: 'events', label: 'Подборка событий' },
+            { id: 'partners', label: 'Напарники и друзья' },
+            { id: 'clubs', label: `Клубы (${organizations.length})` },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setSection(tab.id as 'events' | 'partners' | 'clubs')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                section === tab.id
+                  ? 'bg-ink text-card shadow-xs'
+                  : 'text-muted hover:text-ink'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {section === 'events' && (
+        <div className="space-y-6">
+          {user && user.sportInterests && user.sportInterests.length > 0 ? (
+            <div className="bg-card rounded-2xl border border-line-2 p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-xs font-bold text-muted">Ваши интересы:</span>
+                {user.sportInterests.map((s) => (
+                  <span
+                    key={s.sportId}
+                    className="px-3 py-1 rounded-full bg-brand-tint text-brand-ink text-xs font-bold"
+                  >
+                    {getSportEmoji(s.sportName)} {s.sportName}
+                  </span>
+                ))}
+              </div>
+              <Link to="/profile" className="text-xs font-bold text-brand-ink hover:underline">
+                Изменить интересы →
+              </Link>
+            </div>
+          ) : (
+            <div className="bg-card rounded-2xl border border-line-2 p-5 flex flex-wrap items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="text-sm font-bold text-ink">
+                  Настройте любимые виды спорта для точных рекомендаций
+                </div>
+                <p className="text-xs text-muted">
+                  Укажите свои дисциплины и уровень подготовки в профиле, чтобы видеть подходящие тренировки первыми.
+                </p>
+              </div>
+              <Link
+                to={user ? '/profile' : '/login'}
+                className="px-4 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold shrink-0"
+              >
+                {user ? 'Настроить интересы' : 'Войти в аккаунт'}
+              </Link>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {[1, 2, 3, 4].map((n) => (
+                <div key={n} className="h-[340px] rounded-[22px] bg-card border border-line animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {personalizedEvents.map((ev, idx) => (
+                <EventCard key={ev.id} event={ev} index={idx} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {section === 'partners' && <PartnersAndFriendsPage />}
+
+      {section === 'clubs' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-ink">Проверенные клубы и открытые сообщества</h2>
             <Link
               to="/organizations"
-              className="text-xs sm:text-sm font-extrabold text-[#16B672] hover:text-[#11995E] inline-flex items-center gap-1"
+              className="text-xs font-bold text-brand-ink hover:underline inline-flex items-center gap-1"
             >
-              <span>Все клубы ({organizations.length})</span>
-              <ArrowRight className="w-4 h-4" />
+              <span>Открыть каталог клубов</span>
+              <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {organizations.slice(0, 3).map((org) => (
+            {organizations.map((org) => (
               <Link
                 key={org.id}
                 to={`/organizations/${org.id}`}
-                className="bento-card bento-card-hover p-5 flex flex-col justify-between gap-4"
+                className="bg-card rounded-[22px] border border-line-2 p-5 hover:shadow-lg transition-all flex flex-col justify-between gap-4"
               >
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#E7F8F0] text-[#11995E] text-[11px] font-extrabold">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-brand-tint text-brand-ink text-[11px] font-bold">
                       <BadgeCheck className="w-3.5 h-3.5" />
                       <span>
                         {org.orgType === 'COMMUNITY' ? 'Открытое комьюнити' : 'Официальный клуб'}
                       </span>
                     </span>
-                    <span className="text-[11px] font-bold text-slate-400">{org.city}</span>
+                    <span className="text-xs font-semibold text-muted">{org.city}</span>
                   </div>
-
-                  <h3 className="font-display font-extrabold text-base text-slate-900">
-                    {org.name}
-                  </h3>
-                  <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                  <h3 className="text-base font-bold text-ink">{org.name}</h3>
+                  <p className="text-xs text-muted line-clamp-2 leading-relaxed">
                     {org.description}
                   </p>
                 </div>
-
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-1">
-                    {org.sports.slice(0, 2).map((s) => (
-                      <span
-                        key={s.id}
-                        className="px-2 py-0.5 rounded-lg bg-[#F7FAF8] text-slate-700 text-[10px] font-bold"
-                      >
-                        {s.name}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="w-8 h-8 rounded-full bg-[#E7F8F0] text-[#16B672] flex items-center justify-center shrink-0">
-                    <ArrowRight className="w-4 h-4" />
-                  </div>
+                <div className="pt-3 border-t border-line flex items-center justify-between">
+                  <span className="text-xs font-semibold text-muted">
+                    Подписчиков: {org.subscribersCount}
+                  </span>
+                  <span className="text-xs font-bold text-brand-ink">Перейти →</span>
                 </div>
               </Link>
             ))}
           </div>
-        </section>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ============================================================================
+ * SPORTIKUS "МОИ СОБЫТИЯ" PAGE (/my)
+ * ============================================================================ */
+export const MyEventsPage: React.FC = () => {
+  const { user } = useAuth();
+  const [participating, setParticipating] = useState<EventCardDto[]>([]);
+  const [organizing, setOrganizing] = useState<EventCardDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<'participating' | 'organizing' | 'recurring'>('participating');
+
+  useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    Promise.all([
+      apiFetch<EventCardDto[]>('/api/v1/events/my/participations').catch(() => [] as EventCardDto[]),
+      apiFetch<EventCardDto[]>('/api/v1/events/my/organized').catch(() => [] as EventCardDto[]),
+    ])
+      .then(([partEvs, orgEvs]) => {
+        setParticipating(partEvs);
+        setOrganizing(orgEvs);
+      })
+      .finally(() => setLoading(false));
+  }, [user]);
+
+  if (!user) {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-card border border-line flex items-center justify-center mx-auto text-brand">
+          <Calendar className="w-7 h-7" />
+        </div>
+        <h1 className="text-2xl font-extrabold text-ink">Мои события</h1>
+        <p className="text-sm text-muted">
+          Войдите в аккаунт, чтобы видеть свои предстоящие тренировки, заявки и созданные события.
+        </p>
+        <div className="flex justify-center gap-3 pt-2">
+          <Link
+            to="/login"
+            className="h-11 px-6 rounded-xl bg-brand hover:bg-brand-hover text-white font-bold text-sm inline-flex items-center"
+          >
+            Войти
+          </Link>
+          <Link
+            to="/register"
+            className="h-11 px-6 rounded-xl bg-card border border-line-2 text-ink font-semibold text-sm inline-flex items-center"
+          >
+            Регистрация
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const recurring = useMemo(() => {
+    const combined = [...organizing, ...participating];
+    const seen = new Set<string>();
+    return combined.filter((ev) => {
+      if (!ev.recurringOccurrence || seen.has(ev.id)) return false;
+      seen.add(ev.id);
+      return true;
+    });
+  }, [organizing, participating]);
+
+  const activeList =
+    tab === 'participating'
+      ? participating
+      : tab === 'organizing'
+      ? organizing
+      : recurring;
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-7 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-extrabold text-ink tracking-tight">Мои события</h1>
+          <p className="text-xs sm:text-sm text-muted mt-0.5">
+            Управляйте своими записями на тренировки и организованными встречами
+          </p>
+        </div>
+        <Link
+          to="/events/new"
+          className="h-10 px-4 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-xs"
+        >
+          <Plus className="w-4 h-4" />
+          <span>Создать событие</span>
+        </Link>
+      </div>
+
+      {/* Sportikus Underline Tabs */}
+      <div className="flex border-b border-line overflow-x-auto no-scrollbar">
+        {[
+          { id: 'participating', label: 'Я участвую', count: participating.length },
+          { id: 'organizing', label: 'Я организую', count: organizing.length },
+          { id: 'recurring', label: 'Регулярные серии', count: recurring.length },
+        ].map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id as 'participating' | 'organizing' | 'recurring')}
+            className={`px-5 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              tab === t.id
+                ? 'border-brand text-ink'
+                : 'border-transparent text-muted hover:text-ink'
+            }`}
+          >
+            <span>{t.label}</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs ${
+                tab === t.id ? 'bg-brand-tint text-brand-ink' : 'bg-surface text-muted'
+              }`}
+            >
+              {t.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {[1, 2, 3].map((n) => (
+            <div key={n} className="h-[320px] rounded-[22px] bg-card border border-line animate-pulse" />
+          ))}
+        </div>
+      ) : activeList.length === 0 ? (
+        <div className="bg-card rounded-[22px] border border-line-2 p-10 text-center space-y-3">
+          <div className="text-base font-bold text-ink">
+            {tab === 'participating'
+              ? 'У вас пока нет активных записей на события'
+              : tab === 'organizing'
+              ? 'Вы пока не организовали ни одного события'
+              : 'Нет регулярных серий тренировок'}
+          </div>
+          <p className="text-xs text-muted max-w-md mx-auto">
+            {tab === 'participating'
+              ? 'Откройте карту или ленту событий, чтобы выбрать тренировку рядом с вами.'
+              : 'Создайте свою тренировку, матч или спортивный сбор за минуту.'}
+          </p>
+          <div className="pt-2">
+            <Link
+              to={tab === 'participating' ? '/?view=list' : '/events/new'}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold"
+            >
+              {tab === 'participating' ? 'Найти события' : '+ Создать событие'}
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {activeList.map((ev, idx) => (
+            <EventCard key={ev.id} event={ev} index={idx} />
+          ))}
+        </div>
       )}
     </div>
   );

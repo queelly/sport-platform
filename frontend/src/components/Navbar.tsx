@@ -1,31 +1,34 @@
-import React, { useEffect, useState } from 'react';
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Activity,
-  ArrowRight,
   Bell,
   Building2,
-  Calendar,
-  Compass,
+  CalendarCheck,
+  CheckCheck,
+  ChevronDown,
   Eye,
-  Heart,
   HelpCircle,
-  Home,
+  List,
   LogIn,
   LogOut,
+  Map as MapIcon,
   MapPin,
-  Menu,
-  PlusCircle,
+  Moon,
+  Plus,
   RotateCcw,
-  ShieldAlert,
+  Search,
+  ShieldCheck,
   Sparkles,
+  Sun,
   User,
   Users,
   X,
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
-import { apiFetch } from '../api';
-import { EventCardDto, getRegionInfo, RUSSIAN_REGIONS } from '../types';
+import { apiFetch, formatDateTime } from '../api';
+import { getRegionInfo, NotificationDto, RUSSIAN_REGIONS } from '../types';
+import { VoiceSearchButton } from './UiControls';
 
 export function getSelectedGlobalRegion(): string {
   return localStorage.getItem('sp_selected_region') ?? '';
@@ -37,6 +40,7 @@ export function setSelectedGlobalRegion(region: string) {
 }
 
 interface A11ySettings {
+  theme: 'light' | 'dark';
   fontSize: 'normal' | 'lg' | 'xl';
   contrast: 'normal' | 'bw' | 'wb' | 'blue';
   wideSpacing: boolean;
@@ -44,6 +48,7 @@ interface A11ySettings {
 }
 
 const DEFAULT_A11Y: A11ySettings = {
+  theme: 'light',
   fontSize: 'normal',
   contrast: 'normal',
   wideSpacing: false,
@@ -53,18 +58,35 @@ const DEFAULT_A11Y: A11ySettings = {
 export const Navbar: React.FC = () => {
   const {
     user,
-    myOrganizations,
     unreadNotificationsCount,
+    refreshUnreadCount,
     savedSessions,
     switchAccount,
     removeSavedAccount,
     logout,
   } = useAuth();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [regionDropdownOpen, setRegionDropdownOpen] = useState(false);
-  const [accountSwitcherOpen, setAccountSwitcherOpen] = useState(false);
+
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
   const [selectedRegion, setSelectedRegion] = useState<string>(() => getSelectedGlobalRegion());
+  const [cityModalOpen, setCityModalOpen] = useState(false);
+  const [cityQuery, setCityQuery] = useState('');
+
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationDto[]>([]);
+  const [loadingNotifs, setLoadingNotifs] = useState(false);
+  const notifPanelRef = useRef<HTMLDivElement>(null);
+  const notifBtnRef = useRef<HTMLButtonElement>(null);
+
   const [a11yOpen, setA11yOpen] = useState(false);
+  const a11yPanelRef = useRef<HTMLDivElement>(null);
+  const a11yBtnRef = useRef<HTMLButtonElement>(null);
+
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
   const [a11y, setA11y] = useState<A11ySettings>(() => {
     try {
       const saved = localStorage.getItem('sp_a11y');
@@ -74,9 +96,6 @@ export const Navbar: React.FC = () => {
     }
   });
 
-  const navigate = useNavigate();
-
-  // Sync user's city as initial region if none chosen yet
   useEffect(() => {
     if (user?.city && localStorage.getItem('sp_selected_region') === null) {
       setSelectedGlobalRegion(user.city);
@@ -93,9 +112,10 @@ export const Navbar: React.FC = () => {
     return () => window.removeEventListener('sp-region-change', handler);
   }, []);
 
-  // Apply Accessibility Mode classes to <html>
+  // Apply theme & accessibility settings to <html>
   useEffect(() => {
     const html = document.documentElement;
+    html.dataset.theme = a11y.theme;
     html.classList.remove(
       'a11y-font-lg',
       'a11y-font-xl',
@@ -115,841 +135,835 @@ export const Navbar: React.FC = () => {
     localStorage.setItem('sp_a11y', JSON.stringify(a11y));
   }, [a11y]);
 
+  const loadNotifications = useCallback(async () => {
+    if (!user) return;
+    setLoadingNotifs(true);
+    try {
+      const list = await apiFetch<NotificationDto[]>('/api/v1/notifications');
+      setNotifications(list.slice(0, 12));
+      await refreshUnreadCount();
+    } catch {
+      // ignore
+    } finally {
+      setLoadingNotifs(false);
+    }
+  }, [user, refreshUnreadCount]);
+
+  // Close popovers on outside click
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        notifOpen &&
+        notifPanelRef.current &&
+        !notifPanelRef.current.contains(target) &&
+        notifBtnRef.current &&
+        !notifBtnRef.current.contains(target)
+      ) {
+        setNotifOpen(false);
+      }
+      if (
+        a11yOpen &&
+        a11yPanelRef.current &&
+        !a11yPanelRef.current.contains(target) &&
+        a11yBtnRef.current &&
+        !a11yBtnRef.current.contains(target)
+      ) {
+        setA11yOpen(false);
+      }
+      if (profileMenuOpen && profileMenuRef.current && !profileMenuRef.current.contains(target)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [notifOpen, a11yOpen, profileMenuOpen]);
+
+  const handleMarkAllRead = async () => {
+    try {
+      await apiFetch('/api/v1/notifications/read-all', { method: 'POST' });
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      await refreshUnreadCount();
+    } catch {
+      // ignore
+    }
+  };
+
+  const isHomeOrEvents = location.pathname === '/' || location.pathname === '/events';
+  const currentView = isHomeOrEvents
+    ? searchParams.get('view') === 'list'
+      ? 'list'
+      : 'map'
+    : null;
+
+  const buildViewLink = (view: 'map' | 'list') => {
+    const params = new URLSearchParams(isHomeOrEvents ? searchParams : undefined);
+    if (view === 'list') {
+      params.set('view', 'list');
+    } else {
+      params.delete('view');
+    }
+    const qs = params.toString();
+    return qs ? `/?${qs}` : '/';
+  };
+
+  const searchQuery = isHomeOrEvents ? searchParams.get('q') ?? '' : '';
+  const updateSearchQuery = (val: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (val) {
+      next.set('q', val);
+    } else {
+      next.delete('q');
+    }
+    if (!isHomeOrEvents) {
+      navigate(`/?${next.toString()}`);
+    } else {
+      setSearchParams(next, { replace: true });
+    }
+  };
+
+  const navTabClass = (active: boolean) =>
+    `h-full -mb-px px-2.5 xl:px-3.5 flex items-center gap-2 border-b-[3px] text-[15px] whitespace-nowrap transition-all ${
+      active
+        ? 'border-brand text-ink font-bold shadow-[inset_0_-3px_10px_rgba(4,215,147,0.3)]'
+        : 'border-transparent text-muted font-semibold hover:text-ink'
+    }`;
+
+  const isAdmin = user?.globalRole === 'ADMIN';
   const isA11yActive =
     a11y.fontSize !== 'normal' ||
     a11y.contrast !== 'normal' ||
     a11y.wideSpacing ||
     a11y.hideImages;
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
-  };
-
-  const sidebarItemClass = ({ isActive }: { isActive: boolean }) =>
-    `flex items-center justify-between gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all duration-200 ${
-      isActive
-        ? 'bg-[#16B672] text-white shadow-md shadow-[#16B672]/25'
-        : 'text-slate-600 hover:bg-[#EEF4F1] hover:text-slate-900'
-    }`;
-
   const currentRegionInfo = getRegionInfo(selectedRegion);
+  const filteredRegions = RUSSIAN_REGIONS.filter(
+    (r) =>
+      r.value.toLowerCase().includes(cityQuery.trim().toLowerCase()) ||
+      r.label.toLowerCase().includes(cityQuery.trim().toLowerCase())
+  );
 
   return (
     <>
-      {/* Панель версии для слабовидящих (ГОСТ) */}
-      {a11yOpen && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-slate-900 text-white border-b border-slate-700 px-4 py-3 shadow-xl">
-          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4 text-xs">
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-1.5">
-                <span className="font-bold text-slate-300">Размер шрифта:</span>
-                {(
-                  [
-                    { id: 'normal', label: 'Обычный (100%)' },
-                    { id: 'lg', label: 'Увеличенный (115%)' },
-                    { id: 'xl', label: 'Крупный (130%)' },
-                  ] as const
-                ).map((sz) => (
-                  <button
-                    key={sz.id}
-                    type="button"
-                    aria-pressed={a11y.fontSize === sz.id}
-                    onClick={() => setA11y((p) => ({ ...p, fontSize: sz.id }))}
-                    className={`px-2.5 py-1 rounded-lg font-bold transition-colors ${
-                      a11y.fontSize === sz.id
-                        ? 'bg-[#16B672] text-white ring-2 ring-white'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    {sz.label}
-                  </button>
-                ))}
-              </div>
+      <nav className="bg-card border-b border-line-2 relative z-40 shrink-0 max-w-full">
+        <div className="px-3 sm:px-6 h-16 flex items-center justify-between gap-2 sm:gap-4 max-w-full">
+          {/* Left: Brand + City Selector + Search Bar + Main Navigation Tabs */}
+          <div className="flex-1 self-stretch flex items-center gap-2 lg:gap-3 min-w-0">
+            <Link
+              to="/"
+              className="flex items-center gap-2.5 shrink-0"
+              aria-label="Точка Сбора — на главную"
+            >
+              <span className="w-[38px] h-[38px] rounded-[10px] bg-brand text-on-brand flex items-center justify-center shadow-sm">
+                <Activity className="w-5 h-5 stroke-[2.4]" />
+              </span>
+              <span className="text-[20px] sm:text-[22px] font-extrabold tracking-[-0.03em] text-ink md:max-xl:hidden">
+                Точка Сбора
+              </span>
+            </Link>
 
-              <div className="flex items-center gap-1.5">
-                <span className="font-bold text-slate-300">Контрастность:</span>
-                {[
-                  { id: 'normal', label: 'Стандартная' },
-                  { id: 'bw', label: 'Чёрно-белая (высокий контраст)' },
-                  { id: 'wb', label: 'Жёлтый на чёрном' },
-                  { id: 'blue', label: 'Синяя' },
-                ].map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    aria-pressed={a11y.contrast === c.id}
-                    onClick={() => setA11y((p) => ({ ...p, contrast: c.id as A11ySettings['contrast'] }))}
-                    className={`px-2.5 py-1 rounded-lg font-bold transition-colors ${
-                      a11y.contrast === c.id
-                        ? 'bg-[#16B672] text-white ring-2 ring-white'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
+            {/* City Selector Button */}
+            <button
+              type="button"
+              onClick={() => setCityModalOpen(true)}
+              title={ currentRegionInfo ? `${currentRegionInfo.value} (${currentRegionInfo.tzLabel})` : 'Все города России' }
+              className="flex shrink-0 h-[42px] px-2.5 items-center gap-1.5 rounded-[10px] text-ink hover:bg-surface border border-transparent hover:border-line-2 transition-colors"
+            >
+              <MapPin className="w-[18px] h-[18px] text-brand-ink shrink-0" />
+              <span className="text-sm font-bold max-w-[115px] truncate hidden sm:inline">
+                {selectedRegion || 'Все города'}
+              </span>
+              <ChevronDown className="w-4 h-4 text-muted shrink-0" />
+            </button>
 
-              <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={a11y.wideSpacing}
-                  onChange={(e) => setA11y((p) => ({ ...p, wideSpacing: e.target.checked }))}
-                  className="rounded"
-                />
-                <span>Широкий интервал букв</span>
-              </label>
-
-              <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={a11y.hideImages}
-                  onChange={(e) => setA11y((p) => ({ ...p, hideImages: e.target.checked }))}
-                  className="rounded"
-                />
-                <span>Отключить изображения</span>
-              </label>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {isA11yActive && (
+            {/* Inline Search Input with Voice Search */}
+            <div className="hidden lg:flex flex-[2] min-w-[160px] max-w-[460px] h-[42px] items-center gap-2 pl-3 pr-1.5 rounded-[10px] bg-surface border border-line-2 text-muted focus-within:border-ink">
+              <Search className="w-[18px] h-[18px] shrink-0" />
+              <input
+                type="search"
+                aria-label="Поиск мероприятий"
+                placeholder="Спорт, место или клуб"
+                value={searchQuery}
+                onChange={(e) => updateSearchQuery(e.target.value)}
+                className="flex-1 min-w-0 bg-transparent outline-none text-[15px] font-medium text-ink placeholder:text-muted"
+              />
+              {searchQuery && (
                 <button
                   type="button"
-                  onClick={() => setA11y(DEFAULT_A11Y)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white font-bold"
+                  onClick={() => updateSearchQuery('')}
+                  aria-label="Очистить"
+                  className="shrink-0 w-[28px] h-[28px] rounded-lg bg-card text-ink flex items-center justify-center hover:bg-surface-2"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Сбросить настройки</span>
+                  <X className="w-3.5 h-3.5" />
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => setA11yOpen(false)}
-                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold"
+              <VoiceSearchButton onResult={(transcript) => updateSearchQuery(transcript)} />
+            </div>
+
+            <div className="flex-1" />
+
+            {/* Desktop Horizontal Tabs (Sportikus Architecture) */}
+            <div className="hidden md:flex self-stretch gap-0.5 xl:gap-1 shrink-0">
+              <Link to={buildViewLink('map')} className={navTabClass(currentView === 'map')}>
+                <MapIcon className="w-[18px] h-[18px] shrink-0" />
+                <span>Карта</span>
+              </Link>
+
+              <Link to={buildViewLink('list')} className={navTabClass(currentView === 'list')}>
+                <List className="w-[18px] h-[18px] shrink-0" />
+                <span>Лента</span>
+              </Link>
+
+              <Link
+                to="/recommended"
+                className={navTabClass(
+                  location.pathname === '/recommended' ||
+                    location.pathname === '/partners' ||
+                    location.pathname === '/friends' ||
+                    location.pathname.startsWith('/organizations')
+                )}
               >
-                Скрыть панель
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                <Sparkles className="w-[18px] h-[18px] shrink-0 lg:hidden xl:inline" />
+                <span>Для вас</span>
+              </Link>
 
-      {/* Mobile Top Header */}
-      <header className="lg:hidden sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/70 px-4 h-16 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-2xl bg-[#16B672] flex items-center justify-center text-white shadow-sm shadow-[#16B672]/25">
-            <Activity className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="font-display font-extrabold text-base tracking-tight text-slate-900 block leading-none">
-              Точка Сбора
-            </span>
-            <span className="text-[10px] font-bold text-[#16B672] tracking-wider block mt-0.5">
-              СПОРТ • КОМЬЮНИТИ
-            </span>
-          </div>
-        </Link>
-
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setA11yOpen((prev) => !prev)}
-            title="Версия для слабовидящих"
-            className="p-2 rounded-xl text-slate-700 hover:bg-[#EEF4F1]"
-          >
-            <Eye className="w-5 h-5" />
-          </button>
-          {user && (
-            <Link to="/notifications" className="relative p-2 rounded-xl text-slate-700 hover:bg-[#EEF4F1]">
-              <Bell className="w-5 h-5" />
-              {unreadNotificationsCount > 0 && (
-                <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-[#FF7849] text-white text-[10px] font-bold flex items-center justify-center">
-                  {unreadNotificationsCount}
-                </span>
-              )}
-            </Link>
-          )}
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            aria-label="Открыть меню"
-            className="p-2 rounded-xl text-slate-700 hover:bg-[#EEF4F1]"
-          >
-            {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
-        </div>
-      </header>
-
-      {/* Mobile Drawer */}
-      {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex justify-end">
-          <div className="w-80 max-w-full bg-white h-full p-5 flex flex-col justify-between overflow-y-auto shadow-2xl">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <span className="font-display font-extrabold text-lg text-slate-900">Навигация</span>
-                <button
-                  onClick={() => setMobileOpen(false)}
-                  className="p-2 rounded-xl text-slate-500 hover:bg-slate-100"
+              {user && (
+                <Link
+                  to="/my"
+                  className={navTabClass(location.pathname === '/my')}
                 >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-1">
-                <NavLink to="/" end onClick={() => setMobileOpen(false)} className={sidebarItemClass}>
-                  <span className="flex items-center gap-3">
-                    <Home className="w-4 h-4" />
-                    <span>Дашборд</span>
-                  </span>
-                </NavLink>
-                <NavLink to="/events" onClick={() => setMobileOpen(false)} className={sidebarItemClass}>
-                  <span className="flex items-center gap-3">
-                    <Compass className="w-4 h-4" />
-                    <span>Каталог встреч</span>
-                  </span>
-                </NavLink>
-                <NavLink to="/organizations" onClick={() => setMobileOpen(false)} className={sidebarItemClass}>
-                  <span className="flex items-center gap-3">
-                    <Building2 className="w-4 h-4" />
-                    <span>Клубы и сообщества</span>
-                  </span>
-                </NavLink>
-                <NavLink to="/partners" onClick={() => setMobileOpen(false)} className={sidebarItemClass}>
-                  <span className="flex items-center gap-3">
-                    <Users className="w-4 h-4" />
-                    <span>Напарники и мэтч</span>
-                  </span>
-                </NavLink>
-                {user && (
-                  <>
-                    <NavLink to="/events/new" onClick={() => setMobileOpen(false)} className={sidebarItemClass}>
-                      <span className="flex items-center gap-3">
-                        <PlusCircle className="w-4 h-4" />
-                        <span>Создать встречу</span>
-                      </span>
-                    </NavLink>
-                    {myOrganizations.length > 0 && (
-                      <NavLink to="/my-organization" onClick={() => setMobileOpen(false)} className={sidebarItemClass}>
-                        <span className="flex items-center gap-3">
-                          <Building2 className="w-4 h-4" />
-                          <span>Мои сообщества</span>
-                        </span>
-                      </NavLink>
-                    )}
-                    <NavLink to="/notifications" onClick={() => setMobileOpen(false)} className={sidebarItemClass}>
-                      <span className="flex items-center gap-3">
-                        <Bell className="w-4 h-4" />
-                        <span>Уведомления и VK</span>
-                      </span>
-                      {unreadNotificationsCount > 0 && (
-                        <span className="px-2 py-0.5 rounded-full bg-[#FF7849] text-white text-[11px] font-extrabold">
-                          {unreadNotificationsCount}
-                        </span>
-                      )}
-                    </NavLink>
-                    <NavLink to="/support" onClick={() => setMobileOpen(false)} className={sidebarItemClass}>
-                      <span className="flex items-center gap-3">
-                        <HelpCircle className="w-4 h-4" />
-                        <span>Поддержка</span>
-                      </span>
-                    </NavLink>
-                    <NavLink to="/profile" onClick={() => setMobileOpen(false)} className={sidebarItemClass}>
-                      <span className="flex items-center gap-3">
-                        <User className="w-4 h-4" />
-                        <span>Мой профиль</span>
-                      </span>
-                    </NavLink>
-                    {user.globalRole === 'ADMIN' && (
-                      <NavLink to="/admin" onClick={() => setMobileOpen(false)} className={sidebarItemClass}>
-                        <span className="flex items-center gap-3">
-                          <ShieldAlert className="w-4 h-4" />
-                          <span>Админ-панель</span>
-                        </span>
-                      </NavLink>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-slate-100 space-y-2">
-              {savedSessions.length > 0 && (
-                <div className="bg-[#F7FAF8] rounded-2xl p-2.5 space-y-1.5 border border-slate-200/70">
-                  <div className="text-[10px] font-extrabold text-slate-400 uppercase px-1">
-                    Аккаунты на устройстве ({savedSessions.length})
-                  </div>
-                  {savedSessions.map((s) => {
-                    const isCurrent = user?.id === s.user.id;
-                    return (
-                      <div
-                        key={s.user.id}
-                        className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs ${
-                          isCurrent ? 'bg-[#E7F8F0] text-[#11995E] font-extrabold' : 'hover:bg-white text-slate-700 font-semibold'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!isCurrent) await switchAccount(s.user.id);
-                            setMobileOpen(false);
-                          }}
-                          className="flex-1 text-left truncate"
-                        >
-                          {s.user.displayName} {isCurrent ? '• активен' : ''}
-                        </button>
-                        {!isCurrent && (
-                          <button
-                            type="button"
-                            onClick={() => removeSavedAccount(s.user.id)}
-                            className="text-slate-400 hover:text-rose-600 px-1"
-                            title="Забыть сессию"
-                          >
-                            ×
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                  <Link
-                    to="/login?addAccount=1"
-                    onClick={() => setMobileOpen(false)}
-                    className="block text-center py-1.5 rounded-xl bg-white border border-slate-200 text-[11px] font-bold text-[#16B672]"
-                  >
-                    + Добавить ещё аккаунт
-                  </Link>
-                </div>
+                  <CalendarCheck className="w-[18px] h-[18px] shrink-0 lg:hidden xl:inline" />
+                  <span>Мои события</span>
+                </Link>
               )}
 
-              {user ? (
-                <button
-                  onClick={() => {
-                    setMobileOpen(false);
-                    handleLogout();
-                  }}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors"
+              {isAdmin && (
+                <Link
+                  to="/admin"
+                  className={navTabClass(location.pathname.startsWith('/admin'))}
                 >
-                  <LogOut className="w-4 h-4" />
-                  <span>Выйти из аккаунта</span>
-                </button>
+                  <ShieldCheck className="w-[18px] h-[18px] shrink-0 text-amber-500" />
+                  <span>Модерация</span>
+                </Link>
+              )}
+            </div>
+          </div>
+
+          {/* Right Action Controls: Accessibility/Theme, Notifications, Create, Profile */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            {/* Quick Dark/Light Theme Toggle */}
+            <button
+              type="button"
+              onClick={() =>
+                setA11y((p) => ({ ...p, theme: p.theme === 'dark' ? 'light' : 'dark' }))
+              }
+              aria-label={a11y.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+              title={a11y.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+              className="w-9 h-9 sm:w-[42px] sm:h-[42px] rounded-[10px] border border-line-2 bg-card flex items-center justify-center text-ink hover:bg-surface transition-colors shrink-0"
+            >
+              {a11y.theme === 'dark' ? (
+                <Sun className="w-4 h-4 sm:w-5 sm:h-5" />
               ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  <Link
-                    to="/login"
-                    onClick={() => setMobileOpen(false)}
-                    className="py-2.5 rounded-2xl text-center text-xs font-bold border border-slate-200 text-slate-700"
-                  >
-                    Войти
-                  </Link>
-                  <Link
-                    to="/register"
-                    onClick={() => setMobileOpen(false)}
-                    className="py-2.5 rounded-2xl text-center text-xs font-bold bg-[#16B672] text-white"
-                  >
-                    Регистрация
-                  </Link>
+                <Moon className="w-4 h-4 sm:w-5 sm:h-5" />
+              )}
+            </button>
+
+            {/* Accessibility (ГОСТ / Для слабовидящих) Popover Button */}
+            <div className="relative">
+              <button
+                ref={a11yBtnRef}
+                type="button"
+                onClick={() => setA11yOpen((o) => !o)}
+                aria-label="Доступность для слабовидящих"
+                aria-expanded={a11yOpen}
+                title="Версия для слабовидящих (размер шрифта и контраст)"
+                className={`relative w-9 h-9 sm:w-[42px] sm:h-[42px] rounded-[10px] border flex items-center justify-center transition-colors shrink-0 ${
+                  isA11yActive
+                    ? 'border-brand bg-brand-tint text-brand-ink font-bold'
+                    : 'border-line-2 bg-card text-ink hover:bg-surface'
+                }`}
+              >
+                <Eye className="w-4 h-4 sm:w-5 sm:h-5" />
+                {isA11yActive && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-brand" />
+                )}
+              </button>
+
+              {a11yOpen && (
+                <div
+                  ref={a11yPanelRef}
+                  role="dialog"
+                  aria-label="Настройки доступности для слабовидящих"
+                  className="fixed inset-x-2 top-16 sm:inset-x-auto sm:right-4 sm:top-[68px] w-auto sm:w-[340px] bg-card border border-line-2 rounded-2xl shadow-2xl p-4 z-[2200] space-y-4 anim-fade"
+                >
+                  <div className="flex items-center justify-between border-b border-line pb-2.5">
+                    <span className="font-extrabold text-sm text-ink flex items-center gap-2">
+                      <Eye className="w-4 h-4 text-brand-ink" />
+                      <span>Версия для слабовидящих</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setA11yOpen(false)}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-muted hover:bg-surface hover:text-ink"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="text-xs font-bold text-muted uppercase tracking-wider">
+                      Размер текста
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5 p-1 bg-surface rounded-xl">
+                      {(
+                        [
+                          { id: 'normal', label: 'Обычный' },
+                          { id: 'lg', label: 'Крупнее' },
+                          { id: 'xl', label: 'Крупный' },
+                        ] as const
+                      ).map((sz) => (
+                        <button
+                          key={sz.id}
+                          type="button"
+                          aria-pressed={a11y.fontSize === sz.id}
+                          onClick={() => setA11y((p) => ({ ...p, fontSize: sz.id }))}
+                          className={`py-2 px-2 rounded-lg text-xs font-bold transition-all ${
+                            a11y.fontSize === sz.id
+                              ? 'bg-brand text-on-brand shadow-sm'
+                              : 'text-ink hover:bg-card'
+                          }`}
+                        >
+                          {sz.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="text-xs font-bold text-muted uppercase tracking-wider">
+                      Контрастность
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[
+                        { id: 'normal', label: 'Стандартная' },
+                        { id: 'bw', label: 'Ч/Б высокий контраст' },
+                        { id: 'wb', label: 'Жёлтый на чёрном' },
+                        { id: 'blue', label: 'Синяя схема' },
+                      ].map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          aria-pressed={a11y.contrast === c.id}
+                          onClick={() =>
+                            setA11y((p) => ({ ...p, contrast: c.id as A11ySettings['contrast'] }))
+                          }
+                          className={`py-2 px-2.5 rounded-xl border text-xs font-bold text-left transition-all ${
+                            a11y.contrast === c.id
+                              ? 'border-brand bg-brand-tint text-brand-ink'
+                              : 'border-line-2 bg-card text-ink hover:bg-surface'
+                          }`}
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-1 border-t border-line text-xs font-semibold text-ink">
+                    <label className="flex items-center justify-between cursor-pointer py-1">
+                      <span>Увеличенный интервал букв</span>
+                      <input
+                        type="checkbox"
+                        checked={a11y.wideSpacing}
+                        onChange={(e) => setA11y((p) => ({ ...p, wideSpacing: e.target.checked }))}
+                        className="w-4 h-4 accent-brand"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between cursor-pointer py-1">
+                      <span>Скрыть фоновые иллюстрации</span>
+                      <input
+                        type="checkbox"
+                        checked={a11y.hideImages}
+                        onChange={(e) => setA11y((p) => ({ ...p, hideImages: e.target.checked }))}
+                        className="w-4 h-4 accent-brand"
+                      />
+                    </label>
+                  </div>
+
+                  {isA11yActive && (
+                    <button
+                      type="button"
+                      onClick={() => setA11y((p) => ({ ...DEFAULT_A11Y, theme: p.theme }))}
+                      className="w-full py-2 rounded-xl bg-surface hover:bg-surface-2 text-ink text-xs font-bold flex items-center justify-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Сбросить настройки доступности</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* Desktop Left Vertical Sidebar (Ref 1 & Ref 2 style) */}
-      <aside className="hidden lg:flex flex-col justify-between w-64 shrink-0 bg-white rounded-[28px] p-5 border border-slate-100 shadow-xs sticky top-5 h-[calc(100vh-2.5rem)] overflow-y-auto">
-        <div className="space-y-5">
-          {/* Brand Logo */}
-          <div className="flex items-center justify-between px-1">
-            <Link to="/" className="flex items-center gap-3 group">
-              <div className="w-10 h-10 rounded-2xl bg-[#16B672] flex items-center justify-center text-white shadow-md shadow-[#16B672]/25 group-hover:scale-105 transition-transform">
-                <Activity className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="font-display font-black text-xl tracking-tight text-slate-900 block leading-none">
-                  Точка Сбора
-                </span>
-                <span className="text-[10px] font-extrabold text-[#16B672] uppercase tracking-wider block mt-0.5">
-                  Спорт • Платформа
-                </span>
-              </div>
-            </Link>
-
-            <button
-              type="button"
-              onClick={() => setA11yOpen((prev) => !prev)}
-              title="Версия для слабовидящих (ГОСТ)"
-              className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold transition-colors ${
-                isA11yActive || a11yOpen
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-[#F4F8F6] text-slate-600 hover:bg-[#E7F8F0] hover:text-[#16B672]'
-              }`}
-            >
-              <Eye className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Global Region Selector pill */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setRegionDropdownOpen((prev) => !prev)}
-              title="Выбрать регион и часовой пояс"
-              className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-[#F7FAF8] hover:bg-[#E7F8F0]/70 border border-slate-200/60 text-xs font-bold text-slate-700 transition-colors"
-            >
-              <span className="flex items-center gap-2 min-w-0">
-                <MapPin className="w-3.5 h-3.5 text-[#16B672] shrink-0" />
-                <span className="truncate">{selectedRegion || 'Все регионы РФ'}</span>
-              </span>
-              {currentRegionInfo && (
-                <span className="text-[10px] font-bold text-[#16B672] bg-[#E7F8F0] px-2 py-0.5 rounded-full shrink-0">
-                  {currentRegionInfo.tzLabel.split(' ')[0]}
-                </span>
-              )}
-            </button>
-
-            {regionDropdownOpen && (
-              <div className="absolute left-0 right-0 mt-2 bg-white rounded-2xl border border-slate-200 shadow-xl py-2 z-50 max-h-72 overflow-y-auto">
-                <div className="px-3 py-1.5 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                  Регион и часовой пояс
-                </div>
+            {/* Notifications Bell Popover (Sportikus style) */}
+            {user && (
+              <div className="relative">
                 <button
+                  ref={notifBtnRef}
                   type="button"
                   onClick={() => {
-                    setSelectedGlobalRegion('');
-                    setRegionDropdownOpen(false);
+                    const next = !notifOpen;
+                    setNotifOpen(next);
+                    if (next) loadNotifications();
                   }}
-                  className={`w-full text-left px-3.5 py-2 text-xs font-bold flex items-center justify-between hover:bg-[#F7FAF8] ${
-                    !selectedRegion ? 'text-[#16B672] bg-[#E7F8F0]/60' : 'text-slate-700'
-                  }`}
+                  aria-label="Уведомления"
+                  title={
+                    unreadNotificationsCount > 0
+                      ? `${unreadNotificationsCount} новых уведомлений`
+                      : 'Уведомления'
+                  }
+                  className="relative w-9 h-9 sm:w-[42px] sm:h-[42px] rounded-[10px] border border-line-2 bg-card flex items-center justify-center text-ink hover:bg-surface transition-colors shrink-0"
                 >
-                  <span>Все регионы России</span>
-                  <span className="text-[10px] text-slate-400">Все пояса</span>
-                </button>
-                {RUSSIAN_REGIONS.map((r) => (
-                  <button
-                    key={r.value}
-                    type="button"
-                    onClick={() => {
-                      setSelectedGlobalRegion(r.value);
-                      setRegionDropdownOpen(false);
-                    }}
-                    className={`w-full text-left px-3.5 py-2 text-xs flex items-center justify-between gap-2 hover:bg-[#F7FAF8] ${
-                      selectedRegion === r.value ? 'text-[#16B672] font-bold bg-[#E7F8F0]/60' : 'text-slate-700'
-                    }`}
-                  >
-                    <span className="truncate">{r.label}</span>
-                    <span className="text-[10px] text-slate-400 shrink-0">{r.tzLabel.split(' ')[0]}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Primary Vertical Navigation (Ref 1 & Ref 2) */}
-          <nav className="space-y-1">
-            <NavLink to="/" end className={sidebarItemClass}>
-              <span className="flex items-center gap-3">
-                <Home className="w-4 h-4 shrink-0" />
-                <span>Дашборд</span>
-              </span>
-            </NavLink>
-
-            <NavLink to="/events" className={sidebarItemClass}>
-              <span className="flex items-center gap-3">
-                <Compass className="w-4 h-4 shrink-0" />
-                <span>Каталог встреч</span>
-              </span>
-            </NavLink>
-
-            <NavLink to="/organizations" className={sidebarItemClass}>
-              <span className="flex items-center gap-3">
-                <Building2 className="w-4 h-4 shrink-0" />
-                <span>Клубы и комьюнити</span>
-              </span>
-            </NavLink>
-
-            <NavLink to="/partners" className={sidebarItemClass}>
-              <span className="flex items-center gap-3">
-                <Users className="w-4 h-4 shrink-0" />
-                <span>Спорт-Мэтч</span>
-              </span>
-            </NavLink>
-
-            {user && (
-              <>
-                <NavLink to="/events/new" className={sidebarItemClass}>
-                  <span className="flex items-center gap-3">
-                    <PlusCircle className="w-4 h-4 shrink-0" />
-                    <span>Создать встречу</span>
-                  </span>
-                </NavLink>
-
-                {myOrganizations.length > 0 && (
-                  <NavLink to="/my-organization" className={sidebarItemClass}>
-                    <span className="flex items-center gap-3">
-                      <Sparkles className="w-4 h-4 shrink-0" />
-                      <span>Кабинет клуба</span>
-                    </span>
-                  </NavLink>
-                )}
-
-                <NavLink to="/notifications" className={sidebarItemClass}>
-                  <span className="flex items-center gap-3">
-                    <Bell className="w-4 h-4 shrink-0" />
-                    <span>Уведомления и VK</span>
-                  </span>
+                  <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
                   {unreadNotificationsCount > 0 && (
-                    <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#FF7849] text-white text-[11px] font-extrabold flex items-center justify-center shadow-xs">
-                      {unreadNotificationsCount}
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-brand text-on-brand text-[10px] leading-none font-extrabold flex items-center justify-center">
+                      {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
                     </span>
                   )}
-                </NavLink>
+                </button>
 
-                <NavLink to="/support" className={sidebarItemClass}>
-                  <span className="flex items-center gap-3">
-                    <HelpCircle className="w-4 h-4 shrink-0" />
-                    <span>Поддержка</span>
-                  </span>
-                </NavLink>
-
-                <NavLink to="/profile" className={sidebarItemClass}>
-                  <span className="flex items-center gap-3">
-                    <User className="w-4 h-4 shrink-0" />
-                    <span>Мой профиль</span>
-                  </span>
-                </NavLink>
-
-                {user.globalRole === 'ADMIN' && (
-                  <NavLink to="/admin" className={sidebarItemClass}>
-                    <span className="flex items-center gap-3">
-                      <ShieldAlert className="w-4 h-4 shrink-0" />
-                      <span>Админ-панель</span>
-                    </span>
-                  </NavLink>
-                )}
-              </>
-            )}
-          </nav>
-        </div>
-
-        {/* Bottom Promo Card + Account Switcher + Logout / Auth */}
-        <div className="space-y-2.5 pt-4">
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#DDF3EA] via-[#E7F8F0] to-[#CFECE0] p-4 border border-[#16B672]/15">
-            <div className="relative z-10 space-y-1.5">
-              <span className="inline-block px-2 py-0.5 rounded-full bg-white/80 text-[#11995E] text-[10px] font-extrabold uppercase tracking-wider">
-                Совет дня 🌿
-              </span>
-              <div className="font-display font-extrabold text-sm text-slate-900 leading-snug">
-                Соберите свою команду сегодня!
-              </div>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
-                Создайте открытую тренировку или вступите в городской спортивный клуб.
-              </p>
-              <div className="pt-1 flex items-center justify-between">
-                <Link
-                  to={user ? '/events/new' : '/register'}
-                  className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#11995E] hover:text-[#16B672]"
-                >
-                  <span>{user ? 'Создать сбор' : 'Присоединиться'}</span>
-                </Link>
-                <Link
-                  to={user ? '/events/new' : '/register'}
-                  className="w-9 h-9 rounded-full bg-[#16B672] hover:bg-[#11995E] text-white flex items-center justify-center shadow-md shadow-[#16B672]/30 transition-transform hover:scale-105"
-                >
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          {user ? (
-            <div className="space-y-1.5 relative">
-              <button
-                type="button"
-                onClick={() => setAccountSwitcherOpen((o) => !o)}
-                className="w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-2xl text-xs font-bold bg-[#F7FAF8] hover:bg-[#E7F8F0] text-slate-700 border border-slate-200/70 transition-colors"
-              >
-                <span className="truncate">
-                  Аккаунты ({savedSessions.length || 1}) • Сменить
-                </span>
-                <Users className="w-3.5 h-3.5 text-[#16B672] shrink-0" />
-              </button>
-
-              {accountSwitcherOpen && (
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-2.5 space-y-1.5">
-                  <div className="text-[10px] font-extrabold text-slate-400 uppercase px-1">
-                    Быстрое переключение
-                  </div>
-                  {savedSessions.map((s) => {
-                    const isCurrent = user.id === s.user.id;
-                    return (
-                      <div
-                        key={s.user.id}
-                        className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl text-xs ${
-                          isCurrent
-                            ? 'bg-[#E7F8F0] text-[#11995E] font-extrabold'
-                            : 'hover:bg-[#F7FAF8] text-slate-700 font-semibold'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!isCurrent) await switchAccount(s.user.id);
-                            setAccountSwitcherOpen(false);
-                          }}
-                          className="flex-1 text-left truncate"
-                        >
-                          <div className="truncate">{s.user.displayName}</div>
-                          <div className="text-[10px] opacity-75 truncate">{s.user.email}</div>
-                        </button>
-                        {!isCurrent && (
-                          <button
-                            type="button"
-                            onClick={() => removeSavedAccount(s.user.id)}
-                            title="Удалить сохранённый аккаунт"
-                            className="text-slate-400 hover:text-rose-600 px-1"
-                          >
-                            ×
-                          </button>
+                {notifOpen && (
+                  <div
+                    ref={notifPanelRef}
+                    role="dialog"
+                    aria-label="Уведомления"
+                    className="fixed inset-x-2 top-16 sm:inset-x-auto sm:right-4 sm:top-[68px] w-auto sm:w-[380px] max-h-[500px] bg-card border border-line-2 rounded-2xl shadow-2xl flex flex-col z-[2200] overflow-hidden anim-fade"
+                  >
+                    <div className="p-4 border-b border-line-2 flex items-center justify-between bg-surface/50">
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-ink text-base">Уведомления</span>
+                        {unreadNotificationsCount > 0 && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-brand-tint text-brand-ink font-bold">
+                            {unreadNotificationsCount} новых
+                          </span>
                         )}
                       </div>
-                    );
-                  })}
-                  <Link
-                    to="/login?addAccount=1"
-                    onClick={() => setAccountSwitcherOpen(false)}
-                    className="block text-center py-1.5 rounded-xl bg-[#F7FAF8] hover:bg-[#E7F8F0] text-[11px] font-extrabold text-[#16B672]"
-                  >
-                    + Войти в ещё один аккаунт
-                  </Link>
-                </div>
-              )}
+                      <div className="flex items-center gap-1">
+                        {unreadNotificationsCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleMarkAllRead}
+                            className="px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink hover:bg-surface rounded-lg flex items-center gap-1 transition-colors"
+                          >
+                            <CheckCheck className="w-3.5 h-3.5" />
+                            <span>Прочитать все</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setNotifOpen(false)}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-muted hover:bg-surface hover:text-ink"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
 
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-2 rounded-2xl text-xs font-bold text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-              >
-                <LogOut className="w-4 h-4 text-rose-500" />
-                <span>Выйти ({user.displayName.split(' ')[0]})</span>
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
+                    <div className="flex-1 overflow-y-auto divide-y divide-line">
+                      {loadingNotifs && notifications.length === 0 ? (
+                        <div className="py-10 text-center text-xs text-muted">Загрузка...</div>
+                      ) : notifications.length === 0 ? (
+                        <div className="py-12 px-4 text-center text-muted">
+                          <Bell className="w-9 h-9 mx-auto mb-2 opacity-40" />
+                          <p className="text-sm font-semibold text-ink">Уведомлений пока нет</p>
+                          <p className="text-xs mt-1">
+                            Здесь появятся ответы по заявкам, приглашения и напоминания
+                          </p>
+                        </div>
+                      ) : (
+                        notifications.map((n) => (
+                          <button
+                            key={n.id}
+                            type="button"
+                            onClick={() => {
+                              setNotifOpen(false);
+                              if (n.linkUrl) navigate(n.linkUrl);
+                            }}
+                            className={`w-full text-left p-3.5 hover:bg-surface transition-colors block space-y-1 ${
+                              !n.read ? 'bg-brand-tint/40' : ''
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-bold text-xs text-ink line-clamp-1">
+                                {n.title}
+                              </span>
+                              <span className="text-[11px] text-muted shrink-0">
+                                {formatDateTime(n.createdAt)}
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted line-clamp-2">{n.message}</p>
+                          </button>
+                        ))
+                      )}
+                    </div>
+
+                    <Link
+                      to="/notifications"
+                      onClick={() => setNotifOpen(false)}
+                      className="shrink-0 border-t border-line-2 py-3 text-center text-sm font-semibold text-brand-ink hover:bg-surface transition-colors"
+                    >
+                      Все уведомления и подключение VK-бота →
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Primary Create Event Button */}
+            <Link
+              to="/events/new"
+              aria-label="Создать мероприятие"
+              className="hidden md:flex items-center gap-1.5 h-[42px] px-3.5 xl:px-4 rounded-[10px] bg-brand text-on-brand text-[15px] font-bold hover:bg-brand-hover transition-colors shrink-0 shadow-sm"
+            >
+              <Plus className="w-5 h-5 stroke-[2.4]" />
+              <span className="hidden xl:inline">Создать</span>
+            </Link>
+
+            {/* User Profile Pill & Quick Menu (with Multi-Account Switcher) */}
+            {user ? (
+              <div className="relative" ref={profileMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setProfileMenuOpen((o) => !o)}
+                  aria-label="Меню профиля"
+                  className="flex items-center gap-2 rounded-full sm:rounded-[12px] p-0.5 sm:px-2 sm:py-1 hover:bg-surface transition-colors shrink-0"
+                >
+                  <span className="w-9 h-9 sm:w-[38px] sm:h-[38px] rounded-full bg-surface-2 text-ink flex items-center justify-center overflow-hidden shrink-0 font-bold text-sm border border-line-2">
+                    {user.avatarUrl ? (
+                      <img
+                        src={user.avatarUrl}
+                        alt={user.displayName}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      user.displayName.slice(0, 1).toUpperCase()
+                    )}
+                  </span>
+                  <span className="hidden 2xl:flex flex-col text-left leading-tight">
+                    <span className="text-sm font-bold text-ink max-w-[140px] truncate">
+                      {user.displayName}
+                    </span>
+                    <span className="text-[11px] font-medium text-muted">
+                      {user.city || 'Профиль'}
+                    </span>
+                  </span>
+                  <ChevronDown className="w-4 h-4 text-muted hidden sm:block" />
+                </button>
+
+                {profileMenuOpen && (
+                  <div className="fixed right-2 top-16 sm:absolute sm:right-0 sm:top-[calc(100%+8px)] w-[290px] bg-card border border-line-2 rounded-2xl shadow-2xl p-2 z-[2200] space-y-1 anim-fade">
+                    <div className="px-3 py-2.5 border-b border-line">
+                      <div className="font-bold text-sm text-ink truncate">{user.displayName}</div>
+                      <div className="text-xs text-muted truncate">{user.email}</div>
+                    </div>
+
+                    <Link
+                      to="/profile"
+                      onClick={() => setProfileMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-ink hover:bg-surface transition-colors"
+                    >
+                      <User className="w-4 h-4 text-brand-ink" />
+                      <span>Мой профиль и анкета</span>
+                    </Link>
+
+                    <Link
+                      to="/friends"
+                      onClick={() => setProfileMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-ink hover:bg-surface transition-colors"
+                    >
+                      <Users className="w-4 h-4 text-brand-ink" />
+                      <span>Друзья, напарники и чаты</span>
+                    </Link>
+
+                    <Link
+                      to="/organizations"
+                      onClick={() => setProfileMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-ink hover:bg-surface transition-colors"
+                    >
+                      <Building2 className="w-4 h-4 text-brand-ink" />
+                      <span>Спортивные клубы и секции</span>
+                    </Link>
+
+                    <Link
+                      to="/notifications"
+                      onClick={() => setProfileMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-ink hover:bg-surface transition-colors"
+                    >
+                      <Bell className="w-4 h-4 text-brand-ink" />
+                      <span>Уведомления и VK-бот</span>
+                    </Link>
+
+                    <Link
+                      to="/support"
+                      onClick={() => setProfileMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-ink hover:bg-surface transition-colors"
+                    >
+                      <HelpCircle className="w-4 h-4 text-brand-ink" />
+                      <span>Поддержка и обращения</span>
+                    </Link>
+
+                    {/* Multi-Account Switcher (#3) */}
+                    {savedSessions.length > 0 && (
+                      <div className="pt-2 mt-1 border-t border-line space-y-1">
+                        <div className="px-3 py-1 flex items-center justify-between text-[11px] font-bold text-muted uppercase tracking-wider">
+                          <span>Быстрая смена аккаунта</span>
+                          <Link
+                            to="/login"
+                            onClick={() => setProfileMenuOpen(false)}
+                            className="text-brand-ink hover:underline normal-case font-bold"
+                          >
+                            + Добавить
+                          </Link>
+                        </div>
+                        {savedSessions.map((acc) => {
+                          const isCurrent = acc.user.id === user.id;
+                          return (
+                            <div
+                              key={acc.user.id}
+                              className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs ${
+                                isCurrent ? 'bg-brand-tint text-brand-ink font-bold' : 'hover:bg-surface text-ink'
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                disabled={isCurrent}
+                                onClick={async () => {
+                                  await switchAccount(acc.user.id);
+                                  setProfileMenuOpen(false);
+                                }}
+                                className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                              >
+                                <span className="w-6 h-6 rounded-full bg-surface-2 flex items-center justify-center font-bold text-[11px] shrink-0 overflow-hidden">
+                                  {acc.user.avatarUrl ? (
+                                    <img
+                                      src={acc.user.avatarUrl}
+                                      alt=""
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    acc.user.displayName.slice(0, 1).toUpperCase()
+                                  )}
+                                </span>
+                                <span className="truncate">{acc.user.displayName}</span>
+                              </button>
+                              {isCurrent ? (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand text-on-brand font-bold">
+                                  Активен
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => removeSavedAccount(acc.user.id)}
+                                  className="text-muted hover:text-rose-600 p-1"
+                                  title="Убрать из списка"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className="pt-1 border-t border-line">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setProfileMenuOpen(false);
+                          await logout();
+                          navigate('/login');
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Выйти из аккаунта</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
               <Link
                 to="/login"
-                className="flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-xs font-bold bg-[#F4F8F6] text-slate-700 hover:bg-slate-200/70 transition-colors"
+                className="flex items-center gap-1.5 h-9 sm:h-[42px] px-3.5 sm:px-4 rounded-[10px] border border-line-2 bg-card text-ink hover:bg-surface transition-colors font-semibold text-sm sm:text-base shrink-0"
               >
-                <LogIn className="w-3.5 h-3.5" />
+                <LogIn className="w-4 h-4 sm:w-5 sm:h-5" />
                 <span>Войти</span>
               </Link>
-              <Link
-                to="/register"
-                className="flex items-center justify-center py-2.5 rounded-2xl text-xs font-bold bg-[#16B672] text-white hover:bg-[#11995E] shadow-sm shadow-[#16B672]/25 transition-colors"
-              >
-                <span>Старт</span>
-              </Link>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </aside>
+      </nav>
+
+      {/* City Selection Modal (Sportikus style) */}
+      {cityModalOpen && (
+        <div
+          className="fixed inset-0 z-[2300] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 anim-fade"
+          onClick={() => setCityModalOpen(false)}
+        >
+          <div
+            className="bg-card border border-line-2 rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-extrabold text-ink">Выберите город или регион</h2>
+              <button
+                type="button"
+                onClick={() => setCityModalOpen(false)}
+                className="w-8 h-8 rounded-lg bg-surface text-ink flex items-center justify-center hover:bg-surface-2"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <input
+              autoFocus
+              type="text"
+              value={cityQuery}
+              onChange={(e) => setCityQuery(e.target.value)}
+              placeholder="Введите название города..."
+              className="w-full rounded-xl border border-line-2 bg-surface px-4 py-3 text-sm font-medium text-ink outline-none focus:border-brand"
+            />
+
+            <div className="max-h-72 overflow-y-auto space-y-1 pr-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedGlobalRegion('');
+                  setCityModalOpen(false);
+                  setCityQuery('');
+                }}
+                className={`w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-bold flex items-center justify-between ${
+                  !selectedRegion
+                    ? 'bg-brand-tint text-brand-ink'
+                    : 'text-ink hover:bg-surface'
+                }`}
+              >
+                <span>🌍 Все города России (без ограничения)</span>
+                {!selectedRegion && <span className="text-xs">✓</span>}
+              </button>
+
+              {filteredRegions.map((reg) => {
+                const active = selectedRegion === reg.value;
+                return (
+                  <button
+                    key={reg.value}
+                    type="button"
+                    onClick={() => {
+                      setSelectedGlobalRegion(reg.value);
+                      setCityModalOpen(false);
+                      setCityQuery('');
+                    }}
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl text-sm flex items-center justify-between transition-colors ${
+                      active ? 'bg-brand-tint text-brand-ink font-bold' : 'text-ink hover:bg-surface'
+                    }`}
+                  >
+                    <div>
+                      <span className="font-bold">{reg.value}</span>
+                      <span className="ml-2 text-xs text-muted">{reg.tzLabel}</span>
+                    </div>
+                    {active && <span className="text-xs font-extrabold">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
 
-/**
- * Right Profile & Upcoming Trainings Panel (from Reference 2 "My Profile" + "Destination Trip")
- * Shows scenic sky/clouds/hills background, circular avatar in dashed emerald ring,
- * and floating white cards of upcoming events with participant avatar stacks.
- */
-export const RightProfileSidebar: React.FC = () => {
-  const { user, unreadNotificationsCount } = useAuth();
+export const MobileTabBar: React.FC = () => {
+  const { user } = useAuth();
   const location = useLocation();
-  const [upcomingEvents, setUpcomingEvents] = useState<EventCardDto[]>([]);
+  const [searchParams] = useSearchParams();
 
-  useEffect(() => {
-    let active = true;
-    apiFetch<EventCardDto[]>('/api/v1/events')
-      .then((list) => {
-        if (!active) return;
-        const activeList = list.filter((e) => e.status === 'PUBLISHED' || e.status === 'COMPLETED');
-        if (user) {
-          const mine = activeList.filter(
-            (e) =>
-              e.viewerParticipationStatus === 'CONFIRMED' ||
-              e.viewerParticipationStatus === 'PENDING' ||
-              e.organizerUserId === user.id
-          );
-          setUpcomingEvents((mine.length > 0 ? mine : activeList).slice(0, 3));
-        } else {
-          setUpcomingEvents(activeList.slice(0, 3));
-        }
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [user, location.pathname]);
+  const isHomeOrEvents = location.pathname === '/' || location.pathname === '/events';
+  const isListView = isHomeOrEvents && searchParams.get('view') === 'list';
+  const isAdmin = user?.globalRole === 'ADMIN';
+
+  const buildViewLink = (view: 'map' | 'list') => {
+    const params = new URLSearchParams(isHomeOrEvents ? searchParams : undefined);
+    if (view === 'list') {
+      params.set('view', 'list');
+    } else {
+      params.delete('view');
+    }
+    const qs = params.toString();
+    return qs ? `/?${qs}` : '/';
+  };
+
+  const tabItem = (to: string, label: string, icon: React.ReactNode, active: boolean) => (
+    <Link
+      to={to}
+      aria-current={active ? 'page' : undefined}
+      className={`flex-1 h-[58px] flex flex-col items-center justify-center gap-[3px] text-xs font-bold ${
+        active ? 'text-ink' : 'text-muted'
+      }`}
+    >
+      {icon}
+      <span>{label}</span>
+    </Link>
+  );
 
   return (
-    <aside className="hidden xl:flex flex-col w-80 shrink-0 sticky top-5 h-[calc(100vh-2.5rem)] rounded-[28px] overflow-hidden border border-slate-100 shadow-xs bg-gradient-to-b from-[#BCE6FF] via-[#DDF3EA] to-[#7CC992] relative">
-      {/* Scenic SVG clouds, birds & rolling green hills at bottom (Ref 2 Right Column) */}
-      <svg
-        viewBox="0 0 320 760"
-        className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none a11y-decorative"
-        preserveAspectRatio="none"
-      >
-        {/* Sun */}
-        <circle cx="265" cy="95" r="24" fill="#FFFDF5" opacity="0.9" />
-        {/* Clouds */}
-        <g fill="#FFFFFF" opacity="0.78">
-          <ellipse cx="70" cy="85" rx="34" ry="12" />
-          <ellipse cx="90" cy="80" rx="22" ry="14" />
-          <ellipse cx="235" cy="145" rx="38" ry="12" />
-          <ellipse cx="215" cy="140" rx="24" ry="15" />
-        </g>
-        {/* Distant hills */}
-        <path d="M0 540 Q110 470 220 520 T320 500 L320 760 L0 760 Z" fill="#82D197" opacity="0.65" />
-        <path d="M0 600 Q160 530 320 590 L320 760 L0 760 Z" fill="#4EB877" opacity="0.8" />
-        <path d="M0 665 Q130 620 320 655 L320 760 L0 760 Z" fill="#1F8A54" opacity="0.9" />
-      </svg>
-
-      <div className="relative z-10 flex flex-col justify-between h-full p-5 overflow-y-auto">
-        <div className="space-y-5">
-          {/* Top Bar: My Profile title + Notification Bell */}
-          <div className="flex items-center justify-between">
-            <span className="font-display font-extrabold text-base text-slate-900">
-              Мой профиль 🏃
-            </span>
-            <Link
-              to={user ? '/notifications' : '/login'}
-              title="Уведомления"
-              className="relative w-9 h-9 rounded-full bg-white/90 hover:bg-white text-slate-700 flex items-center justify-center shadow-xs transition-transform hover:scale-105"
-            >
-              <Bell className="w-4 h-4" />
-              {unreadNotificationsCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-[#FF7849] text-white text-[9px] font-extrabold flex items-center justify-center">
-                  {unreadNotificationsCount}
-                </span>
-              )}
-            </Link>
-          </div>
-
-          {/* Center Circular Avatar inside Dashed Emerald Ring (Ref 2) */}
-          <div className="text-center pt-1">
-            <Link to={user ? '/profile' : '/login'} className="inline-block group">
-              <div className="w-24 h-24 mx-auto rounded-full p-1.5 border-2 border-dashed border-[#16B672] flex items-center justify-center bg-white/40 backdrop-blur-xs group-hover:scale-105 transition-transform">
-                {user?.avatarUrl ? (
-                  <img
-                    src={user.avatarUrl}
-                    alt={user.displayName}
-                    className="w-full h-full rounded-full object-cover shadow-md a11y-keep"
-                  />
-                ) : (
-                  <div className="w-full h-full rounded-full bg-[#16B672] text-white font-display font-black text-2xl flex items-center justify-center shadow-md">
-                    {user ? user.displayName.charAt(0).toUpperCase() : 'ТС'}
-                  </div>
-                )}
-              </div>
-            </Link>
-
-            <h3 className="font-display font-extrabold text-lg text-slate-900 mt-2.5 leading-tight">
-              {user ? user.displayName : 'Гость платформы'}
-            </h3>
-            <p className="text-xs font-bold text-slate-700/80 mt-0.5">
-              {user
-                ? `${user.city || 'Россия'} • ${user.globalRole === 'ADMIN' ? 'Администратор' : 'Спортсмен'} ✨`
-                : 'Войдите для записи на встречи ✨'}
-            </p>
-          </div>
-
-          {/* Floating White Cards: Upcoming Trainings ("Destination Trip" from Ref 2) */}
-          <div className="space-y-3 pt-1">
-            <div className="flex items-center justify-between">
-              <span className="font-display font-extrabold text-sm text-slate-900">
-                Ближайшие сборы 🏕️
-              </span>
-              <Link
-                to="/events"
-                className="w-7 h-7 rounded-lg bg-[#16B672] text-white flex items-center justify-center shadow-xs hover:bg-[#11995E]"
-                title="Все встречи"
-              >
-                <Calendar className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-
-            <div className="space-y-2.5">
-              {upcomingEvents.map((ev) => {
-                const maxP = ev.maxParticipants || Math.max(10, ev.confirmedParticipantsCount + 4);
-                const pct = Math.min(100, Math.round((ev.confirmedParticipantsCount / maxP) * 100));
-                return (
-                  <Link
-                    key={ev.id}
-                    to={`/events/${ev.id}`}
-                    className="block bg-white/95 hover:bg-white rounded-2xl p-3.5 shadow-sm hover:shadow-md transition-all border border-white"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="font-display font-extrabold text-xs text-slate-900 truncate">
-                          {ev.title}
-                        </div>
-                        <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 mt-0.5 truncate">
-                          <MapPin className="w-3 h-3 text-[#16B672] shrink-0" />
-                          <span className="truncate">{ev.city}</span>
-                          <span>•</span>
-                          <span>{ev.sport.name}</span>
-                        </div>
-                      </div>
-
-                      {/* Stacked Avatars + Green Count Badge (Ref 2) */}
-                      <div className="flex items-center -space-x-1.5 shrink-0">
-                        <div className="w-6 h-6 rounded-full bg-[#E7F8F0] border-2 border-white text-[#11995E] text-[10px] font-extrabold flex items-center justify-center">
-                          {(ev.organizerDisplayName || 'У').charAt(0)}
-                        </div>
-                        <div className="w-6 h-6 rounded-full bg-[#16B672] border-2 border-white text-white text-[9px] font-extrabold flex items-center justify-center">
-                          +{Math.max(1, ev.confirmedParticipantsCount)}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Capacity progress bar */}
-                    <div className="mt-2.5 flex items-center justify-between gap-2">
-                      <div className="flex-1 h-1.5 rounded-full bg-[#EEF4F1] overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-[#16B672]"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className="text-[10px] font-extrabold text-[#16B672] shrink-0">
-                        {ev.confirmedParticipantsCount}
-                        {ev.maxParticipants ? `/${ev.maxParticipants}` : ''}
-                      </span>
-                    </div>
-                  </Link>
-                );
-              })}
-
-              {upcomingEvents.length === 0 && (
-                <div className="bg-white/90 rounded-2xl p-4 text-center text-xs text-slate-600 font-semibold">
-                  Пока нет запланированных сборов
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom quick action button inside scenic hills */}
-        <div className="pt-4">
-          <Link
-            to={user ? '/partners' : '/login'}
-            className="w-full py-3 px-4 rounded-2xl bg-white/95 hover:bg-white text-slate-900 font-display font-extrabold text-xs flex items-center justify-between shadow-md transition-all"
-          >
-            <span className="flex items-center gap-2">
-              <Heart className="w-4 h-4 text-[#16B672] fill-[#16B672]" />
-              <span>Найти напарника (Мэтч)</span>
-            </span>
-            <ArrowRight className="w-4 h-4 text-[#16B672]" />
-          </Link>
-        </div>
+    <nav
+      aria-label="Основная навигация"
+      className="md:hidden shrink-0 bg-card border-t border-line-2 flex items-start px-1.5 pt-1.5 pb-[max(8px,env(safe-area-inset-bottom))] relative z-40 max-w-full overflow-hidden"
+    >
+      {tabItem(
+        buildViewLink('map'),
+        'Карта',
+        <MapIcon className="w-5 h-5" />,
+        isHomeOrEvents && !isListView
+      )}
+      {tabItem(
+        buildViewLink('list'),
+        'Лента',
+        <List className="w-5 h-5" />,
+        isListView
+      )}
+      <div className="flex-1 flex justify-center pt-1">
+        <Link
+          to="/events/new"
+          aria-label="Создать событие"
+          className="w-[54px] h-[44px] rounded-xl bg-brand text-on-brand flex items-center justify-center shadow-sm"
+        >
+          <Plus className="w-6 h-6 stroke-[2.4]" />
+        </Link>
       </div>
-    </aside>
+      {tabItem(
+        '/recommended',
+        'Для вас',
+        <Sparkles className="w-5 h-5" />,
+        location.pathname === '/recommended' || location.pathname === '/partners'
+      )}
+      {isAdmin
+        ? tabItem(
+            '/admin',
+            'Модерация',
+            <ShieldCheck className="w-5 h-5" />,
+            location.pathname.startsWith('/admin')
+          )
+        : tabItem(
+            user ? '/my' : '/login',
+            user ? 'Мои события' : 'Войти',
+            <CalendarCheck className="w-5 h-5" />,
+            location.pathname === '/my'
+          )}
+    </nav>
   );
 };
+
+export const RightProfileSidebar: React.FC = () => null;

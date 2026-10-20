@@ -4,34 +4,68 @@
 
 @layer base {
   :root {
-    --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-display: 'Nunito', 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
-    --sp-emerald: #16B672;
-    --sp-emerald-dark: #11995E;
-    --sp-emerald-soft: #E7F8F0;
-    --sp-coral: #FF7849;
-    --sp-bg: #EEF4F1;
-    --sp-surface: #F7FAF8;
+    --font-sans: 'Onest', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-display: 'Onest', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --color-page: #f4f5f7;
+    --color-card: #ffffff;
+    --color-surface: #f2f4f7;
+    --color-surface-2: #e3e7ec;
+    --color-ink: #0e1116;
+    --color-muted: #5e6670;
+    --color-line: #e3e6ea;
+    --color-line-2: #d0d5dc;
+    --color-brand: #04d793;
+    --color-brand-hover: #03c485;
+    --color-on-brand: #ffffff;
+    --color-brand-tint: #e8fcf4;
+    --color-brand-tint-2: #d2f7e8;
+    --color-brand-ink: #029e6b;
+    --color-brand-line: #9debcb;
+    --color-flame: #ff7a45;
+    --color-pin-ring: #ffffff;
+  }
+
+  html[data-theme="dark"] {
+    --color-page: #15171a;
+    --color-card: #1c1f24;
+    --color-surface: #23272e;
+    --color-surface-2: #2e333d;
+    --color-ink: #f2f4f5;
+    --color-muted: #98a0a9;
+    --color-line: #2a2f37;
+    --color-line-2: #383e49;
+    --color-brand: #d5f45b;
+    --color-brand-hover: #c4e447;
+    --color-on-brand: #111315;
+    --color-brand-tint: #252b18;
+    --color-brand-tint-2: #313a1d;
+    --color-brand-ink: #d5f45b;
+    --color-brand-line: #546622;
+    --color-pin-ring: #1c1f24;
+    color-scheme: dark;
   }
 
   body {
     font-family: var(--font-sans);
-    background-color: #EEF4F1;
-    color: #1A2622;
+    background-color: var(--color-page);
+    color: var(--color-ink);
+    -webkit-tap-highlight-color: transparent;
+    margin: 0;
+    padding: 0;
     overflow-x: hidden;
+    transition: background-color 0.2s, color 0.2s;
   }
 
   h1, h2, h3, h4, .font-display {
     font-family: var(--font-display);
-    letter-spacing: -0.015em;
+    letter-spacing: -0.02em;
   }
 
-  /* Custom-styled native select fallback */
   select {
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2316B672' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235e6670' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 0.75rem center;
     background-size: 1rem;
@@ -40,66 +74,39 @@
     white-space: nowrap;
     overflow: hidden;
   }
-
-  input, textarea {
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  input:focus, textarea:focus {
-    outline: none;
-    border-color: #16B672 !important;
-    box-shadow: 0 0 0 3px rgba(22, 182, 114, 0.14) !important;
-  }
 }
 
-/* Travenly & Bento Card Utilities */
-.bento-card,
-div.bg-white.rounded-3xl {
-  background: #FFFFFF;
-  border-radius: 1.75rem;
-  border: 1px solid rgba(22, 182, 114, 0.09);
-  box-shadow: 0 10px 30px -10px rgba(20, 60, 45, 0.05), 0 2px 8px -2px rgba(20, 60, 45, 0.03);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+@keyframes sp-drop {
+  0% { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sp-sheet {
+  0% { opacity: 0.6; transform: translateY(32px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sp-drawer {
+  0% { opacity: 0.6; transform: translateX(28px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sp-fade {
+  0% { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sp-rise {
+  0% { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
 
-.bento-card-hover:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 18px 36px -12px rgba(22, 182, 114, 0.14), 0 4px 12px -2px rgba(20, 60, 45, 0.05);
-}
+.anim-fade { animation: sp-fade 0.18s ease-out; }
+.anim-rise { animation: sp-rise 0.22s ease-out; }
+.anim-sheet { animation: sp-sheet 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.anim-drawer { animation: sp-drawer 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
 
-.travenly-btn {
-  background-color: #16B672;
-  color: #FFFFFF;
-  font-family: var(--font-display);
-  font-weight: 800;
-  border-radius: 1rem;
-  box-shadow: 0 8px 20px -4px rgba(22, 182, 114, 0.35);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+.no-scrollbar {
+  scrollbar-width: none;
 }
-
-.travenly-btn:hover:not(:disabled) {
-  background-color: #129D61;
-  transform: translateY(-1px);
-  box-shadow: 0 12px 24px -4px rgba(22, 182, 114, 0.45);
-}
-
-.travenly-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-/* Smooth hover marquee for long text inside dropdowns */
-@keyframes sp-marquee {
-  0%, 15% {
-    transform: translateX(0%);
-  }
-  85%, 100% {
-    transform: translateX(-38%);
-  }
-}
-
-.group:hover .animate-marquee {
-  display: inline-block;
-  animation: sp-marquee 4.5s ease-in-out infinite alternate;
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /* Custom sleek scrollbars */
@@ -111,11 +118,11 @@ div.bg-white.rounded-3xl {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(22, 182, 114, 0.22);
+  background: rgba(94, 102, 112, 0.25);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(22, 182, 114, 0.45);
+  background: rgba(94, 102, 112, 0.45);
 }
 
 /* ============================================================================

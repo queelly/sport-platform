@@ -1,8 +1,12 @@
 import React from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
-import { Navbar, RightProfileSidebar } from './components/Navbar';
-import { HomeAndCatalogPage } from './pages/HomeAndCatalogPage';
+import { MobileTabBar, Navbar } from './components/Navbar';
+import {
+  HomeAndCatalogPage,
+  MyEventsPage,
+  RecommendedPage,
+} from './pages/HomeAndCatalogPage';
 import { LoginPage, RegisterPage } from './pages/AuthPages';
 import { CreateEventPage, EventDetailPage } from './pages/EventPages';
 import {
@@ -24,16 +28,20 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; requireAdmin?: boole
 }) => {
   const { user, loading } = useAuth();
   if (loading) {
-    return <div className="w-full p-8 h-64 rounded-[28px] bg-white/70 animate-pulse" />;
+    return (
+      <div className="max-w-5xl mx-auto p-6">
+        <div className="w-full h-64 rounded-[22px] bg-card border border-line animate-pulse" />
+      </div>
+    );
   }
   if (!user) {
     return <Navigate to="/login" replace />;
   }
   if (requireAdmin && user.globalRole !== 'ADMIN') {
     return (
-      <div className="max-w-xl mx-auto mt-12 bg-white rounded-[28px] border border-rose-200 p-8 text-center space-y-3 shadow-xs">
-        <div className="font-display font-bold text-xl text-rose-800">Доступ запрещён (403)</div>
-        <p className="text-xs text-slate-600">
+      <div className="max-w-xl mx-auto mt-12 bg-card rounded-[22px] border border-rose-200 p-8 text-center space-y-3 shadow-xs">
+        <div className="font-bold text-xl text-rose-800">Доступ запрещён (403)</div>
+        <p className="text-xs text-muted">
           Эта страница доступна только администраторам платформы.
         </p>
       </div>
@@ -42,141 +50,221 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; requireAdmin?: boole
   return <>{children}</>;
 };
 
+const PageContainer: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="max-w-[1240px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20 md:pb-10">
+    {children}
+  </div>
+);
+
 export const App: React.FC = () => {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <div className="min-h-screen flex flex-col bg-[#EEF4F1] text-[#1A2622]">
-          <div className="max-w-[1600px] w-full mx-auto px-3 sm:px-5 lg:px-6 py-3 lg:py-5 flex flex-col lg:flex-row gap-5 flex-1">
-            {/* Left Vertical Sidebar (Ref 1 & Ref 2) */}
-            <Navbar />
+        <div className="h-dvh flex flex-col bg-page text-ink font-sans overflow-x-hidden">
+          {/* Sportikus Single 64px Top Header */}
+          <Navbar />
 
-            {/* Central Bento Workspace */}
-            <div className="flex-1 min-w-0 flex flex-col justify-between gap-8">
-              <main className="flex-1 min-w-0">
-                <Routes>
-                  <Route path="/" element={<HomeAndCatalogPage />} />
-                  <Route path="/events" element={<HomeAndCatalogPage catalogOnly />} />
-                  <Route
-                    path="/events/new"
-                    element={
-                      <ProtectedRoute>
-                        <CreateEventPage />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route path="/events/:eventId" element={<EventDetailPage />} />
+          {/* Full-width Workspace (No cluttered left/right sidebars) */}
+          <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+            <Routes>
+              <Route path="/" element={<HomeAndCatalogPage />} />
+              <Route path="/events" element={<HomeAndCatalogPage catalogOnly />} />
+              <Route path="/recommended" element={<RecommendedPage />} />
+              <Route path="/my" element={<MyEventsPage />} />
 
-                  <Route path="/login" element={<LoginPage />} />
-                  <Route path="/register" element={<RegisterPage />} />
+              <Route
+                path="/events/new"
+                element={
+                  <ProtectedRoute>
+                    <PageContainer>
+                      <CreateEventPage />
+                    </PageContainer>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/events/:eventId"
+                element={
+                  <PageContainer>
+                    <EventDetailPage />
+                  </PageContainer>
+                }
+              />
 
-                  <Route path="/organizations" element={<OrganizationsListPage />} />
-                  <Route path="/organizations/:orgId" element={<OrganizationPublicPage />} />
-                  <Route
-                    path="/my-organization"
-                    element={
-                      <ProtectedRoute>
-                        <MyOrganizationCabinetPage />
-                      </ProtectedRoute>
-                    }
-                  />
+              <Route
+                path="/login"
+                element={
+                  <PageContainer>
+                    <LoginPage />
+                  </PageContainer>
+                }
+              />
+              <Route
+                path="/register"
+                element={
+                  <PageContainer>
+                    <RegisterPage />
+                  </PageContainer>
+                }
+              />
 
-                  <Route path="/partners" element={<PartnersAndFriendsPage />} />
-                  <Route path="/friends" element={<PartnersAndFriendsPage />} />
-                  <Route path="/users/:userId" element={<PublicUserProfilePage />} />
+              <Route
+                path="/organizations"
+                element={
+                  <PageContainer>
+                    <OrganizationsListPage />
+                  </PageContainer>
+                }
+              />
+              <Route
+                path="/organizations/:orgId"
+                element={
+                  <PageContainer>
+                    <OrganizationPublicPage />
+                  </PageContainer>
+                }
+              />
+              <Route
+                path="/my-organization"
+                element={
+                  <ProtectedRoute>
+                    <PageContainer>
+                      <MyOrganizationCabinetPage />
+                    </PageContainer>
+                  </ProtectedRoute>
+                }
+              />
 
-                  <Route
-                    path="/profile"
-                    element={
-                      <ProtectedRoute>
-                        <MyProfilePage />
-                      </ProtectedRoute>
-                    }
-                  />
+              <Route
+                path="/partners"
+                element={
+                  <PageContainer>
+                    <PartnersAndFriendsPage />
+                  </PageContainer>
+                }
+              />
+              <Route
+                path="/friends"
+                element={
+                  <PageContainer>
+                    <PartnersAndFriendsPage />
+                  </PageContainer>
+                }
+              />
+              <Route
+                path="/users/:userId"
+                element={
+                  <PageContainer>
+                    <PublicUserProfilePage />
+                  </PageContainer>
+                }
+              />
 
-                  <Route
-                    path="/support"
-                    element={
-                      <ProtectedRoute>
-                        <SupportPage />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/support/tickets/:ticketId"
-                    element={
-                      <ProtectedRoute>
-                        <SupportPage />
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/support/chat"
-                    element={
-                      <ProtectedRoute>
-                        <SupportPage />
-                      </ProtectedRoute>
-                    }
-                  />
+              <Route
+                path="/profile"
+                element={
+                  <ProtectedRoute>
+                    <PageContainer>
+                      <MyProfilePage />
+                    </PageContainer>
+                  </ProtectedRoute>
+                }
+              />
 
-                  <Route
-                    path="/notifications"
-                    element={
-                      <ProtectedRoute>
-                        <NotificationsAndVkPage />
-                      </ProtectedRoute>
-                    }
-                  />
+              <Route
+                path="/support"
+                element={
+                  <ProtectedRoute>
+                    <PageContainer>
+                      <SupportPage />
+                    </PageContainer>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/support/tickets/:ticketId"
+                element={
+                  <ProtectedRoute>
+                    <PageContainer>
+                      <SupportPage />
+                    </PageContainer>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/support/chat"
+                element={
+                  <ProtectedRoute>
+                    <PageContainer>
+                      <SupportPage />
+                    </PageContainer>
+                  </ProtectedRoute>
+                }
+              />
 
-                  <Route
-                    path="/admin"
-                    element={
-                      <ProtectedRoute requireAdmin>
-                        <AdminDashboardPage />
-                      </ProtectedRoute>
-                    }
-                  />
+              <Route
+                path="/notifications"
+                element={
+                  <ProtectedRoute>
+                    <PageContainer>
+                      <NotificationsAndVkPage />
+                    </PageContainer>
+                  </ProtectedRoute>
+                }
+              />
 
-                  <Route path="/terms" element={<LegalInfoPage doc="terms" />} />
-                  <Route path="/privacy" element={<LegalInfoPage doc="privacy" />} />
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <PageContainer>
+                      <AdminDashboardPage />
+                    </PageContainer>
+                  </ProtectedRoute>
+                }
+              />
 
-                  <Route
-                    path="*"
-                    element={
-                      <div className="max-w-lg mx-auto my-16 bg-white rounded-[28px] border border-slate-100 p-10 text-center space-y-3 shadow-xs">
-                        <div className="font-display font-extrabold text-3xl text-slate-900">404</div>
-                        <p className="text-sm text-slate-600">Страница не найдена</p>
+              <Route
+                path="/terms"
+                element={
+                  <PageContainer>
+                    <LegalInfoPage doc="terms" />
+                  </PageContainer>
+                }
+              />
+              <Route
+                path="/privacy"
+                element={
+                  <PageContainer>
+                    <LegalInfoPage doc="privacy" />
+                  </PageContainer>
+                }
+              />
+
+              <Route
+                path="*"
+                element={
+                  <PageContainer>
+                    <div className="max-w-lg mx-auto my-12 bg-card rounded-[22px] border border-line-2 p-10 text-center space-y-3">
+                      <div className="font-extrabold text-3xl text-ink">404</div>
+                      <p className="text-sm text-muted">Страница не найдена</p>
+                      <div className="pt-2">
+                        <Link
+                          to="/"
+                          className="inline-flex px-5 py-2.5 rounded-xl bg-brand text-white text-xs font-bold"
+                        >
+                          Вернуться на карту
+                        </Link>
                       </div>
-                    }
-                  />
-                </Routes>
-              </main>
+                    </div>
+                  </PageContainer>
+                }
+              />
+            </Routes>
+          </main>
 
-              {/* Compact Bottom Footer inside Workspace */}
-              <footer className="bg-white rounded-3xl px-5 py-4 border border-slate-100/90 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-                <div>
-                  <span className="font-display font-extrabold text-slate-800">Точка Сбора</span> — спортивная платформа совместных тренировок, соревнований и клубов
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-4">
-                  <a href="/terms" className="font-bold text-slate-700 hover:text-[#16B672] hover:underline">
-                    Пользовательское соглашение
-                  </a>
-                  <a href="/privacy" className="font-bold text-slate-700 hover:text-[#16B672] hover:underline">
-                    Политика конфиденциальности
-                  </a>
-                  <a href="/support/chat" className="font-bold text-[#16B672] hover:underline">
-                    Контакты техподдержки
-                  </a>
-                  <a href="/support" className="font-bold text-[#16B672] hover:underline">
-                    Обращения и тикеты
-                  </a>
-                </div>
-              </footer>
-            </div>
-
-            {/* Right Scenic Profile & Upcoming Trainings Column (Ref 2) */}
-            <RightProfileSidebar />
-          </div>
+          {/* Sportikus Mobile Bottom Tab Bar */}
+          <MobileTabBar />
         </div>
       </BrowserRouter>
     </AuthProvider>
@@ -186,28 +274,28 @@ export const App: React.FC = () => {
 const LegalInfoPage: React.FC<{ doc: 'terms' | 'privacy' }> = ({ doc }) => {
   const isTerms = doc === 'terms';
   return (
-    <div className="max-w-3xl mx-auto bg-white rounded-3xl border border-slate-100 p-6 sm:p-8 shadow-xs space-y-5">
+    <div className="max-w-3xl mx-auto bg-card rounded-[22px] border border-line-2 p-6 sm:p-8 shadow-xs space-y-5">
       <div className="space-y-1">
-        <span className="inline-block px-3 py-1 rounded-full bg-[#E7F8F0] text-[#11995E] text-xs font-extrabold">
+        <span className="inline-block px-3 py-1 rounded-full bg-brand-tint text-brand-ink text-xs font-bold">
           Официальный документ платформы «Точка Сбора»
         </span>
-        <h1 className="font-display font-extrabold text-2xl sm:text-3xl text-slate-900">
+        <h1 className="font-extrabold text-2xl sm:text-3xl text-ink">
           {isTerms ? 'Пользовательское соглашение' : 'Политика конфиденциальности и обработки данных'}
         </h1>
       </div>
 
       {isTerms ? (
-        <div className="space-y-3 text-sm text-slate-700 leading-relaxed">
+        <div className="space-y-3 text-sm text-ink/90 leading-relaxed">
           <p>
             Настоящее Пользовательское соглашение регулирует порядок использования Спортивной Платформы «Точка Сбора» для поиска и организации спортивных тренировок, соревнований, фестивалей, квестов и городских спортивных сообществ.
           </p>
-          <h2 className="font-display font-extrabold text-base text-slate-900 pt-2">
+          <h2 className="font-bold text-base text-ink pt-2">
             1. Правила создания мероприятий и участия
           </h2>
           <p>
             Организаторы обязаны указывать достоверные сведения о дате, времени, регионе (или онлайн-формате), условиях участия и ограничениях по уровню подготовки. Запрещается публикация заведомо ложных объявлений, спама и материалов, нарушающих законодательство РФ.
           </p>
-          <h2 className="font-display font-extrabold text-base text-slate-900 pt-2">
+          <h2 className="font-bold text-base text-ink pt-2">
             2. Безопасность и ответственность участников
           </h2>
           <p>
@@ -215,17 +303,17 @@ const LegalInfoPage: React.FC<{ doc: 'terms' | 'privacy' }> = ({ doc }) => {
           </p>
         </div>
       ) : (
-        <div className="space-y-3 text-sm text-slate-700 leading-relaxed">
+        <div className="space-y-3 text-sm text-ink/90 leading-relaxed">
           <p>
             Политика конфиденциальности описывает, какие данные собираются на платформе «Точка Сбора» и как обеспечивается их защита.
           </p>
-          <h2 className="font-display font-extrabold text-base text-slate-900 pt-2">
+          <h2 className="font-bold text-base text-ink pt-2">
             1. Обрабатываемые данные
           </h2>
           <p>
             Мы храним только данные, необходимые для работы сервиса: отображаемое имя, адрес электронной почты, хэш пароля (BCrypt), выбранный регион, спортивные интересы и настройки приватности профиля.
           </p>
-          <h2 className="font-display font-extrabold text-base text-slate-900 pt-2">
+          <h2 className="font-bold text-base text-ink pt-2">
             2. Управление видимостью и уведомлениями
           </h2>
           <p>
@@ -234,18 +322,17 @@ const LegalInfoPage: React.FC<{ doc: 'terms' | 'privacy' }> = ({ doc }) => {
         </div>
       )}
 
-      <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+      <div className="pt-4 border-t border-line flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
         <span>Служба поддержки: support@sportplatform.ru</span>
         <div className="flex gap-3">
-          <a href="/support" className="font-bold text-[#16B672] hover:underline">
+          <Link to="/support" className="font-bold text-brand-ink hover:underline">
             Создать тикет в поддержку
-          </a>
-          <a href="/support/chat" className="font-bold text-[#16B672] hover:underline">
+          </Link>
+          <Link to="/support/chat" className="font-bold text-brand-ink hover:underline">
             Открыть онлайн-чат с поддержкой
-          </a>
+          </Link>
         </div>
       </div>
     </div>
   );
 };
-
