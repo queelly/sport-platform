@@ -472,6 +472,13 @@ public final class ApiDtos {
 
     public record CancelEventRequest(String reason, boolean cancelEntireSeries) {}
 
+    public record InviteFriendToEventRequest(
+            @NotNull(message = "Выберите друга для приглашения")
+            UUID friendUserId,
+            @Size(max = 500, message = "Комментарий к приглашению не должен превышать 500 символов")
+            String message
+    ) {}
+
     // --- DISCUSSIONS & ATTACHMENTS ---
     public record AttachmentDto(
             UUID id,

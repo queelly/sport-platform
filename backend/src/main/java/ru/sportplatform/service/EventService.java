@@ -33,6 +33,7 @@ public class EventService {
     private final NotificationService notificationService;
     private final AuditLogService auditLogService;
     private final EventReminderLogRepository reminderLogRepository;
+    private final FriendshipRepository friendshipRepository;
 
     @Value("${app.recurring.weeks-ahead:4}")
     private int recurringWeeksAhead;
@@ -54,7 +55,8 @@ public class EventService {
             OrganizationSubscriptionRepository subscriptionRepository,
             NotificationService notificationService,
             AuditLogService auditLogService,
-            EventReminderLogRepository reminderLogRepository
+            EventReminderLogRepository reminderLogRepository,
+            FriendshipRepository friendshipRepository
     ) {
         this.eventRepository = eventRepository;
         this.seriesRepository = seriesRepository;
@@ -67,6 +69,7 @@ public class EventService {
         this.notificationService = notificationService;
         this.auditLogService = auditLogService;
         this.reminderLogRepository = reminderLogRepository;
+        this.friendshipRepository = friendshipRepository;
     }
 
     @Transactional
@@ -980,6 +983,56 @@ public class EventService {
             }
         }
         return sentCount;
+    }
+
+    @Transactional
+    public void inviteFriendToEvent(UUID eventId, UserPrincipal inviterPrincipal, InviteFriendToEventRequest req) {
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> ApiException.notFound("Мероприятие не найдено"));
+
+        if (event.getStatus() != EventStatus.PUBLISHED || event.getStartsAt().isBefore(Instant.now())) {
+            throw ApiException.badRequest("Нельзя пригласить друга на завершённое, отменённое или снятое с публикации мероприятие");
+        }
+
+        User inviter = userRepository.findById(inviterPrincipal.id())
+                .orElseThrow(() -> ApiException.unauthorized("Пользователь не найден"));
+
+        User friend = userRepository.findById(req.friendUserId())
+                .orElseThrow(() -> ApiException.notFound("Выбранный друг не найден"));
+
+        if (inviter.getId().equals(friend.getId())) {
+            throw ApiException.badRequest("Нельзя отправить приглашение самому себе");
+        }
+
+        boolean areAcceptedFriends = friendshipRepository.findBetweenUsers(inviter.getId(), friend.getId())
+                .stream()
+                .anyMatch(f -> f.getStatus() == FriendshipStatus.ACCEPTED);
+
+        if (!areAcceptedFriends) {
+            throw ApiException.badRequest("Пригласить на мероприятие можно пользователя из вашего списка друзей");
+        }
+
+        Optional<EventParticipation> existingPart = participationRepository.findByEventIdAndUserId(eventId, friend.getId());
+        if (existingPart.isPresent() && existingPart.get().getStatus() == ParticipationStatus.CONFIRMED) {
+            throw ApiException.conflict("Ваш друг «" + friend.getDisplayName() + "» уже записан на это мероприятие");
+        }
+
+        String title = inviter.getDisplayName() + " приглашает вас на встречу «" + event.getTitle() + "»";
+        String customComment = (req.message() != null && !req.message().isBlank())
+                ? " Сообщение от друга: «" + req.message().trim() + "»."
+                : "";
+        String message = "Вид спорта: " + event.getSport().getName()
+                + " • Место: " + event.getCity() + ", " + event.getLocationAddress() + "."
+                + customComment
+                + " Перейдите на страницу мероприятия, чтобы записаться!";
+
+        notificationService.notifyUser(
+                friend,
+                NotificationType.EVENT_INVITATION,
+                title,
+                message,
+                "/events/" + event.getId()
+        );
     }
 
     public boolean canManageEvent(Event event, UserPrincipal viewer) {

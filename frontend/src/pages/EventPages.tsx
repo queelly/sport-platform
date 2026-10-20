@@ -26,6 +26,7 @@ import {
   ShieldAlert,
   Sparkles,
   Trash2,
+  UserPlus,
   Users,
   X,
 } from 'lucide-react';
@@ -43,6 +44,7 @@ import {
   AttachmentDto,
   DiscussionMessageDto,
   EventDetailDto,
+  FriendshipDto,
   getBrowserLocalTzLabel,
   getRegionInfo,
   isOnlineEvent,
@@ -665,6 +667,15 @@ export const EventDetailPage: React.FC = () => {
   const [hidingMsgId, setHidingMsgId] = useState<string | null>(null);
   const [hideMsgReason, setHideMsgReason] = useState('Нарушение правил общения / спам');
 
+  // Invite friend modal state
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [friendsList, setFriendsList] = useState<FriendshipDto[]>([]);
+  const [loadingFriends, setLoadingFriends] = useState(false);
+  const [inviteMessage, setInviteMessage] = useState('Пойдём вместе на тренировку!');
+  const [invitingFriendId, setInvitingFriendId] = useState<string | null>(null);
+  const [invitedFriendIds, setInvitedFriendIds] = useState<string[]>([]);
+  const [inviteModalError, setInviteModalError] = useState<string | null>(null);
+
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const prevMsgCountRef = useRef<number>(0);
 
@@ -820,6 +831,44 @@ export const EventDetailPage: React.FC = () => {
       setDetail(updated);
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Не удалось отменить участие');
+    }
+  };
+
+  const openInviteFriendModal = async () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    setInviteModalError(null);
+    setShowInviteModal(true);
+    setLoadingFriends(true);
+    try {
+      const allFriendships = await apiFetch<FriendshipDto[]>('/api/v1/friends');
+      setFriendsList(allFriendships.filter((f) => f.status === 'ACCEPTED'));
+    } catch (err) {
+      setInviteModalError(err instanceof ApiError ? err.message : 'Не удалось загрузить список друзей');
+    } finally {
+      setLoadingFriends(false);
+    }
+  };
+
+  const handleInviteFriend = async (friendUserId: string, friendDisplayName: string) => {
+    setInviteModalError(null);
+    setInvitingFriendId(friendUserId);
+    try {
+      await apiFetch(`/api/v1/events/${event.id}/invite`, {
+        method: 'POST',
+        body: JSON.stringify({
+          friendUserId,
+          message: inviteMessage.trim() || null,
+        }),
+      });
+      setInvitedFriendIds((prev) => (prev.includes(friendUserId) ? prev : [...prev, friendUserId]));
+      setActionFeedback(`Приглашение отправлено другу «${friendDisplayName}»! Ему пришло уведомление о встрече.`);
+    } catch (err) {
+      setInviteModalError(err instanceof ApiError ? err.message : 'Не удалось отправить приглашение');
+    } finally {
+      setInvitingFriendId(null);
     }
   };
 
@@ -1153,7 +1202,17 @@ export const EventDetailPage: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {user && event.status === 'PUBLISHED' && new Date(event.startsAt).getTime() >= Date.now() && (
+                  <button
+                    type="button"
+                    onClick={openInviteFriendModal}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Пригласить друга</span>
+                  </button>
+                )}
                 <a
                   href={`/api/v1/events/${event.id}/ics`}
                   download
@@ -1400,6 +1459,17 @@ export const EventDetailPage: React.FC = () => {
               <div className="p-3 rounded-xl bg-slate-100 text-xs text-slate-600 font-semibold text-center">
                 Запись на мероприятие закрыта
               </div>
+            )}
+
+            {user && event.status === 'PUBLISHED' && new Date(event.startsAt).getTime() >= Date.now() && (
+              <button
+                type="button"
+                onClick={openInviteFriendModal}
+                className="w-full py-2.5 px-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 font-display font-bold text-xs inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4 text-emerald-600" />
+                <span>Пригласить друга на мероприятие</span>
+              </button>
             )}
 
             {/* Organizer info */}
@@ -2325,6 +2395,152 @@ export const EventDetailPage: React.FC = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Invite Friend Modal rendered via Portal */}
+      {showInviteModal &&
+        createPortal(
+          <div
+            onClick={() => setShowInviteModal(false)}
+            className="fixed inset-0 !m-0 z-[305] bg-slate-900/65 backdrop-blur-sm overflow-y-auto flex items-start justify-center p-4 sm:p-6"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl border border-slate-200 max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4 my-auto"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-extrabold text-emerald-600 uppercase tracking-wider">
+                    Совместная тренировка
+                  </div>
+                  <h3 className="font-display font-extrabold text-lg text-slate-900">
+                    Пригласить друга на встречу
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">
+                    «{event.title}» • {formatDateTime(event.startsAt)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowInviteModal(false)}
+                  className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {inviteModalError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-800">
+                  {inviteModalError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Сообщение к приглашению (необязательно)
+                </label>
+                <input
+                  type="text"
+                  value={inviteMessage}
+                  onChange={(e) => setInviteMessage(e.target.value)}
+                  placeholder="Например: Пойдём вместе на тренировку!"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {loadingFriends ? (
+                  <div className="space-y-2">
+                    <div className="h-14 rounded-2xl bg-slate-100 animate-pulse" />
+                    <div className="h-14 rounded-2xl bg-slate-100 animate-pulse" />
+                  </div>
+                ) : friendsList.length === 0 ? (
+                  <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200/80 text-center space-y-2.5">
+                    <p className="text-xs text-slate-600 font-semibold">
+                      У вас пока нет добавленных друзей для отправки приглашения.
+                    </p>
+                    <Link
+                      to="/partners"
+                      onClick={() => setShowInviteModal(false)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>Найти друзей</span>
+                    </Link>
+                  </div>
+                ) : (
+                  friendsList.map((f) => {
+                    const alreadyParticipating = confirmedParticipants.some(
+                      (p) => p.userId === f.friendUserId
+                    );
+                    const alreadyInvited = invitedFriendIds.includes(f.friendUserId);
+                    const isInviting = invitingFriendId === f.friendUserId;
+
+                    return (
+                      <div
+                        key={f.id}
+                        className="flex items-center justify-between gap-3 p-3 rounded-2xl border border-slate-200 bg-slate-50/70"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {f.friendAvatarUrl ? (
+                            <img
+                              src={f.friendAvatarUrl}
+                              alt={f.friendDisplayName}
+                              className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center shrink-0">
+                              {f.friendDisplayName.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="font-bold text-xs text-slate-900 truncate">
+                              {f.friendDisplayName}
+                            </div>
+                            <div className="text-[11px] text-slate-500 truncate">
+                              {f.friendCity || 'Город не указан'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {alreadyParticipating ? (
+                          <span className="px-3 py-1.5 rounded-xl bg-slate-200/80 text-slate-600 text-[11px] font-bold shrink-0">
+                            Уже участвует
+                          </span>
+                        ) : alreadyInvited ? (
+                          <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-900 text-[11px] font-bold shrink-0">
+                            <Check className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>Приглашён</span>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isInviting}
+                            onClick={() => handleInviteFriend(f.friendUserId, f.friendDisplayName)}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs transition-colors shrink-0 cursor-pointer"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span>{isInviting ? 'Отправка...' : 'Пригласить'}</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowInviteModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer"
+                >
+                  Готово
+                </button>
+              </div>
             </div>
           </div>,
           document.body

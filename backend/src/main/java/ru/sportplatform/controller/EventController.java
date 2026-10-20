@@ -134,6 +134,16 @@ public class EventController {
         return ResponseEntity.ok(java.util.Map.of("message", "Мероприятие удалено организатором"));
     }
 
+    @PostMapping("/{eventId}/invite")
+    public ResponseEntity<java.util.Map<String, String>> inviteFriend(
+            @PathVariable UUID eventId,
+            @Valid @RequestBody InviteFriendToEventRequest req
+    ) {
+        var viewer = SecurityUtils.requirePrincipal();
+        eventService.inviteFriendToEvent(eventId, viewer, req);
+        return ResponseEntity.ok(java.util.Map.of("message", "Приглашение успешно отправлено другу!"));
+    }
+
     @GetMapping(value = "/{eventId}/ics", produces = "text/calendar;charset=UTF-8")
     public ResponseEntity<byte[]> exportIcsCalendar(@PathVariable UUID eventId) {
         String ics = eventService.generateIcsCalendar(eventId);

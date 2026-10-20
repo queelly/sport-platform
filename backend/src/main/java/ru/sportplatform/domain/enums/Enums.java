@@ -120,7 +120,8 @@ public class Enums {
         CLUB_NEW_EVENT,
         TICKET_REPLY,
         TICKET_STATUS_CHANGED,
-        SUPPORT_CHAT_REPLY
+        SUPPORT_CHAT_REPLY,
+        EVENT_INVITATION
     }
 
     public enum VkDeliveryStatus {
