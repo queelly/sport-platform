@@ -4,6 +4,7 @@ import { Building2, CheckCircle2, Lock, Mail, User, UserPlus } from 'lucide-reac
 import { apiFetch, ApiError, ORG_TYPE_LABELS } from '../api';
 import { useAuth } from '../AuthContext';
 import { AuthResponse } from '../types';
+import { CustomSelect, RegionSelect } from '../components/UiControls';
 
 export const LoginPage: React.FC = () => {
   const { setSessionFromAuthResponse } = useAuth();
@@ -82,7 +83,7 @@ export const LoginPage: React.FC = () => {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-display font-bold text-sm shadow-md shadow-blue-600/20 transition-all"
+            className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-display font-bold text-sm shadow-md shadow-blue-600/20 transition-colors"
           >
             {submitting ? 'Выполняется вход...' : 'Войти'}
           </button>
@@ -95,7 +96,7 @@ export const LoginPage: React.FC = () => {
           </Link>
         </div>
 
-        {/* Справочная памятка по предсозданным тестовым аккаунтам БД (входят через настоящую форму и JWT) */}
+        {/* Справочная памятка по предсозданным тестовым аккаунтам БД */}
         <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 space-y-1.5">
           <div className="font-bold text-slate-800">
             Справка для проверки (предсозданные записи в БД, вход по настоящему паролю):
@@ -220,7 +221,7 @@ export const RegisterPage: React.FC = () => {
           <button
             type="button"
             onClick={() => setMode('USER')}
-            className={`flex items-center justify-center gap-2 py-3 rounded-xl font-display font-bold text-xs sm:text-sm transition-all ${
+            className={`flex items-center justify-center gap-2 py-3 rounded-xl font-display font-bold text-xs sm:text-sm transition-colors ${
               mode === 'USER'
                 ? 'bg-white text-blue-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -233,14 +234,14 @@ export const RegisterPage: React.FC = () => {
           <button
             type="button"
             onClick={() => setMode('ORG')}
-            className={`flex items-center justify-center gap-2 py-3 rounded-xl font-display font-bold text-xs sm:text-sm transition-all ${
+            className={`flex items-center justify-center gap-2 py-3 rounded-xl font-display font-bold text-xs sm:text-sm transition-colors ${
               mode === 'ORG'
                 ? 'bg-white text-blue-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Building2 className="w-4 h-4" />
-            <span>Организация / Сообщество</span>
+            <span>Официальная организация</span>
           </button>
         </div>
 
@@ -269,14 +270,7 @@ export const RegisterPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Город или регион *</label>
-              <input
-                type="text"
-                required
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="Москва"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
-              />
+              <RegionSelect value={city} onChange={setCity} />
             </div>
           </div>
 
@@ -321,7 +315,7 @@ export const RegisterPage: React.FC = () => {
           {mode === 'ORG' && (
             <div className="pt-4 border-t border-slate-200 space-y-4">
               <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200/80 text-xs text-blue-900">
-                <strong>Простая подача без бюрократии:</strong> мы не требуем ИНН, ОГРН и сканов паспортов. Укажите основные сведения о вашем клубе или сообществе для быстрой ручной проверки администратором.
+                <strong>Простая подача без бюрократии:</strong> мы не требуем ИНН, ОГРН и сканов паспортов. Укажите основные сведения о вашем клубе для быстрой проверки модератором. (Если вы хотите просто создать открытое сообщество по интересам, вы также можете сделать это мгновенно из обычного аккаунта в разделе «Клубы»).
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -341,17 +335,14 @@ export const RegisterPage: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Тип объединения *</label>
-                  <select
+                  <CustomSelect
                     value={orgType}
-                    onChange={(e) => setOrgType(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"
-                  >
-                    {Object.entries(ORG_TYPE_LABELS).map(([k, v]) => (
-                      <option key={k} value={k}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setOrgType}
+                    options={Object.entries(ORG_TYPE_LABELS).map(([k, v]) => ({
+                      value: k,
+                      label: v,
+                    }))}
+                  />
                 </div>
               </div>
 
@@ -442,7 +433,7 @@ export const RegisterPage: React.FC = () => {
                         type="button"
                         key={s.id}
                         onClick={() => toggleSportId(s.id)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
                           active
                             ? 'bg-blue-600 text-white'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
@@ -479,7 +470,7 @@ export const RegisterPage: React.FC = () => {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-display font-bold text-sm shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 transition-all"
+            className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-display font-bold text-sm shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 transition-colors"
           >
             {mode === 'USER' ? <UserPlus className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
             <span>

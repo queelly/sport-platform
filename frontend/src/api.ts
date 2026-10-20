@@ -13,6 +13,8 @@ export function getAccessToken(): string | null {
   return accessTokenMemory;
 }
 
+export const getAuthToken = getAccessToken;
+
 export class ApiError extends Error {
   status: number;
   fieldErrors?: Record<string, string>;
@@ -133,6 +135,7 @@ export const ORG_STATUS_LABELS: Record<string, { label: string; color: string }>
   APPROVED: { label: 'Проверенная организация', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
   REJECTED: { label: 'Отклонено (требует исправления)', color: 'bg-rose-100 text-rose-800 border-rose-200' },
   NEEDS_REVISION: { label: 'Возвращено на доработку', color: 'bg-orange-100 text-orange-800 border-orange-200' },
+  SUSPENDED: { label: 'Приостановлена администратором', color: 'bg-rose-100 text-rose-900 border-rose-300' },
 };
 
 export const TICKET_CATEGORY_LABELS: Record<string, string> = {

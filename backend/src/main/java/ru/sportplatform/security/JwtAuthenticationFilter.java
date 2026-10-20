@@ -63,6 +63,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             }
         }
+        String paramToken = request.getParameter("token");
+        if (paramToken != null && !paramToken.isBlank()) {
+            return paramToken.trim();
+        }
         return null;
     }
 }

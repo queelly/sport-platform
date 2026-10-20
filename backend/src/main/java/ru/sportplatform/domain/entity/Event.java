@@ -92,6 +92,9 @@ public class Event {
     @Column(name = "cancellation_reason", length = 1500)
     private String cancellationReason;
 
+    @Column(name = "cover_attachment_id")
+    private UUID coverAttachmentId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -161,6 +164,8 @@ public class Event {
     public void setModerationReason(String moderationReason) { this.moderationReason = moderationReason; }
     public String getCancellationReason() { return cancellationReason; }
     public void setCancellationReason(String cancellationReason) { this.cancellationReason = cancellationReason; }
+    public UUID getCoverAttachmentId() { return coverAttachmentId; }
+    public void setCoverAttachmentId(UUID coverAttachmentId) { this.coverAttachmentId = coverAttachmentId; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

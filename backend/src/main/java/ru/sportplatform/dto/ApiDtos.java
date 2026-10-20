@@ -219,9 +219,45 @@ public final class ApiDtos {
             List<SportDto> sports,
             long subscribersCount,
             boolean subscribedByViewer,
+            boolean managedByViewer,
+            String viewerMemberRole,
             List<OrganizationHistoryItemDto> applicationHistory,
             Instant createdAt,
             Instant updatedAt
+    ) {}
+
+    public record OrganizationMemberDto(
+            UUID userId,
+            String displayName,
+            String email,
+            String city,
+            String avatarUrl,
+            String role, // OWNER, ADMIN, MEMBER
+            Instant joinedAt
+    ) {}
+
+    public record CreateCommunityRequest(
+            @NotBlank(message = "Укажите название сообщества или клуба")
+            @Size(min = 2, max = 160)
+            String name,
+            OrganizationType orgType,
+            @NotBlank(message = "Укажите регион или город")
+            String city,
+            @NotBlank(message = "Добавьте описание сообщества")
+            @Size(min = 5, max = 3000)
+            String description,
+            String publicContacts,
+            String websiteUrl,
+            String socialUrl,
+            UUID logoAttachmentId,
+            List<UUID> sportIds,
+            List<String> newSportNames
+    ) {}
+
+    public record AssignCommunityRoleRequest(
+            UUID userId,
+            String email,
+            @NotBlank String role // ADMIN or MEMBER
     ) {}
 
     public record UpdateOrganizationApplicationRequest(
@@ -293,6 +329,7 @@ public final class ApiDtos {
             String participationConditions,
             String whatToBring,
             Integer maxParticipants,
+            UUID coverAttachmentId,
 
             // Recurring options
             boolean recurring,
@@ -301,11 +338,27 @@ public final class ApiDtos {
             Integer recurringDurationMinutes,
             LocalDate recurringStartDate,
             LocalDate recurringEndDate
-    ) {}
+    ) {
+        public CreateEventRequest(
+                String title, String description, UUID sportId, String newSportName, String newSportCategory,
+                UUID organizationId, String city, String locationAddress, Double latitude, Double longitude,
+                Instant startsAt, Instant endsAt, JoinMode joinMode, SkillLevel skillLevel,
+                String activityFormat, String participationConditions, String whatToBring, Integer maxParticipants,
+                boolean recurring, Integer recurringDayOfWeek, String recurringStartTimeLocal,
+                Integer recurringDurationMinutes, LocalDate recurringStartDate, LocalDate recurringEndDate
+        ) {
+            this(title, description, sportId, newSportName, newSportCategory, organizationId, city, locationAddress,
+                    latitude, longitude, startsAt, endsAt, joinMode, skillLevel, activityFormat,
+                    participationConditions, whatToBring, maxParticipants, null,
+                    recurring, recurringDayOfWeek, recurringStartTimeLocal, recurringDurationMinutes,
+                    recurringStartDate, recurringEndDate);
+        }
+    }
 
     public record UpdateEventRequest(
             @NotBlank String title,
             @NotBlank String description,
+            UUID sportId,
             @NotBlank String city,
             @NotBlank String locationAddress,
             Double latitude,
@@ -317,7 +370,8 @@ public final class ApiDtos {
             String activityFormat,
             String participationConditions,
             String whatToBring,
-            Integer maxParticipants
+            Integer maxParticipants,
+            UUID coverAttachmentId
     ) {}
 
     public record EventCardDto(
@@ -354,6 +408,8 @@ public final class ApiDtos {
             String moderationReason,
             String cancellationReason,
             ParticipationStatus viewerParticipationStatus,
+            String coverImageUrl,
+            boolean managedByViewer,
             Instant createdAt
     ) {}
 

@@ -35,6 +35,12 @@ public class OrganizationController {
         return ResponseEntity.ok(organizationService.listMyOrganizations(viewer));
     }
 
+    @PostMapping("/community")
+    public ResponseEntity<OrganizationDto> createCommunity(@Valid @RequestBody CreateCommunityRequest req) {
+        var viewer = SecurityUtils.requirePrincipal();
+        return ResponseEntity.ok(organizationService.createCommunity(viewer, req));
+    }
+
     @GetMapping("/{orgId}")
     public ResponseEntity<OrganizationDto> getOrganization(@PathVariable UUID orgId) {
         var viewer = SecurityUtils.getCurrentPrincipalOptional().orElse(null);
@@ -45,6 +51,20 @@ public class OrganizationController {
     public ResponseEntity<List<EventCardDto>> getOrganizationEvents(@PathVariable UUID orgId) {
         var viewer = SecurityUtils.getCurrentPrincipalOptional().orElse(null);
         return ResponseEntity.ok(eventService.listOrganizationEvents(orgId, viewer));
+    }
+
+    @GetMapping("/{orgId}/members")
+    public ResponseEntity<List<OrganizationMemberDto>> listMembers(@PathVariable UUID orgId) {
+        return ResponseEntity.ok(organizationService.listMembers(orgId));
+    }
+
+    @PostMapping("/{orgId}/members/role")
+    public ResponseEntity<List<OrganizationMemberDto>> assignMemberRole(
+            @PathVariable UUID orgId,
+            @Valid @RequestBody AssignCommunityRoleRequest req
+    ) {
+        var viewer = SecurityUtils.requirePrincipal();
+        return ResponseEntity.ok(organizationService.assignMemberRole(orgId, viewer, req));
     }
 
     @PutMapping("/{orgId}")

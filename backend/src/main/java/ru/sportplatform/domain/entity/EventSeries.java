@@ -77,6 +77,9 @@ public class EventSeries {
     @Column(name = "end_date")
     private LocalDate endDate;
 
+    @Column(name = "cover_attachment_id")
+    private UUID coverAttachmentId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -138,6 +141,8 @@ public class EventSeries {
     public void setStartDate(LocalDate startDate) { this.startDate = startDate; }
     public LocalDate getEndDate() { return endDate; }
     public void setEndDate(LocalDate endDate) { this.endDate = endDate; }
+    public UUID getCoverAttachmentId() { return coverAttachmentId; }
+    public void setCoverAttachmentId(UUID coverAttachmentId) { this.coverAttachmentId = coverAttachmentId; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

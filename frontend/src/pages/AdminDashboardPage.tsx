@@ -1,12 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  Ban,
   Building2,
   Calendar,
   Check,
+  Download,
   ExternalLink,
+  FileText,
   History,
+  Image as ImageIcon,
   MessageCircle,
+  RotateCcw,
   Send,
   ShieldAlert,
   Ticket,
@@ -16,6 +21,7 @@ import {
   apiFetch,
   ApiError,
   formatDateTime,
+  getAuthToken,
   ORG_STATUS_LABELS,
   ORG_TYPE_LABELS,
   TICKET_CATEGORY_LABELS,
@@ -28,9 +34,11 @@ import {
   SupportConversationDto,
   SupportTicketDto,
 } from '../types';
+import { CustomSelect } from '../components/UiControls';
 
 export const AdminDashboardPage: React.FC = () => {
   const [tab, setTab] = useState<'ORGS' | 'EVENTS' | 'TICKETS' | 'CHATS' | 'AUDIT'>('ORGS');
+  const [orgFilter, setOrgFilter] = useState<'ALL' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED'>('ALL');
 
   const [orgs, setOrgs] = useState<OrganizationDto[]>([]);
   const [events, setEvents] = useState<EventCardDto[]>([]);
@@ -38,16 +46,27 @@ export const AdminDashboardPage: React.FC = () => {
   const [chats, setChats] = useState<SupportConversationDto[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogDto[]>([]);
 
-  const [selectedTicket, setSelectedTicket] = useState<SupportTicketDto | null>(null);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [ticketReply, setTicketReply] = useState('');
   const [ticketStatus, setTicketStatus] = useState<SupportTicketDto['status']>('IN_PROGRESS');
   const [resolutionSummary, setResolutionSummary] = useState('');
 
-  const [selectedChat, setSelectedChat] = useState<SupportConversationDto | null>(null);
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [chatReply, setChatReply] = useState('');
 
   const [orgReasons, setOrgReasons] = useState<Record<string, string>>({});
+  const [moderatingOrgId, setModeratingOrgId] = useState<string | null>(null);
   const [eventReasons, setEventReasons] = useState<Record<string, string>>({});
+  const [adminFeedback, setAdminFeedback] = useState<string | null>(null);
+  const [adminError, setAdminError] = useState<string | null>(null);
+
+  const adminTicketMessagesRef = useRef<HTMLDivElement>(null);
+  const adminChatMessagesRef = useRef<HTMLDivElement>(null);
+  const prevAdminTicketLenRef = useRef<number>(0);
+  const prevAdminChatLenRef = useRef<number>(0);
+
+  const selectedTicket = tickets.find((t) => t.id === selectedTicketId) || tickets[0] || null;
+  const selectedChat = chats.find((c) => c.id === selectedChatId) || chats[0] || null;
 
   const loadAdminData = async () => {
     try {
@@ -63,8 +82,14 @@ export const AdminDashboardPage: React.FC = () => {
       setTickets(tList);
       setChats(cList);
       setAuditLogs(aList);
-      if (tList.length > 0 && !selectedTicket) setSelectedTicket(tList[0]);
-      if (cList.length > 0 && !selectedChat) setSelectedChat(cList[0]);
+      setSelectedTicketId((prev) => {
+        if (prev && tList.some((x) => x.id === prev)) return prev;
+        return tList.length > 0 ? tList[0].id : null;
+      });
+      setSelectedChatId((prev) => {
+        if (prev && cList.some((x) => x.id === prev)) return prev;
+        return cList.length > 0 ? cList[0].id : null;
+      });
     } catch {
       // ignore
     }
@@ -72,21 +97,62 @@ export const AdminDashboardPage: React.FC = () => {
 
   useEffect(() => {
     loadAdminData();
+    // Real-time background polling every 3s (#21, #24)
+    const interval = setInterval(() => {
+      loadAdminData();
+    }, 3000);
+    return () => clearInterval(interval);
   }, []);
+
+  // Auto-scroll ticket messages when new message arrives
+  useEffect(() => {
+    const count = selectedTicket?.messages?.length || 0;
+    if (count > prevAdminTicketLenRef.current) {
+      prevAdminTicketLenRef.current = count;
+      setTimeout(() => {
+        if (adminTicketMessagesRef.current) {
+          adminTicketMessagesRef.current.scrollTop = adminTicketMessagesRef.current.scrollHeight;
+        }
+      }, 50);
+    } else {
+      prevAdminTicketLenRef.current = count;
+    }
+  }, [selectedTicket?.id, selectedTicket?.messages?.length]);
+
+  // Auto-scroll live support chat messages when new message arrives
+  useEffect(() => {
+    const count = selectedChat?.messages?.length || 0;
+    if (count > prevAdminChatLenRef.current) {
+      prevAdminChatLenRef.current = count;
+      setTimeout(() => {
+        if (adminChatMessagesRef.current) {
+          adminChatMessagesRef.current.scrollTop = adminChatMessagesRef.current.scrollHeight;
+        }
+      }, 50);
+    } else {
+      prevAdminChatLenRef.current = count;
+    }
+  }, [selectedChat?.id, selectedChat?.messages?.length, tab]);
 
   const handleModerateOrg = async (
     orgId: string,
-    decision: 'APPROVED' | 'REJECTED' | 'NEEDS_REVISION'
+    decision: 'APPROVED' | 'REJECTED' | 'NEEDS_REVISION' | 'SUSPENDED'
   ) => {
-    const reason =
-      orgReasons[orgId]?.trim() ||
-      (decision === 'APPROVED'
-        ? 'Организация проверена и допущена администратором'
-        : window.prompt('Укажите причину отклонения / возврата на доработку для организации:') || '');
-    if ((decision === 'REJECTED' || decision === 'NEEDS_REVISION') && !reason.trim()) {
-      alert('При отказе необходимо указать понятную причину');
+    setAdminError(null);
+    setAdminFeedback(null);
+    const customReason = orgReasons[orgId]?.trim() || '';
+
+    if (decision !== 'APPROVED' && !customReason) {
+      setAdminError(
+        'Пожалуйста, укажите причину отклонения или блокировки в текстовом поле карточки организации.'
+      );
       return;
     }
+
+    const reason =
+      customReason || 'Организация проверена и допущена администратором';
+
+    setModeratingOrgId(orgId);
     try {
       await apiFetch(`/api/v1/admin/organizations/${orgId}/decision`, {
         method: 'POST',
@@ -96,26 +162,50 @@ export const AdminDashboardPage: React.FC = () => {
           adminNotes: 'Обработано через админ-панель',
         }),
       });
+      setOrgReasons((prev) => ({ ...prev, [orgId]: '' }));
+      setAdminFeedback(
+        decision === 'APPROVED'
+          ? 'Статус организации обновлён: Одобрена и опубликована!'
+          : 'Статус организации обновлён: Отклонена / Приостановлена.'
+      );
       await loadAdminData();
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка модерации организации');
+      setAdminError(err instanceof ApiError ? err.message : 'Ошибка модерации организации');
+    } finally {
+      setModeratingOrgId(null);
     }
   };
 
   const handleUnpublishEvent = async (eventId: string) => {
-    const reason =
-      eventReasons[eventId]?.trim() ||
-      window.prompt('Укажите причину снятия мероприятия с публикации:', 'Нарушение правил платформы') ||
-      '';
-    if (!reason.trim()) return;
+    setAdminError(null);
+    setAdminFeedback(null);
+    const reason = eventReasons[eventId]?.trim() || 'Нарушение правил платформы';
     try {
       await apiFetch(`/api/v1/admin/events/${eventId}/unpublish`, {
         method: 'POST',
         body: JSON.stringify({ reason }),
       });
+      setAdminFeedback('Мероприятие снято с публикации.');
       await loadAdminData();
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка снятия мероприятия с публикации');
+      setAdminError(err instanceof ApiError ? err.message : 'Ошибка снятия мероприятия с публикации');
+    }
+  };
+
+  // Republish / Unban Event (#30)
+  const handleRepublishEvent = async (eventId: string) => {
+    setAdminError(null);
+    setAdminFeedback(null);
+    const reason = eventReasons[eventId]?.trim() || 'Возвращено в публикацию администратором';
+    try {
+      await apiFetch(`/api/v1/admin/events/${eventId}/republish`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      });
+      setAdminFeedback('Мероприятие успешно возвращено в публикацию (разблокировано)!');
+      await loadAdminData();
+    } catch (err) {
+      setAdminError(err instanceof ApiError ? err.message : 'Ошибка восстановления публикации');
     }
   };
 
@@ -134,11 +224,11 @@ export const AdminDashboardPage: React.FC = () => {
           }),
         }
       );
-      setSelectedTicket(updated);
+      setSelectedTicketId(updated.id);
       setTicketReply('');
       await loadAdminData();
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка ответа в тикет');
+      setAdminError(err instanceof ApiError ? err.message : 'Ошибка ответа в тикет');
     }
   };
 
@@ -153,17 +243,31 @@ export const AdminDashboardPage: React.FC = () => {
           body: JSON.stringify({ content: chatReply }),
         }
       );
-      setSelectedChat(updated);
+      setSelectedChatId(updated.id);
       setChatReply('');
       await loadAdminData();
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка ответа в чат');
+      setAdminError(err instanceof ApiError ? err.message : 'Ошибка ответа в чат');
     }
+  };
+
+  const buildDownloadUrl = (url: string) => {
+    const token = getAuthToken();
+    if (!token) return url;
+    return url.includes('?') ? `${url}&token=${encodeURIComponent(token)}` : `${url}?token=${encodeURIComponent(token)}`;
   };
 
   const pendingOrgsCount = orgs.filter((o) => o.status === 'PENDING_REVIEW').length;
   const openTicketsCount = tickets.filter((t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS').length;
   const unreadChatsCount = chats.filter((c) => c.unreadByAdmin).length;
+
+  const filteredOrgs = orgs.filter((o) => {
+    if (orgFilter === 'PENDING_REVIEW') return o.status === 'PENDING_REVIEW';
+    if (orgFilter === 'APPROVED') return o.status === 'APPROVED';
+    if (orgFilter === 'REJECTED')
+      return o.status === 'REJECTED' || o.status === 'NEEDS_REVISION' || o.status === 'SUSPENDED';
+    return true;
+  });
 
   return (
     <div className="space-y-8 pb-16">
@@ -186,8 +290,9 @@ export const AdminDashboardPage: React.FC = () => {
 
         <div className="flex flex-wrap gap-2 pt-2">
           <button
+            type="button"
             onClick={() => setTab('ORGS')}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors ${
               tab === 'ORGS' ? 'bg-blue-600 text-white' : 'bg-white/10 text-slate-200 hover:bg-white/20'
             }`}
           >
@@ -201,8 +306,9 @@ export const AdminDashboardPage: React.FC = () => {
           </button>
 
           <button
+            type="button"
             onClick={() => setTab('EVENTS')}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors ${
               tab === 'EVENTS' ? 'bg-blue-600 text-white' : 'bg-white/10 text-slate-200 hover:bg-white/20'
             }`}
           >
@@ -211,8 +317,9 @@ export const AdminDashboardPage: React.FC = () => {
           </button>
 
           <button
+            type="button"
             onClick={() => setTab('TICKETS')}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors ${
               tab === 'TICKETS' ? 'bg-blue-600 text-white' : 'bg-white/10 text-slate-200 hover:bg-white/20'
             }`}
           >
@@ -226,8 +333,9 @@ export const AdminDashboardPage: React.FC = () => {
           </button>
 
           <button
+            type="button"
             onClick={() => setTab('CHATS')}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors ${
               tab === 'CHATS' ? 'bg-blue-600 text-white' : 'bg-white/10 text-slate-200 hover:bg-white/20'
             }`}
           >
@@ -241,8 +349,9 @@ export const AdminDashboardPage: React.FC = () => {
           </button>
 
           <button
+            type="button"
             onClick={() => setTab('AUDIT')}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-colors ${
               tab === 'AUDIT' ? 'bg-blue-600 text-white' : 'bg-white/10 text-slate-200 hover:bg-white/20'
             }`}
           >
@@ -252,14 +361,73 @@ export const AdminDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* TAB 1: ORGANIZATIONS MODERATION */}
+      {adminFeedback && (
+        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center justify-between">
+          <span>{adminFeedback}</span>
+          <button type="button" onClick={() => setAdminFeedback(null)}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {adminError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-800 flex items-center justify-between">
+          <span>{adminError}</span>
+          <button type="button" onClick={() => setAdminError(null)}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* TAB 1: ORGANIZATIONS MODERATION (#29) */}
       {tab === 'ORGS' && (
         <div className="space-y-4">
-          {orgs.map((org) => {
+          {/* Status filter pills */}
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { id: 'ALL', label: `Все (${orgs.length})` },
+              {
+                id: 'PENDING_REVIEW',
+                label: `На проверке (${orgs.filter((o) => o.status === 'PENDING_REVIEW').length})`,
+              },
+              {
+                id: 'APPROVED',
+                label: `Одобрены (${orgs.filter((o) => o.status === 'APPROVED').length})`,
+              },
+              {
+                id: 'REJECTED',
+                label: `Отклонены / Приостановлены (${
+                  orgs.filter(
+                    (o) =>
+                      o.status === 'REJECTED' ||
+                      o.status === 'NEEDS_REVISION' ||
+                      o.status === 'SUSPENDED'
+                  ).length
+                })`,
+              },
+            ].map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setOrgFilter(f.id as any)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
+                  orgFilter === f.id
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {filteredOrgs.map((org) => {
             const st = ORG_STATUS_LABELS[org.status] || {
               label: org.status,
               color: 'bg-slate-100 text-slate-700',
             };
+            const isBusy = moderatingOrgId === org.id;
+
             return (
               <div
                 key={org.id}
@@ -319,26 +487,50 @@ export const AdminDashboardPage: React.FC = () => {
                     onChange={(e) =>
                       setOrgReasons((prev) => ({ ...prev, [org.id]: e.target.value }))
                     }
-                    placeholder="Причина отказа или комментарий модератора..."
+                    placeholder="Комментарий модератора или причина отказа / приостановки..."
                     className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
                   />
 
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleModerateOrg(org.id, 'APPROVED')}
-                      className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Одобрить допуск</span>
-                    </button>
+                  <div className="flex flex-wrap gap-2">
+                    {org.status !== 'APPROVED' && (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleModerateOrg(org.id, 'APPROVED')}
+                        className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>
+                          {org.status === 'PENDING_REVIEW'
+                            ? 'Одобрить допуск'
+                            : 'Восстановить / Одобрить допуск'}
+                        </span>
+                      </button>
+                    )}
 
-                    <button
-                      onClick={() => handleModerateOrg(org.id, 'REJECTED')}
-                      className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      <span>Отклонить с причиной</span>
-                    </button>
+                    {org.status === 'PENDING_REVIEW' && (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleModerateOrg(org.id, 'REJECTED')}
+                        className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Отклонить с причиной</span>
+                      </button>
+                    )}
+
+                    {org.status === 'APPROVED' && (
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleModerateOrg(org.id, 'REJECTED')}
+                        className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 disabled:opacity-50 text-rose-800 text-xs font-bold"
+                      >
+                        <Ban className="w-3.5 h-3.5" />
+                        <span>Отозвать допуск (Снять с публикации)</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -347,7 +539,7 @@ export const AdminDashboardPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 2: EVENTS MODERATION */}
+      {/* TAB 2: EVENTS MODERATION (#30) */}
       {tab === 'EVENTS' && (
         <div className="space-y-4">
           {events.map((ev) => (
@@ -367,7 +559,11 @@ export const AdminDashboardPage: React.FC = () => {
                         : 'bg-rose-100 text-rose-800'
                     }`}
                   >
-                    {ev.status}
+                    {ev.status === 'PUBLISHED'
+                      ? 'Опубликовано'
+                      : ev.status === 'UNPUBLISHED_BY_ADMIN'
+                      ? 'Снято админом'
+                      : 'Отменено организатором'}
                   </span>
                   <span className="text-xs text-slate-500">{formatDateTime(ev.startsAt)}</span>
                 </div>
@@ -392,11 +588,11 @@ export const AdminDashboardPage: React.FC = () => {
               <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <Link
                   to={`/events/${ev.id}`}
-                  className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-700"
+                  className="px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-50"
                 >
-                  Открыть и модерировать сообщения
+                  Открыть карточку и чат
                 </Link>
-                {ev.status === 'PUBLISHED' && (
+                {ev.status === 'PUBLISHED' ? (
                   <>
                     <input
                       type="text"
@@ -408,12 +604,22 @@ export const AdminDashboardPage: React.FC = () => {
                       className="px-3 py-2 rounded-xl border border-rose-200 text-xs"
                     />
                     <button
+                      type="button"
                       onClick={() => handleUnpublishEvent(ev.id)}
                       className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
                     >
                       Снять с публикации
                     </button>
                   </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleRepublishEvent(ev.id)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Вернуть в публикацию (Разбанить)</span>
+                  </button>
                 )}
               </div>
             </div>
@@ -424,19 +630,20 @@ export const AdminDashboardPage: React.FC = () => {
       {/* TAB 3: ADMIN TICKETS WORKSPACE */}
       {tab === 'TICKETS' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white rounded-3xl border border-slate-200 p-5 space-y-2.5">
+          <div className="bg-white rounded-3xl border border-slate-200 p-5 space-y-2.5 max-h-[640px] overflow-y-auto">
             <h2 className="font-display font-bold text-base text-slate-900">
               Все обращения и жалобы ({tickets.length})
             </h2>
             {tickets.map((t) => (
               <button
                 key={t.id}
+                type="button"
                 onClick={() => {
-                  setSelectedTicket(t);
+                  setSelectedTicketId(t.id);
                   setTicketStatus(t.status);
                   setResolutionSummary(t.resolutionSummary || '');
                 }}
-                className={`w-full text-left p-3.5 rounded-2xl border text-xs space-y-1 ${
+                className={`w-full text-left p-3.5 rounded-2xl border text-xs space-y-1 transition-colors ${
                   selectedTicket?.id === t.id
                     ? 'bg-blue-50 border-blue-400'
                     : 'bg-slate-50 border-slate-200'
@@ -476,30 +683,86 @@ export const AdminDashboardPage: React.FC = () => {
                       {TICKET_CATEGORY_LABELS[selectedTicket.category]}
                     </div>
                   </div>
-                  {selectedTicket.targetType === 'EVENT' && selectedTicket.targetId && (
-                    <Link
-                      to={`/events/${selectedTicket.targetId}`}
-                      className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 text-xs font-bold"
-                    >
-                      Перейти к мероприятию →
-                    </Link>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {selectedTicket.targetType === 'EVENT' && selectedTicket.targetId && (
+                      <Link
+                        to={`/events/${selectedTicket.targetId}`}
+                        className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 text-xs font-bold"
+                      >
+                        Перейти к мероприятию →
+                      </Link>
+                    )}
+                    {selectedTicket.targetType === 'USER' && selectedTicket.targetId && (
+                      <Link
+                        to={`/users/${selectedTicket.targetId}`}
+                        className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 text-xs font-bold"
+                      >
+                        Открыть профиль пользователя →
+                      </Link>
+                    )}
+                    {selectedTicket.targetType === 'ORGANIZATION' && selectedTicket.targetId && (
+                      <Link
+                        to={`/organizations/${selectedTicket.targetId}`}
+                        className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 text-xs font-bold"
+                      >
+                        Открыть организацию →
+                      </Link>
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-3 max-h-80 overflow-y-auto">
+                <div
+                  ref={adminTicketMessagesRef}
+                  className="space-y-3 max-h-96 overflow-y-auto pr-1 scroll-smooth"
+                >
                   {selectedTicket.messages.map((m) => (
                     <div
                       key={m.id}
-                      className={`p-3.5 rounded-2xl border text-xs ${
+                      className={`p-3.5 rounded-2xl border text-xs space-y-2 ${
                         m.adminReply
                           ? 'bg-blue-50/70 border-blue-200 ml-6'
                           : 'bg-slate-50 border-slate-200 mr-6'
                       }`}
                     >
-                      <div className="font-bold text-slate-900 mb-1">
+                      <div className="font-bold text-slate-900">
                         {m.authorDisplayName} ({formatDateTime(m.createdAt)})
                       </div>
                       <p className="text-slate-800 whitespace-pre-line">{m.content}</p>
+                      {m.attachment && (
+                        <div className="pt-1 space-y-2">
+                          {m.attachment.attachmentType === 'IMAGE' && (
+                            <a
+                              href={buildDownloadUrl(m.attachment.downloadUrl)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-block rounded-xl overflow-hidden border border-slate-200 bg-white"
+                            >
+                              <img
+                                src={buildDownloadUrl(m.attachment.downloadUrl)}
+                                alt={m.attachment.originalFilename}
+                                className="max-h-52 w-auto object-contain"
+                              />
+                            </a>
+                          )}
+                          <div>
+                            <a
+                              href={buildDownloadUrl(m.attachment.downloadUrl)}
+                              download={m.attachment.originalFilename}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-blue-400 text-blue-600 font-bold text-xs"
+                            >
+                              {m.attachment.attachmentType === 'IMAGE' ? (
+                                <ImageIcon className="w-3.5 h-3.5" />
+                              ) : (
+                                <FileText className="w-3.5 h-3.5" />
+                              )}
+                              <span>Скачать вложение: {m.attachment.originalFilename}</span>
+                              <Download className="w-3.5 h-3.5" />
+                            </a>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -510,17 +773,15 @@ export const AdminDashboardPage: React.FC = () => {
                       <label className="block text-xs font-bold text-slate-700 mb-1">
                         Новый статус тикета
                       </label>
-                      <select
+                      <CustomSelect
+                        size="sm"
                         value={ticketStatus}
-                        onChange={(e) => setTicketStatus(e.target.value as any)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white"
-                      >
-                        {Object.entries(TICKET_STATUS_LABELS).map(([k, v]) => (
-                          <option key={k} value={k}>
-                            {v.label}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => setTicketStatus(v as any)}
+                        options={Object.entries(TICKET_STATUS_LABELS).map(([k, v]) => ({
+                          value: k,
+                          label: v.label,
+                        }))}
+                      />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -562,15 +823,16 @@ export const AdminDashboardPage: React.FC = () => {
       {/* TAB 4: ADMIN LIVE SUPPORT CHATS */}
       {tab === 'CHATS' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white rounded-3xl border border-slate-200 p-5 space-y-2.5">
+          <div className="bg-white rounded-3xl border border-slate-200 p-5 space-y-2.5 max-h-[600px] overflow-y-auto">
             <h2 className="font-display font-bold text-base text-slate-900">
               Диалоги чата техподдержки ({chats.length})
             </h2>
             {chats.map((c) => (
               <button
                 key={c.id}
-                onClick={() => setSelectedChat(c)}
-                className={`w-full text-left p-3.5 rounded-2xl border text-xs space-y-1 ${
+                type="button"
+                onClick={() => setSelectedChatId(c.id)}
+                className={`w-full text-left p-3.5 rounded-2xl border text-xs space-y-1 transition-colors ${
                   selectedChat?.id === c.id
                     ? 'bg-blue-50 border-blue-400'
                     : 'bg-slate-50 border-slate-200'
@@ -599,7 +861,10 @@ export const AdminDashboardPage: React.FC = () => {
                   </h3>
                 </div>
 
-                <div className="space-y-3 max-h-80 overflow-y-auto">
+                <div
+                  ref={adminChatMessagesRef}
+                  className="space-y-3 max-h-96 overflow-y-auto pr-1 scroll-smooth"
+                >
                   {selectedChat.messages.map((m) => (
                     <div
                       key={m.id}

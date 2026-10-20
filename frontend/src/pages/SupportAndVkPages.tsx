@@ -1,57 +1,73 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Bell,
   CheckCheck,
+  Download,
   ExternalLink,
   FileText,
   HelpCircle,
+  Image as ImageIcon,
   MessageCircle,
   Paperclip,
   Send,
   ShieldCheck,
   Sparkles,
   Ticket,
+  X,
 } from 'lucide-react';
 import {
   apiFetch,
   ApiError,
   formatDateTime,
+  getAuthToken,
   TICKET_CATEGORY_LABELS,
   TICKET_STATUS_LABELS,
   uploadAttachmentFile,
 } from '../api';
 import { useAuth } from '../AuthContext';
 import {
+  EventCardDto,
   NotificationDto,
+  OrganizationDto,
+  PublicUserProfileDto,
   SupportConversationDto,
   SupportTicketDto,
   VkStatusDto,
 } from '../types';
+import { CustomSelect } from '../components/UiControls';
 
 export const SupportPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<'TICKETS' | 'CHAT'>('TICKETS');
 
   const [tickets, setTickets] = useState<SupportTicketDto[]>([]);
-  const [selectedTicket, setSelectedTicket] = useState<SupportTicketDto | null>(null);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [chatConv, setChatConv] = useState<SupportConversationDto | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Directories for target selection in complaints (#22, #25)
+  const [usersList, setUsersList] = useState<PublicUserProfileDto[]>([]);
+  const [orgsList, setOrgsList] = useState<OrganizationDto[]>([]);
+  const [eventsList, setEventsList] = useState<EventCardDto[]>([]);
+
   // New Ticket Form
+  const initialTargetType = searchParams.get('targetType') || '';
+  const initialTargetId = searchParams.get('targetId') || '';
+
   const [category, setCategory] = useState<string>(
-    searchParams.get('targetType') === 'EVENT'
+    initialTargetType === 'EVENT'
       ? 'EVENT_COMPLAINT'
-      : searchParams.get('targetType') === 'USER'
+      : initialTargetType === 'USER'
       ? 'USER_COMPLAINT'
-      : searchParams.get('targetType') === 'ORGANIZATION'
+      : initialTargetType === 'ORGANIZATION'
       ? 'ORGANIZATION_COMPLAINT'
       : 'TECHNICAL_ISSUE'
   );
   const [subject, setSubject] = useState(searchParams.get('subject') || '');
   const [description, setDescription] = useState('');
-  const [targetType] = useState(searchParams.get('targetType') || '');
-  const [targetId] = useState(searchParams.get('targetId') || '');
+  const [targetType, setTargetType] = useState<string>(initialTargetType);
+  const [targetId, setTargetId] = useState<string>(initialTargetId);
   const [attachmentId, setAttachmentId] = useState<string | null>(null);
   const [attachmentName, setAttachmentName] = useState<string>('');
   const [creatingTicket, setCreatingTicket] = useState(false);
@@ -62,31 +78,111 @@ export const SupportPage: React.FC = () => {
   // Live Chat Input
   const [chatText, setChatText] = useState('');
 
-  const loadSupportData = async () => {
-    setLoading(true);
+  const ticketMessagesRef = useRef<HTMLDivElement>(null);
+  const liveChatMessagesRef = useRef<HTMLDivElement>(null);
+  const prevTicketMsgLenRef = useRef<number>(0);
+  const prevChatMsgLenRef = useRef<number>(0);
+
+  const selectedTicket = tickets.find((t) => t.id === selectedTicketId) || tickets[0] || null;
+
+  const loadDirectories = async () => {
+    try {
+      const [uList, oList, eList] = await Promise.all([
+        apiFetch<PublicUserProfileDto[]>('/api/v1/users'),
+        apiFetch<OrganizationDto[]>('/api/v1/organizations'),
+        apiFetch<EventCardDto[]>('/api/v1/events'),
+      ]);
+      setUsersList(uList);
+      setOrgsList(oList);
+      setEventsList(eList);
+    } catch {
+      // ignore
+    }
+  };
+
+  const loadSupportData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [tList, cDto] = await Promise.all([
         apiFetch<SupportTicketDto[]>('/api/v1/support/tickets/my'),
         apiFetch<SupportConversationDto>('/api/v1/support/chat'),
       ]);
       setTickets(tList);
-      if (tList.length > 0 && !selectedTicket) {
-        setSelectedTicket(tList[0]);
-      } else if (selectedTicket) {
-        const refreshed = tList.find((x) => x.id === selectedTicket.id);
-        if (refreshed) setSelectedTicket(refreshed);
-      }
+      setSelectedTicketId((prev) => {
+        if (prev && tList.some((x) => x.id === prev)) return prev;
+        return tList.length > 0 ? tList[0].id : null;
+      });
       setChatConv(cDto);
     } catch {
       // ignore
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadSupportData();
+    loadSupportData(false);
+    loadDirectories();
+
+    // Real-time background polling every 3s (#21, #24)
+    const interval = setInterval(() => {
+      loadSupportData(true);
+    }, 3000);
+    return () => clearInterval(interval);
   }, []);
+
+  // Auto-sync targetType when category changes manually
+  useEffect(() => {
+    if (category === 'USER_COMPLAINT') {
+      if (targetType !== 'USER') {
+        setTargetType('USER');
+        setTargetId('');
+      }
+    } else if (category === 'ORGANIZATION_COMPLAINT') {
+      if (targetType !== 'ORGANIZATION') {
+        setTargetType('ORGANIZATION');
+        setTargetId('');
+      }
+    } else if (category === 'EVENT_COMPLAINT') {
+      if (targetType !== 'EVENT') {
+        setTargetType('EVENT');
+        setTargetId('');
+      }
+    } else {
+      setTargetType('');
+      setTargetId('');
+    }
+  }, [category]);
+
+  // Auto-scroll ticket messages when new message arrives (#24)
+  useEffect(() => {
+    const count = selectedTicket?.messages?.length || 0;
+    if (count > prevTicketMsgLenRef.current) {
+      prevTicketMsgLenRef.current = count;
+      setTimeout(() => {
+        if (ticketMessagesRef.current) {
+          ticketMessagesRef.current.scrollTop = ticketMessagesRef.current.scrollHeight;
+        }
+      }, 50);
+    } else {
+      prevTicketMsgLenRef.current = count;
+    }
+  }, [selectedTicket?.id, selectedTicket?.messages?.length]);
+
+  // Auto-scroll live support chat when new message arrives (#24)
+  useEffect(() => {
+    const count = chatConv?.messages?.length || 0;
+    if (count > prevChatMsgLenRef.current) {
+      prevChatMsgLenRef.current = count;
+      setTimeout(() => {
+        if (liveChatMessagesRef.current) {
+          liveChatMessagesRef.current.scrollTop = liveChatMessagesRef.current.scrollHeight;
+        }
+      }, 50);
+    } else {
+      prevChatMsgLenRef.current = count;
+    }
+  }, [chatConv?.messages?.length, tab]);
 
   const handleUploadTicketAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -97,6 +193,8 @@ export const SupportPage: React.FC = () => {
       setAttachmentName(att.originalFilename);
     } catch (err) {
       alert(err instanceof ApiError ? err.message : 'Ошибка загрузки файла');
+    } finally {
+      e.target.value = '';
     }
   };
 
@@ -116,7 +214,7 @@ export const SupportPage: React.FC = () => {
         }),
       });
       setTickets((prev) => [created, ...prev]);
-      setSelectedTicket(created);
+      setSelectedTicketId(created.id);
       setSubject('');
       setDescription('');
       setAttachmentId(null);
@@ -139,8 +237,8 @@ export const SupportPage: React.FC = () => {
           body: JSON.stringify({ content: ticketReplyText }),
         }
       );
-      setSelectedTicket(updated);
       setTickets((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+      setSelectedTicketId(updated.id);
       setTicketReplyText('');
     } catch (err) {
       alert(err instanceof ApiError ? err.message : 'Ошибка отправки ответа');
@@ -162,6 +260,12 @@ export const SupportPage: React.FC = () => {
     }
   };
 
+  const buildDownloadUrl = (url: string) => {
+    const token = getAuthToken();
+    if (!token) return url;
+    return url.includes('?') ? `${url}&token=${encodeURIComponent(token)}` : `${url}?token=${encodeURIComponent(token)}`;
+  };
+
   return (
     <div className="space-y-8 pb-16">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -170,14 +274,15 @@ export const SupportPage: React.FC = () => {
             Центр поддержки пользователей
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Два отдельных канала: структурированные тикеты для жалоб и обращений или быстрый чат с технической поддержкой
+            Два отдельных канала с автообновлением в реальном времени: тикеты для жалоб и обращений или живой чат с техподдержкой
           </p>
         </div>
 
         <div className="flex gap-2 p-1 rounded-2xl bg-slate-200/80">
           <button
+            type="button"
             onClick={() => setTab('TICKETS')}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
               tab === 'TICKETS' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-700'
             }`}
           >
@@ -186,8 +291,9 @@ export const SupportPage: React.FC = () => {
           </button>
 
           <button
+            type="button"
             onClick={() => setTab('CHAT')}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
               tab === 'CHAT' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-700'
             }`}
           >
@@ -211,18 +317,98 @@ export const SupportPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Категория *</label>
-                <select
+                <CustomSelect
+                  size="sm"
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs bg-white"
-                >
-                  {Object.entries(TICKET_CATEGORY_LABELS).map(([k, v]) => (
-                    <option key={k} value={k}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setCategory}
+                  options={Object.entries(TICKET_CATEGORY_LABELS).map(([k, v]) => ({
+                    value: k,
+                    label: v,
+                  }))}
+                />
               </div>
+
+              {/* Target entity selector for complaints (#22, #25) */}
+              {category === 'USER_COMPLAINT' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    На какого пользователя подаётся жалоба?
+                  </label>
+                  <CustomSelect
+                    size="sm"
+                    value={targetId}
+                    onChange={(val) => {
+                      setTargetType('USER');
+                      setTargetId(val);
+                      const found = usersList.find((u) => u.id === val);
+                      if (found && !subject.trim()) {
+                        setSubject(`Жалоба на пользователя: ${found.displayName}`);
+                      }
+                    }}
+                    options={[
+                      { value: '', label: '— Выберите пользователя из списка —' },
+                      ...usersList.map((u) => ({
+                        value: u.id,
+                        label: `${u.displayName} (${u.city || 'Россия'})`,
+                      })),
+                    ]}
+                  />
+                </div>
+              )}
+
+              {category === 'ORGANIZATION_COMPLAINT' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    На какую организацию / сообщество жалоба?
+                  </label>
+                  <CustomSelect
+                    size="sm"
+                    value={targetId}
+                    onChange={(val) => {
+                      setTargetType('ORGANIZATION');
+                      setTargetId(val);
+                      const found = orgsList.find((o) => o.id === val);
+                      if (found && !subject.trim()) {
+                        setSubject(`Жалоба на организацию: ${found.name}`);
+                      }
+                    }}
+                    options={[
+                      { value: '', label: '— Выберите клуб или сообщество —' },
+                      ...orgsList.map((o) => ({
+                        value: o.id,
+                        label: `${o.name} (${o.city})`,
+                      })),
+                    ]}
+                  />
+                </div>
+              )}
+
+              {category === 'EVENT_COMPLAINT' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Какое мероприятие вызывает вопросы?
+                  </label>
+                  <CustomSelect
+                    size="sm"
+                    value={targetId}
+                    onChange={(val) => {
+                      setTargetType('EVENT');
+                      setTargetId(val);
+                      const found = eventsList.find((ev) => ev.id === val);
+                      if (found && !subject.trim()) {
+                        setSubject(`Обращение по мероприятию: ${found.title}`);
+                      }
+                    }}
+                    options={[
+                      { value: '', label: '— Выберите мероприятие —' },
+                      ...eventsList.map((ev) => ({
+                        value: ev.id,
+                        label: `${ev.title} (${ev.city})`,
+                      })),
+                    ]}
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Тема обращения *</label>
@@ -251,9 +437,28 @@ export const SupportPage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <label className="cursor-pointer inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline">
                   <Paperclip className="w-3.5 h-3.5" />
-                  <span>{attachmentName || 'Приложить скриншот / документ'}</span>
-                  <input type="file" onChange={handleUploadTicketAttachment} className="hidden" />
+                  <span className="truncate max-w-[210px]">
+                    {attachmentName || 'Приложить скриншот / документ'}
+                  </span>
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.txt,.doc,.docx"
+                    onChange={handleUploadTicketAttachment}
+                    className="hidden"
+                  />
                 </label>
+                {attachmentName && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAttachmentId(null);
+                      setAttachmentName('');
+                    }}
+                    className="text-slate-400 hover:text-rose-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
               <button
@@ -270,10 +475,12 @@ export const SupportPage: React.FC = () => {
               <div className="font-display font-bold text-sm text-slate-900">
                 Мои обращения ({tickets.length})
               </div>
-              {tickets.length === 0 ? (
+              {loading && tickets.length === 0 ? (
+                <div className="h-24 rounded-2xl bg-slate-100 animate-pulse" />
+              ) : tickets.length === 0 ? (
                 <p className="text-xs text-slate-500">У вас пока нет зарегистрированных тикетов.</p>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
                   {tickets.map((t) => {
                     const st = TICKET_STATUS_LABELS[t.status] || {
                       label: t.status,
@@ -283,8 +490,8 @@ export const SupportPage: React.FC = () => {
                       <button
                         key={t.id}
                         type="button"
-                        onClick={() => setSelectedTicket(t)}
-                        className={`w-full text-left p-3.5 rounded-2xl border transition-all space-y-1 ${
+                        onClick={() => setSelectedTicketId(t.id)}
+                        className={`w-full text-left p-3.5 rounded-2xl border transition-colors space-y-1 ${
                           selectedTicket?.id === t.id
                             ? 'bg-blue-50/70 border-blue-400'
                             : 'bg-slate-50 border-slate-200 hover:border-slate-300'
@@ -345,11 +552,14 @@ export const SupportPage: React.FC = () => {
                   </div>
                 )}
 
-                <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                <div
+                  ref={ticketMessagesRef}
+                  className="space-y-3 max-h-[420px] overflow-y-auto pr-1 scroll-smooth"
+                >
                   {selectedTicket.messages.map((m) => (
                     <div
                       key={m.id}
-                      className={`p-4 rounded-2xl border text-xs space-y-1.5 ${
+                      className={`p-4 rounded-2xl border text-xs space-y-2 ${
                         m.adminReply
                           ? 'bg-blue-50/70 border-blue-200 ml-4'
                           : 'bg-slate-50 border-slate-200 mr-4'
@@ -368,14 +578,39 @@ export const SupportPage: React.FC = () => {
                       </div>
                       <p className="text-sm text-slate-800 whitespace-pre-line">{m.content}</p>
                       {m.attachment && (
-                        <a
-                          href={m.attachment.downloadUrl}
-                          download
-                          className="inline-flex items-center gap-1.5 text-blue-600 font-bold hover:underline pt-1"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                          <span>Вложение: {m.attachment.originalFilename}</span>
-                        </a>
+                        <div className="pt-1 space-y-2">
+                          {m.attachment.attachmentType === 'IMAGE' && (
+                            <a
+                              href={buildDownloadUrl(m.attachment.downloadUrl)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-block rounded-xl overflow-hidden border border-slate-200 bg-white"
+                            >
+                              <img
+                                src={buildDownloadUrl(m.attachment.downloadUrl)}
+                                alt={m.attachment.originalFilename}
+                                className="max-h-52 w-auto object-contain"
+                              />
+                            </a>
+                          )}
+                          <div>
+                            <a
+                              href={buildDownloadUrl(m.attachment.downloadUrl)}
+                              download={m.attachment.originalFilename}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-blue-400 text-blue-600 font-bold text-xs"
+                            >
+                              {m.attachment.attachmentType === 'IMAGE' ? (
+                                <ImageIcon className="w-3.5 h-3.5" />
+                              ) : (
+                                <FileText className="w-3.5 h-3.5" />
+                              )}
+                              <span>Скачать вложение: {m.attachment.originalFilename}</span>
+                              <Download className="w-3.5 h-3.5" />
+                            </a>
+                          </div>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -388,12 +623,12 @@ export const SupportPage: React.FC = () => {
                       required
                       value={ticketReplyText}
                       onChange={(e) => setTicketReplyText(e.target.value)}
-                      placeholder="Написать дополнительный комментарий в тикет..."
+                      placeholder="Написать ответ в тикет (обновляется автоматически)..."
                       className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-sm"
                     />
                     <button
                       type="submit"
-                      className="px-5 py-2.5 rounded-xl bg-blue-600 text-white font-display font-bold text-xs"
+                      className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-display font-bold text-xs"
                     >
                       Отправить
                     </button>
@@ -414,13 +649,14 @@ export const SupportPage: React.FC = () => {
             <div>
               <h2 className="font-display font-bold text-lg text-slate-900 flex items-center gap-2">
                 <HelpCircle className="w-5 h-5 text-blue-600" />
-                <span>Прямой диалог с технической поддержкой</span>
+                <span>Прямой диалог с технической поддержкой (Live-чат)</span>
               </h2>
               <p className="text-xs text-slate-500">
-                Задайте быстрый вопрос администратору платформы без оформления официальной жалобы
+                Сообщения обновляются в реальном времени без перезагрузки страницы
               </p>
             </div>
             <button
+              type="button"
               onClick={() => setTab('TICKETS')}
               className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold"
             >
@@ -428,7 +664,10 @@ export const SupportPage: React.FC = () => {
             </button>
           </div>
 
-          <div className="space-y-3 max-h-[420px] overflow-y-auto p-2">
+          <div
+            ref={liveChatMessagesRef}
+            className="space-y-3 max-h-[420px] overflow-y-auto p-2 scroll-smooth"
+          >
             {!chatConv || chatConv.messages.length === 0 ? (
               <div className="p-8 rounded-2xl bg-slate-50 text-center text-xs text-slate-500">
                 Напишите ваш вопрос ниже — администратор ответит вам в этом диалоге.
@@ -615,6 +854,7 @@ export const NotificationsAndVkPage: React.FC = () => {
 
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <button
+                  type="button"
                   onClick={handleGenerateCode}
                   className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold"
                 >
@@ -624,6 +864,7 @@ export const NotificationsAndVkPage: React.FC = () => {
                 {vkStatus.linked && (
                   <>
                     <button
+                      type="button"
                       onClick={() => handleToggleVkEnabled(!vkStatus.notificationsEnabled)}
                       className="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white font-bold text-slate-700"
                     >
@@ -632,6 +873,7 @@ export const NotificationsAndVkPage: React.FC = () => {
                         : 'Включить доставку в VK'}
                     </button>
                     <button
+                      type="button"
                       onClick={handleUnlinkVk}
                       className="px-3.5 py-2.5 rounded-xl border border-rose-200 text-rose-700 font-bold"
                     >
@@ -641,6 +883,7 @@ export const NotificationsAndVkPage: React.FC = () => {
                 )}
 
                 <button
+                  type="button"
                   onClick={handleTriggerReminders}
                   className="px-3.5 py-2.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold"
                 >
@@ -673,7 +916,7 @@ export const NotificationsAndVkPage: React.FC = () => {
               )}
             </div>
 
-            {/* Interactive VK Bot Terminal for testing commands in TEST_LOG or REAL mode */}
+            {/* Interactive VK Bot Terminal */}
             <div className="p-5 rounded-2xl bg-slate-900 text-white space-y-3 text-xs">
               <div className="flex items-center justify-between">
                 <span className="font-display font-bold text-sm flex items-center gap-1.5 text-lime-300">
@@ -737,6 +980,7 @@ export const NotificationsAndVkPage: React.FC = () => {
 
           {notifications.some((n) => !n.read) && (
             <button
+              type="button"
               onClick={handleMarkAllRead}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold"
             >

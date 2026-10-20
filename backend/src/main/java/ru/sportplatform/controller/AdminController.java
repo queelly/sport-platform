@@ -73,6 +73,16 @@ public class AdminController {
         return ResponseEntity.ok(eventService.unpublishEventByAdmin(eventId, admin, req.reason()));
     }
 
+    @PostMapping("/events/{eventId}/republish")
+    public ResponseEntity<EventDetailDto> republishEvent(
+            @PathVariable UUID eventId,
+            @RequestBody(required = false) AdminReasonRequest req
+    ) {
+        var admin = SecurityUtils.requirePrincipal();
+        String reason = req != null && req.reason() != null ? req.reason() : "Восстановлено администратором";
+        return ResponseEntity.ok(eventService.republishEventByAdmin(eventId, admin, reason));
+    }
+
     @PostMapping("/events/{eventId}/discussions/{messageId}/hide")
     public ResponseEntity<DiscussionMessageDto> hideDiscussionMessage(
             @PathVariable UUID eventId,

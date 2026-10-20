@@ -1,16 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  Calendar,
   Check,
+  Flame,
   Flag,
+  Heart,
   MapPin,
+  Plus,
   Search,
+  SkipForward,
   Sparkles,
   UserCheck,
   UserMinus,
   UserPlus,
   Users,
   X,
+  Zap,
 } from 'lucide-react';
 import { apiFetch, ApiError, SKILL_LABELS, uploadAttachmentFile } from '../api';
 import { useAuth } from '../AuthContext';
@@ -18,12 +24,14 @@ import {
   EventCardDto,
   FriendshipDto,
   PublicUserProfileDto,
+  SportDto,
   SportInterestItemDto,
 } from '../types';
 import { EventCard } from '../components/EventCard';
+import { CustomSelect, RegionSelect } from '../components/UiControls';
 
 export const MyProfilePage: React.FC = () => {
-  const { user, sports, refreshMe } = useAuth();
+  const { user, sports, refreshMe, refreshSports } = useAuth();
   const [organizedEvents, setOrganizedEvents] = useState<EventCardDto[]>([]);
   const [participatingEvents, setParticipatingEvents] = useState<EventCardDto[]>([]);
   const [saving, setSaving] = useState(false);
@@ -32,7 +40,7 @@ export const MyProfilePage: React.FC = () => {
 
   // Editable fields
   const [displayName, setDisplayName] = useState(user?.displayName || '');
-  const [city, setCity] = useState(user?.city || '');
+  const [city, setCity] = useState(user?.city || 'Москва');
   const [district, setDistrict] = useState(user?.district || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [preferredFormats, setPreferredFormats] = useState(user?.preferredFormats || '');
@@ -49,10 +57,16 @@ export const MyProfilePage: React.FC = () => {
   const [avatarAttachmentId, setAvatarAttachmentId] = useState<string | undefined>(undefined);
   const [interests, setInterests] = useState<SportInterestItemDto[]>(user?.sportInterests || []);
 
+  // Add new sport directly inside profile (#15)
+  const [showAddSportForm, setShowAddSportForm] = useState(false);
+  const [newSportName, setNewSportName] = useState('');
+  const [newSportCategory, setNewSportCategory] = useState('Индивидуальные и командные дисциплины');
+  const [creatingSport, setCreatingSport] = useState(false);
+
   useEffect(() => {
     if (user) {
       setDisplayName(user.displayName);
-      setCity(user.city || '');
+      setCity(user.city || 'Москва');
       setDistrict(user.district || '');
       setBio(user.bio || '');
       setPreferredFormats(user.preferredFormats || '');
@@ -110,15 +124,76 @@ export const MyProfilePage: React.FC = () => {
     );
   };
 
+  const handleAddCustomSportInProfile = async () => {
+    if (!newSportName.trim()) return;
+    setCreatingSport(true);
+    setError(null);
+    try {
+      const created = await apiFetch<SportDto>('/api/v1/sports', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newSportName.trim(),
+          category: newSportCategory.trim() || 'Пользовательские виды спорта',
+          description: 'Добавлено участником из личного кабинета',
+        }),
+      });
+      await refreshSports();
+      setInterests((prev) => {
+        if (prev.some((x) => x.sportId === created.id)) return prev;
+        return [
+          ...prev,
+          {
+            sportId: created.id,
+            sportName: created.name,
+            skillLevel: 'AMATEUR',
+            primarySport: prev.length === 0,
+            wantToTryNew: false,
+            note: '',
+          },
+        ];
+      });
+      setNewSportName('');
+      setShowAddSportForm(false);
+      setFeedback(`Вид спорта «${created.name}» добавлен в каталог и в ваши интересы!`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Не удалось добавить вид спорта');
+    } finally {
+      setCreatingSport(false);
+    }
+  };
+
+  // Immediate avatar save & Navbar update (#12)
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setError(null);
     try {
       const uploaded = await uploadAttachmentFile(file, 'AVATAR');
       setAvatarAttachmentId(uploaded.id);
-      setFeedback('Аватар загружен! Нажмите «Сохранить профиль», чтобы применить.');
+      await apiFetch('/api/v1/profile/me', {
+        method: 'PUT',
+        body: JSON.stringify({
+          displayName,
+          city,
+          district,
+          bio,
+          avatarAttachmentId: uploaded.id,
+          preferredFormats,
+          preferredSchedule,
+          showInPartnerSearch,
+          showUpcomingEvents,
+          showFriendsList,
+          notifyInApp,
+          notifyVk,
+          sportInterests: interests,
+        }),
+      });
+      await refreshMe();
+      setFeedback('Фото профиля обновлено! Изменения сразу отображены в шапке сайта и в вашей анкете.');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Не удалось загрузить аватар');
+    } finally {
+      e.target.value = '';
     }
   };
 
@@ -166,7 +241,7 @@ export const MyProfilePage: React.FC = () => {
               <img
                 src={user.avatarUrl}
                 alt={user.displayName}
-                className="w-16 h-16 rounded-2xl object-cover border border-slate-200"
+                className="w-16 h-16 rounded-2xl object-cover border border-slate-200 shadow-sm"
               />
             ) : (
               <div className="w-16 h-16 rounded-2xl bg-blue-600 text-white font-display font-extrabold text-2xl flex items-center justify-center">
@@ -178,16 +253,24 @@ export const MyProfilePage: React.FC = () => {
                 {user.displayName}
               </h1>
               <div className="text-xs text-slate-500">
-                {user.email} • Роль: {user.globalRole === 'ADMIN' ? 'Администратор' : 'Участник / Организатор личных встреч'}
+                {user.email} • Роль:{' '}
+                {user.globalRole === 'ADMIN'
+                  ? 'Администратор'
+                  : 'Участник / Организатор встреч и сообществ'}
               </div>
               <label className="inline-block mt-1.5 cursor-pointer text-xs font-bold text-blue-600 hover:underline">
-                <span>Загрузить фото профиля</span>
-                <input type="file" accept=".jpg,.jpeg,.png,.webp" onChange={handleAvatarUpload} className="hidden" />
+                <span>Изменить фото профиля (применяется мгновенно)</span>
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,.gif"
+                  onChange={handleAvatarUpload}
+                  className="hidden"
+                />
               </label>
             </div>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link
               to="/notifications"
               className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold"
@@ -227,13 +310,8 @@ export const MyProfilePage: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Город</label>
-              <input
-                type="text"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
-              />
+              <label className="block text-xs font-bold text-slate-700 mb-1">Город / Регион</label>
+              <RegionSelect value={city} onChange={setCity} />
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Район / метро</label>
@@ -253,7 +331,7 @@ export const MyProfilePage: React.FC = () => {
               rows={2}
               value={bio}
               onChange={(e) => setBio(e.target.value)}
-              placeholder="Расскажите о своих спортивных целях и любимых дисциплинах..."
+              placeholder="Расскажите о своих спортивных целях, любимых дисциплинах и кого ищете для совместных тренировок..."
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
             />
           </div>
@@ -281,11 +359,57 @@ export const MyProfilePage: React.FC = () => {
             </div>
           </div>
 
-          {/* Sport interests */}
+          {/* Sport interests + Add custom sport (#15) */}
           <div className="space-y-3 pt-2 border-t border-slate-100">
-            <label className="block text-xs font-bold text-slate-800">
-              Мои спортивные интересы и уровень подготовки (используются для поиска партнёров)
-            </label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="block text-xs font-bold text-slate-800">
+                Мои спортивные интересы и уровень подготовки (используются для Спорт-Мэтча и поиска партнёров)
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowAddSportForm(!showAddSportForm)}
+                className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{showAddSportForm ? 'Скрыть добавление' : 'Добавить новый вид спорта'}</span>
+              </button>
+            </div>
+
+            {showAddSportForm && (
+              <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200 flex flex-col sm:flex-row items-stretch sm:items-end gap-2.5">
+                <div className="flex-1">
+                  <label className="block text-[11px] font-bold text-blue-900 mb-1">
+                    Название нового вида спорта *
+                  </label>
+                  <input
+                    type="text"
+                    value={newSportName}
+                    onChange={(e) => setNewSportName(e.target.value)}
+                    placeholder="Например: Сквош, Падел, Сапбординг, Боулдеринг..."
+                    className="w-full px-3 py-2 rounded-xl border border-blue-300 text-xs bg-white"
+                  />
+                </div>
+                <div className="sm:w-56">
+                  <label className="block text-[11px] font-bold text-blue-900 mb-1">Категория</label>
+                  <input
+                    type="text"
+                    value={newSportCategory}
+                    onChange={(e) => setNewSportCategory(e.target.value)}
+                    placeholder="Категория"
+                    className="w-full px-3 py-2 rounded-xl border border-blue-300 text-xs bg-white"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={creatingSport || !newSportName.trim()}
+                  onClick={handleAddCustomSportInProfile}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold shrink-0"
+                >
+                  {creatingSport ? '...' : '+ Добавить'}
+                </button>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-2">
               {sports.map((s) => {
                 const active = interests.some((i) => i.sportId === s.id);
@@ -294,7 +418,7 @@ export const MyProfilePage: React.FC = () => {
                     type="button"
                     key={s.id}
                     onClick={() => toggleSportInterest(s.id, s.name)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
                       active ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
@@ -312,22 +436,22 @@ export const MyProfilePage: React.FC = () => {
                     className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2 text-xs"
                   >
                     <span className="font-bold text-slate-900">{item.sportName}</span>
-                    <select
-                      value={item.skillLevel}
-                      onChange={(e) =>
-                        updateInterestLevel(
-                          item.sportId,
-                          e.target.value as SportInterestItemDto['skillLevel']
-                        )
-                      }
-                      className="px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-semibold"
-                    >
-                      {Object.entries(SKILL_LABELS).map(([k, v]) => (
-                        <option key={k} value={k}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="w-44">
+                      <CustomSelect
+                        size="sm"
+                        value={item.skillLevel}
+                        onChange={(val) =>
+                          updateInterestLevel(
+                            item.sportId,
+                            val as SportInterestItemDto['skillLevel']
+                          )
+                        }
+                        options={Object.entries(SKILL_LABELS).map(([k, v]) => ({
+                          value: k,
+                          label: v,
+                        }))}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -339,7 +463,7 @@ export const MyProfilePage: React.FC = () => {
             <div className="font-display font-bold text-sm text-slate-900">
               Настройки приватности и уведомлений
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
               <label className="inline-flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -347,20 +471,21 @@ export const MyProfilePage: React.FC = () => {
                   onChange={(e) => setShowInPartnerSearch(e.target.checked)}
                   className="rounded border-slate-300 text-blue-600"
                 />
-                <span className="font-medium text-slate-800">Показывать меня в поиске спортивных партнёров</span>
+                <span className="font-medium text-slate-800">Показывать меня в Спорт-Мэтче и поиске партнёров</span>
               </label>
 
               <div>
                 <span className="block font-bold text-slate-600 mb-1">Кто видит мои будущие записи:</span>
-                <select
+                <CustomSelect
+                  size="sm"
                   value={showUpcomingEvents}
-                  onChange={(e) => setShowUpcomingEvents(e.target.value as any)}
-                  className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white"
-                >
-                  <option value="ALL">Все пользователи</option>
-                  <option value="FRIENDS_ONLY">Только мои знакомые</option>
-                  <option value="NONE">Только я</option>
-                </select>
+                  onChange={(v) => setShowUpcomingEvents(v as any)}
+                  options={[
+                    { value: 'ALL', label: 'Все пользователи' },
+                    { value: 'FRIENDS_ONLY', label: 'Только мои знакомые' },
+                    { value: 'NONE', label: 'Только я' },
+                  ]}
+                />
               </div>
 
               <label className="inline-flex items-center gap-2 cursor-pointer">
@@ -432,6 +557,8 @@ export const PublicUserProfilePage: React.FC = () => {
 
   const [profile, setProfile] = useState<PublicUserProfileDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [inviteMessage, setInviteMessage] = useState('');
+  const [showInviteInput, setShowInviteInput] = useState(false);
 
   const loadProfile = async () => {
     if (!userId) return;
@@ -450,7 +577,7 @@ export const PublicUserProfilePage: React.FC = () => {
     loadProfile();
   }, [userId]);
 
-  const handleSendFriendRequest = async () => {
+  const handleSendFriendRequest = async (customMsg?: string) => {
     if (!user) {
       navigate('/login');
       return;
@@ -461,9 +588,12 @@ export const PublicUserProfilePage: React.FC = () => {
         method: 'POST',
         body: JSON.stringify({
           targetUserId: profile.id,
-          message: 'Привет! Увидел твой спортивный профиль, давай заниматься вместе!',
+          message:
+            customMsg?.trim() ||
+            'Привет! Увидел твой спортивный профиль, давай заниматься вместе!',
         }),
       });
+      setShowInviteInput(false);
       await loadProfile();
     } catch (err) {
       alert(err instanceof ApiError ? err.message : 'Не удалось отправить запрос');
@@ -490,9 +620,17 @@ export const PublicUserProfilePage: React.FC = () => {
       <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-9 shadow-sm space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-blue-600 text-white font-display font-extrabold text-2xl flex items-center justify-center">
-              {profile.displayName.charAt(0).toUpperCase()}
-            </div>
+            {profile.avatarUrl ? (
+              <img
+                src={profile.avatarUrl}
+                alt={profile.displayName}
+                className="w-16 h-16 rounded-2xl object-cover border border-slate-200 shadow-sm"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-2xl bg-blue-600 text-white font-display font-extrabold text-2xl flex items-center justify-center">
+                {profile.displayName.charAt(0).toUpperCase()}
+              </div>
+            )}
             <div>
               <h1 className="font-display font-extrabold text-2xl sm:text-3xl text-slate-900">
                 {profile.displayName}
@@ -512,13 +650,24 @@ export const PublicUserProfilePage: React.FC = () => {
           {user && user.id !== profile.id && (
             <div className="flex flex-wrap items-center gap-2">
               {profile.friendshipStatusWithViewer === 'NONE' && (
-                <button
-                  onClick={handleSendFriendRequest}
-                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  <span>Добавить в спортивные знакомые</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleSendFriendRequest()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    <span>Добавить в спортивные знакомые</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowInviteInput(!showInviteInput)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 text-xs font-bold"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Пригласить на тренировку</span>
+                  </button>
+                </>
               )}
               {profile.friendshipStatusWithViewer === 'ACCEPTED' && (
                 <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-100 text-emerald-900 text-xs font-bold">
@@ -530,12 +679,14 @@ export const PublicUserProfilePage: React.FC = () => {
                 (profile.friendshipIncomingForViewer ? (
                   <div className="flex gap-1.5">
                     <button
+                      type="button"
                       onClick={() => handleRespondFriend(true)}
                       className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold"
                     >
                       Принять запрос
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleRespondFriend(false)}
                       className="px-3 py-2 rounded-xl bg-rose-100 text-rose-800 text-xs font-bold"
                     >
@@ -560,6 +711,25 @@ export const PublicUserProfilePage: React.FC = () => {
             </div>
           )}
         </div>
+
+        {showInviteInput && (
+          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={inviteMessage}
+              onChange={(e) => setInviteMessage(e.target.value)}
+              placeholder="Напишите предложение (например: Привет! Пойдём завтра в 19:00 на корт в Лужниках?)..."
+              className="flex-1 px-3.5 py-2 rounded-xl border border-emerald-300 text-xs bg-white"
+            />
+            <button
+              type="button"
+              onClick={() => handleSendFriendRequest(inviteMessage)}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+            >
+              Отправить приглашение
+            </button>
+          </div>
+        )}
 
         {profile.bio && <p className="text-sm text-slate-700">{profile.bio}</p>}
 
@@ -613,8 +783,9 @@ export const PartnersAndFriendsPage: React.FC = () => {
   const { user, sports } = useAuth();
   const navigate = useNavigate();
 
-  const [tab, setTab] = useState<'PARTNERS' | 'FRIENDS'>('PARTNERS');
+  const [tab, setTab] = useState<'PARTNERS' | 'MATCH' | 'FRIENDS'>('PARTNERS');
   const [partners, setPartners] = useState<PublicUserProfileDto[]>([]);
+  const [recommendedPartners, setRecommendedPartners] = useState<PublicUserProfileDto[]>([]);
   const [friendships, setFriendships] = useState<FriendshipDto[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -623,6 +794,11 @@ export const PartnersAndFriendsPage: React.FC = () => {
   const [city, setCity] = useState('');
   const [skillLevel, setSkillLevel] = useState('');
   const [q, setQ] = useState('');
+
+  // Sport-Match (Dating-style deck) state (#10)
+  const [matchIndex, setMatchIndex] = useState(0);
+  const [customInviteMsg, setCustomInviteMsg] = useState('');
+  const [matchSentFeedback, setMatchSentFeedback] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -633,8 +809,13 @@ export const PartnersAndFriendsPage: React.FC = () => {
       if (skillLevel) params.set('skillLevel', skillLevel);
       if (q.trim()) params.set('q', q.trim());
 
-      const pList = await apiFetch<PublicUserProfileDto[]>(`/api/v1/partners/search?${params.toString()}`);
+      const [pList, allPList] = await Promise.all([
+        apiFetch<PublicUserProfileDto[]>(`/api/v1/partners/search?${params.toString()}`),
+        apiFetch<PublicUserProfileDto[]>('/api/v1/partners/search'),
+      ]);
       setPartners(pList);
+      setRecommendedPartners(allPList);
+      setMatchIndex(0);
 
       if (user) {
         const fList = await apiFetch<FriendshipDto[]>('/api/v1/friends');
@@ -649,9 +830,16 @@ export const PartnersAndFriendsPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [sportId, skillLevel, user]);
+  }, [sportId, city, skillLevel, user]);
 
-  const handleSendFriendRequest = async (targetUserId: string) => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadData();
+    }, 320);
+    return () => clearTimeout(timer);
+  }, [q]);
+
+  const handleSendFriendRequest = async (targetUserId: string, customMessage?: string) => {
     if (!user) {
       navigate('/login');
       return;
@@ -661,9 +849,13 @@ export const PartnersAndFriendsPage: React.FC = () => {
         method: 'POST',
         body: JSON.stringify({
           targetUserId,
-          message: 'Привет! Нашёл тебя в поиске спортивных партнёров, давай тренироваться вместе!',
+          message:
+            customMessage?.trim() ||
+            'Привет! Нашёл твою анкету в Спорт-Мэтче, давай проведём совместную тренировку!',
         }),
       });
+      setMatchSentFeedback('Заявка на совместную тренировку отправлена!');
+      setCustomInviteMsg('');
       await loadData();
     } catch (err) {
       alert(err instanceof ApiError ? err.message : 'Ошибка отправки запроса');
@@ -694,30 +886,57 @@ export const PartnersAndFriendsPage: React.FC = () => {
   const outgoingRequests = friendships.filter((f) => f.status === 'PENDING' && !f.incoming);
   const acceptedFriends = friendships.filter((f) => f.status === 'ACCEPTED');
 
+  const deckList = partners.length > 0 ? partners : recommendedPartners;
+  const currentMatchCard = deckList.length > 0 ? deckList[matchIndex % deckList.length] : null;
+
+  const computeCompatibility = (p: PublicUserProfileDto) => {
+    let score = 78;
+    if (p.matchReasons && p.matchReasons.length > 0) score += 12;
+    if (user?.city && p.city && user.city.toLowerCase() === p.city.toLowerCase()) score += 7;
+    return Math.min(99, score);
+  };
+
   return (
     <div className="space-y-8 pb-16">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-display font-extrabold text-2xl sm:text-3xl text-slate-900">
-            Поиск спортивных партнёров и Мои знакомые
+            Спорт-Мэтч, Поиск напарников и Знакомые
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Находите напарников по интересующим дисциплинам и поддерживайте постоянные спортивные связи
+            Находите напарников по уровню и графику в формате спортивных анкет или каталога
           </p>
         </div>
 
-        <div className="flex gap-2 p-1 rounded-2xl bg-slate-200/80">
+        <div className="flex flex-wrap gap-1.5 p-1 rounded-2xl bg-slate-200/80">
           <button
+            type="button"
             onClick={() => setTab('PARTNERS')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
               tab === 'PARTNERS' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-700'
             }`}
           >
-            Поиск спортивных партнёров ({partners.length})
+            Каталог анкет ({partners.length})
           </button>
           <button
+            type="button"
+            onClick={() => {
+              setTab('MATCH');
+              setMatchSentFeedback(null);
+            }}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
+              tab === 'MATCH'
+                ? 'bg-gradient-to-r from-orange-500 to-rose-600 text-white shadow-sm'
+                : 'text-slate-700 hover:text-slate-900'
+            }`}
+          >
+            <Flame className="w-3.5 h-3.5" />
+            <span>Спорт-Мэтч (Дейтинг)</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setTab('FRIENDS')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 ${
               tab === 'FRIENDS' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-700'
             }`}
           >
@@ -732,10 +951,170 @@ export const PartnersAndFriendsPage: React.FC = () => {
         </div>
       </div>
 
-      {tab === 'PARTNERS' ? (
+      {/* TAB: SPORT-MATCH INTERACTIVE DATING DECK (#10) */}
+      {tab === 'MATCH' ? (
+        <div className="max-w-xl mx-auto space-y-4">
+          {matchSentFeedback && (
+            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center justify-between">
+              <span>{matchSentFeedback}</span>
+              <button type="button" onClick={() => setMatchSentFeedback(null)}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {currentMatchCard ? (
+            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xl">
+              {/* Top hero banner of the match card */}
+              <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white p-6 sm:p-8 relative">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    {currentMatchCard.avatarUrl ? (
+                      <img
+                        src={currentMatchCard.avatarUrl}
+                        alt={currentMatchCard.displayName}
+                        className="w-20 h-20 rounded-3xl object-cover border-2 border-white/30 shadow-lg"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 rounded-3xl bg-blue-600 text-white font-display font-extrabold text-3xl flex items-center justify-center border-2 border-white/20">
+                        {currentMatchCard.displayName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[11px] font-bold mb-1.5">
+                        <Sparkles className="w-3 h-3" />
+                        <span>Совместимость {computeCompatibility(currentMatchCard)}%</span>
+                      </div>
+                      <h2 className="font-display font-extrabold text-2xl">
+                        {currentMatchCard.displayName}
+                      </h2>
+                      <div className="text-xs text-slate-300 flex items-center gap-1.5 mt-1">
+                        <MapPin className="w-3.5 h-3.5 text-lime-400" />
+                        <span>
+                          {currentMatchCard.city || 'Москва'}
+                          {currentMatchCard.district ? ` • ${currentMatchCard.district}` : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <span className="text-xs font-bold text-slate-400">
+                    Анкета {(matchIndex % deckList.length) + 1} / {deckList.length}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-6 sm:p-8 space-y-5">
+                {currentMatchCard.matchReasons && currentMatchCard.matchReasons.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {currentMatchCard.matchReasons.map((r, idx) => (
+                      <span
+                        key={idx}
+                        className="px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold"
+                      >
+                        🔥 {r}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-sm text-slate-700 leading-relaxed">
+                  {currentMatchCard.bio ||
+                    'Участник открыт к совместным тренировкам, спаррингам и командным выездам.'}
+                </p>
+
+                <div className="space-y-2">
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Дисциплины и уровень
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {currentMatchCard.sportInterests.map((si) => (
+                      <span
+                        key={si.sportId}
+                        className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-200 text-xs font-bold"
+                      >
+                        {si.sportName} • {SKILL_LABELS[si.skillLevel] || si.skillLevel}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200/70 text-xs">
+                  <div>
+                    <div className="font-bold text-slate-900 flex items-center gap-1">
+                      <Zap className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Формат тренировок</span>
+                    </div>
+                    <div className="text-slate-600 mt-0.5">
+                      {currentMatchCard.preferredFormats || 'Спарринги и командные игры'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-900 flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Когда удобно</span>
+                    </div>
+                    <div className="text-slate-600 mt-0.5">
+                      {currentMatchCard.preferredSchedule || 'Вечера будней и выходные'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick personalized training invite */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <input
+                    type="text"
+                    value={customInviteMsg}
+                    onChange={(e) => setCustomInviteMsg(e.target.value)}
+                    placeholder="Напишите сообщение для мэтча (например: Пойдём на тренировку в субботу?)..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMatchSentFeedback(null);
+                        setMatchIndex((i) => i + 1);
+                      }}
+                      className="inline-flex items-center justify-center gap-1.5 py-3 px-4 rounded-2xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-display font-bold text-xs transition-colors"
+                    >
+                      <SkipForward className="w-4 h-4" />
+                      <span>Следующая анкета</span>
+                    </button>
+
+                    <Link
+                      to={`/users/${currentMatchCard.id}`}
+                      className="inline-flex items-center justify-center gap-1.5 py-3 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-display font-bold text-xs transition-colors"
+                    >
+                      <span>Открыть профиль</span>
+                    </Link>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSendFriendRequest(currentMatchCard.id, customInviteMsg);
+                        setMatchIndex((i) => i + 1);
+                      }}
+                      className="col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5 py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-display font-bold text-xs shadow-md transition-colors"
+                    >
+                      <Heart className="w-4 h-4" />
+                      <span>Предложить тренировку</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-slate-200 p-10 text-center text-sm text-slate-600">
+              Анкеты загружаются...
+            </div>
+          )}
+        </div>
+      ) : tab === 'PARTNERS' ? (
         <div className="space-y-6">
           {/* Search filters */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="relative">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -743,52 +1122,36 @@ export const PartnersAndFriendsPage: React.FC = () => {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && loadData()}
-                placeholder="Имя или интересы..."
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm"
+                placeholder="Имя, вид спорта или интересы..."
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
-            <select
+            <CustomSelect
               value={sportId}
-              onChange={(e) => setSportId(e.target.value)}
-              className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
-            >
-              <option value="">Любой вид спорта</option>
-              {sports.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+              onChange={setSportId}
+              options={[
+                { value: '', label: 'Любой вид спорта' },
+                ...sports.map((s) => ({ value: s.id, label: s.name })),
+              ]}
+            />
 
-            <select
+            <CustomSelect
               value={skillLevel}
-              onChange={(e) => setSkillLevel(e.target.value)}
-              className="px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white"
-            >
-              <option value="">Любой уровень</option>
-              {Object.entries(SKILL_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
+              onChange={setSkillLevel}
+              options={[
+                { value: '', label: 'Любой уровень подготовки' },
+                ...Object.entries(SKILL_LABELS).map(([k, v]) => ({ value: k, label: v })),
+              ]}
+            />
 
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="Город..."
-                className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 text-sm"
-              />
-              <button
-                onClick={loadData}
-                className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold"
-              >
-                Найти
-              </button>
-            </div>
+            <RegionSelect
+              value={city}
+              onChange={setCity}
+              allowAll
+              allLabel="Все города РФ"
+              placeholder="Город..."
+            />
           </div>
 
           {loading ? (
@@ -798,8 +1161,100 @@ export const PartnersAndFriendsPage: React.FC = () => {
               ))}
             </div>
           ) : partners.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-600">
-              Спортсменов по заданным критериям не найдено. Попробуйте сбросить фильтр.
+            <div className="space-y-6">
+              <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-3">
+                <div className="font-display font-bold text-base text-slate-900">
+                  По точным параметрам фильтра анкет не нашлось
+                </div>
+                <p className="text-xs text-slate-600 max-w-md mx-auto">
+                  Попробуйте сбросить фильтры или посмотрите рекомендуемых спортивных напарников ниже.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSportId('');
+                    setCity('');
+                    setSkillLevel('');
+                    setQ('');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold"
+                >
+                  Сбросить фильтры
+                </button>
+              </div>
+
+              {recommendedPartners.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="font-display font-bold text-base text-slate-900 flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-blue-600" />
+                    <span>Рекомендуемые спортивные партнёры на платформе</span>
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {recommendedPartners.map((p) => (
+                      <div
+                        key={p.id}
+                        className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between space-y-4"
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <Link to={`/users/${p.id}`} className="flex items-center gap-3 group">
+                              {p.avatarUrl ? (
+                                <img
+                                  src={p.avatarUrl}
+                                  alt={p.displayName}
+                                  className="w-12 h-12 rounded-2xl object-cover border border-slate-200"
+                                />
+                              ) : (
+                                <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white font-display font-bold text-lg flex items-center justify-center">
+                                  {p.displayName.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                              <div>
+                                <div className="font-display font-bold text-base text-slate-900 group-hover:text-blue-600">
+                                  {p.displayName}
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                  {p.city || 'Город не указан'}
+                                  {p.district ? ` • ${p.district}` : ''}
+                                </div>
+                              </div>
+                            </Link>
+                          </div>
+                          {p.bio && <p className="text-xs text-slate-600 line-clamp-2">{p.bio}</p>}
+                          <div className="flex flex-wrap gap-1.5">
+                            {p.sportInterests.map((si) => (
+                              <span
+                                key={si.sportId}
+                                className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold"
+                              >
+                                {si.sportName} ({SKILL_LABELS[si.skillLevel] || si.skillLevel})
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                          <Link
+                            to={`/users/${p.id}`}
+                            className="text-xs font-bold text-slate-700 hover:text-blue-600"
+                          >
+                            Открыть профиль →
+                          </Link>
+                          {p.friendshipStatusWithViewer === 'NONE' && (
+                            <button
+                              type="button"
+                              onClick={() => handleSendFriendRequest(p.id)}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              <span>Предложить тренировку</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -811,9 +1266,17 @@ export const PartnersAndFriendsPage: React.FC = () => {
                   <div className="space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <Link to={`/users/${p.id}`} className="flex items-center gap-3 group">
-                        <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white font-display font-bold text-lg flex items-center justify-center">
-                          {p.displayName.charAt(0).toUpperCase()}
-                        </div>
+                        {p.avatarUrl ? (
+                          <img
+                            src={p.avatarUrl}
+                            alt={p.displayName}
+                            className="w-12 h-12 rounded-2xl object-cover border border-slate-200"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white font-display font-bold text-lg flex items-center justify-center">
+                            {p.displayName.charAt(0).toUpperCase()}
+                          </div>
+                        )}
                         <div>
                           <div className="font-display font-bold text-base text-slate-900 group-hover:text-blue-600">
                             {p.displayName}
@@ -858,11 +1321,12 @@ export const PartnersAndFriendsPage: React.FC = () => {
 
                     {p.friendshipStatusWithViewer === 'NONE' && (
                       <button
+                        type="button"
                         onClick={() => handleSendFriendRequest(p.id)}
                         className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold"
                       >
                         <UserPlus className="w-3.5 h-3.5" />
-                        <span>Добавить в знакомые</span>
+                        <span>Предложить тренировку</span>
                       </button>
                     )}
                     {p.friendshipStatusWithViewer === 'PENDING' && (
@@ -914,6 +1378,7 @@ export const PartnersAndFriendsPage: React.FC = () => {
                     </div>
                     <div className="flex gap-2 shrink-0">
                       <button
+                        type="button"
                         onClick={() => handleRespond(f.id, true)}
                         className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold"
                       >
@@ -921,6 +1386,7 @@ export const PartnersAndFriendsPage: React.FC = () => {
                         <span>Принять</span>
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleRespond(f.id, false)}
                         className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-rose-100 text-rose-800 text-xs font-bold"
                       >
@@ -956,6 +1422,7 @@ export const PartnersAndFriendsPage: React.FC = () => {
                       <div className="text-xs text-slate-500">Ожидает подтверждения</div>
                     </div>
                     <button
+                      type="button"
                       onClick={() => handleRemoveOrCancel(f.id)}
                       className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                     >
@@ -974,7 +1441,7 @@ export const PartnersAndFriendsPage: React.FC = () => {
             </h2>
             {acceptedFriends.length === 0 ? (
               <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-xs text-slate-500">
-                В вашем списке спортивных знакомых пока никого нет. Перейдите на вкладку «Поиск спортивных партнёров», чтобы найти единомышленников!
+                В вашем списке спортивных знакомых пока никого нет. Перейдите на вкладку «Спорт-Мэтч» или «Каталог анкет», чтобы найти единомышленников!
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1004,6 +1471,7 @@ export const PartnersAndFriendsPage: React.FC = () => {
                     </div>
 
                     <button
+                      type="button"
                       onClick={() => handleRemoveOrCancel(f.id)}
                       title="Удалить из списка знакомых"
                       className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold"

@@ -19,6 +19,9 @@ public class OrganizationSubscription {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @Column(name = "member_role", nullable = false, length = 30)
+    private String memberRole = "MEMBER";
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -26,6 +29,7 @@ public class OrganizationSubscription {
     public void prePersist() {
         if (id == null) id = UUID.randomUUID();
         if (createdAt == null) createdAt = Instant.now();
+        if (memberRole == null || memberRole.isBlank()) memberRole = "MEMBER";
     }
 
     public UUID getId() { return id; }
@@ -34,6 +38,8 @@ public class OrganizationSubscription {
     public void setOrganization(Organization organization) { this.organization = organization; }
     public User getUser() { return user; }
     public void setUser(User user) { this.user = user; }
+    public String getMemberRole() { return memberRole; }
+    public void setMemberRole(String memberRole) { this.memberRole = memberRole; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 }

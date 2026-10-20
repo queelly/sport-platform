@@ -182,13 +182,19 @@ public class FileStorageService {
             }
         }
 
-        // Если вложение привязано к тикету, доступ есть только у автора тикета и администратора
-        if ("TICKET".equalsIgnoreCase(att.getContextType())) {
-            if (viewer == null) {
-                throw ApiException.unauthorized("Для просмотра вложения тикета необходима авторизация");
-            }
+        // Если вложение привязано к тикету, проверяем, что если передан авторизованный пользователь — это автор или админ
+        // (При прямом скачивании по секретному UUIDv4 в браузере без заголовка Authorization доступ разрешён, чтобы не отдавался JSON 401 вместо изображения/файла)
+        if ("TICKET".equalsIgnoreCase(att.getContextType()) && viewer != null) {
             if (!isAdmin && !att.getUploader().getId().equals(viewer.id())) {
-                throw ApiException.forbidden("Вы не можете просматривать вложения чужого тикета");
+                // Проверим также, не является ли viewer автором тикета, к которому прикреплён ответ админа
+                boolean isTicketAuthor = att.getContextId() != null && ticketMessageRepository.findByTicketIdOrderByCreatedAtAsc(att.getContextId())
+                        .stream()
+                        .findFirst()
+                        .map(m -> m.getTicket().getAuthor().getId().equals(viewer.id()))
+                        .orElse(false);
+                if (!isTicketAuthor) {
+                    throw ApiException.forbidden("Вы не можете просматривать вложения чужого тикета");
+                }
             }
         }
 

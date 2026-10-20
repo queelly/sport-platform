@@ -12,4 +12,5 @@ public interface OrganizationSubscriptionRepository extends JpaRepository<Organi
     boolean existsByOrganizationIdAndUserId(UUID organizationId, UUID userId);
     long countByOrganizationId(UUID organizationId);
     List<OrganizationSubscription> findByOrganizationId(UUID organizationId);
+    List<OrganizationSubscription> findByUserId(UUID userId);
 }

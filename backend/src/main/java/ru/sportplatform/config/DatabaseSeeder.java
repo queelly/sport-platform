@@ -289,9 +289,9 @@ public class DatabaseSeeder implements CommandLineRunner {
         evTennis.setStatus(EventStatus.PUBLISHED);
         evTennis = eventRepository.save(evTennis);
 
-        // Событие 3: Регулярная серия от одобренной организации «Темп»
+        // Событие 3: Еженедельная тренировка от одобренной организации «Темп»
         EventSeries runSeries = new EventSeries();
-        runSeries.setTitle("Субботняя набережная 10 км с клубом «Темп» (Регулярная серия)");
+        runSeries.setTitle("Субботняя набережная 10 км с клубом «Темп»");
         runSeries.setDescription("Еженедельная клубная пробежка по набережным Москвы-реки в трёх темповых группах (5:00, 5:40 и 6:15 мин/км) с разминкой и заминкой от координаторов клуба.");
         runSeries.setSport(running);
         runSeries.setOrganizer(clubOwnerApproved);

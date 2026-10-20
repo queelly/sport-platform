@@ -37,6 +37,12 @@ public class SocialAndProfileController {
         return ResponseEntity.ok(socialService.getPublicProfile(userId, viewer));
     }
 
+    @GetMapping("/users")
+    public ResponseEntity<List<PublicUserProfileDto>> listUsersDirectory(@RequestParam(required = false) String q) {
+        var viewer = SecurityUtils.getCurrentPrincipalOptional().orElse(null);
+        return ResponseEntity.ok(socialService.listActiveUsersDirectory(q, viewer));
+    }
+
     @GetMapping("/partners/search")
     public ResponseEntity<List<PublicUserProfileDto>> searchPartners(
             @RequestParam(required = false) UUID sportId,

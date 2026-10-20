@@ -111,6 +111,12 @@ public class EventController {
         return ResponseEntity.ok(eventService.cancelEventByOrganizer(eventId, viewer, safeReq));
     }
 
+    @PostMapping("/{eventId}/restore")
+    public ResponseEntity<EventDetailDto> restoreEventByOrganizer(@PathVariable UUID eventId) {
+        var viewer = SecurityUtils.requirePrincipal();
+        return ResponseEntity.ok(eventService.restoreEventByOrganizer(eventId, viewer));
+    }
+
     @GetMapping(value = "/{eventId}/ics", produces = "text/calendar;charset=UTF-8")
     public ResponseEntity<byte[]> exportIcsCalendar(@PathVariable UUID eventId) {
         String ics = eventService.generateIcsCalendar(eventId);

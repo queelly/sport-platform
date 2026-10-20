@@ -103,6 +103,17 @@ public class SocialAndProfileService {
     }
 
     @Transactional(readOnly = true)
+    public List<PublicUserProfileDto> listActiveUsersDirectory(String query, UserPrincipal viewer) {
+        return userRepository.findAll().stream()
+                .filter(User::isActive)
+                .filter(u -> viewer == null || !u.getId().equals(viewer.id()))
+                .filter(u -> query == null || query.isBlank() || EventService.fuzzyTextMatches(query, u.getDisplayName(), u.getEmail(), u.getCity()))
+                .limit(50)
+                .map(u -> buildPublicProfileDto(u, viewer, null, null))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<PublicUserProfileDto> searchSportPartners(
             UUID sportId,
             String city,
@@ -112,18 +123,25 @@ public class SocialAndProfileService {
     ) {
         List<User> candidates = userRepository.findByActiveTrueAndShowInPartnerSearchTrueOrderByCreatedAtDesc();
         return candidates.stream()
-                .filter(u -> u.getGlobalRole() == GlobalRole.USER)
                 .filter(u -> viewer == null || !u.getId().equals(viewer.id()))
-                .filter(u -> city == null || city.isBlank() || (u.getCity() != null && u.getCity().toLowerCase(Locale.ROOT).contains(city.trim().toLowerCase(Locale.ROOT))))
-                .filter(u -> {
-                    if (query == null || query.isBlank()) return true;
-                    String q = query.trim().toLowerCase(Locale.ROOT);
-                    return u.getDisplayName().toLowerCase(Locale.ROOT).contains(q)
-                            || (u.getBio() != null && u.getBio().toLowerCase(Locale.ROOT).contains(q))
-                            || (u.getPreferredFormats() != null && u.getPreferredFormats().toLowerCase(Locale.ROOT).contains(q));
-                })
+                .filter(u -> city == null || city.isBlank() || EventService.fuzzyCityMatches(city, u.getCity()))
                 .map(u -> buildPublicProfileDto(u, viewer, sportId, skillLevel))
                 .filter(dto -> {
+                    if (query != null && !query.isBlank()) {
+                        String sportsCombined = dto.sportInterests().stream()
+                                .map(SportInterestItemDto::sportName)
+                                .reduce("", (a, b) -> a + " " + b);
+                        boolean textMatch = EventService.fuzzyTextMatches(
+                                query,
+                                dto.displayName(),
+                                dto.bio(),
+                                dto.preferredFormats(),
+                                dto.city(),
+                                dto.district(),
+                                sportsCombined
+                        );
+                        if (!textMatch) return false;
+                    }
                     if (sportId == null && skillLevel == null) return true;
                     return dto.sportInterests().stream().anyMatch(si ->
                             (sportId == null || si.sportId().equals(sportId))

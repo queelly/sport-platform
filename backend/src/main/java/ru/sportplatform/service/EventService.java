@@ -74,6 +74,10 @@ public class EventService {
         User creator = userRepository.findById(creatorUserId)
                 .orElseThrow(() -> ApiException.unauthorized("Пользователь не найден"));
 
+        if (req.startsAt().isBefore(Instant.now().minus(5, ChronoUnit.MINUTES))) {
+            throw ApiException.badRequest("Нельзя создать мероприятие в прошлом. Пожалуйста, укажите будущую дату и время начала.");
+        }
+
         Sport sport;
         if (req.newSportName() != null && !req.newSportName().isBlank()) {
             sport = sportService.getOrCreateByName(req.newSportName(), req.newSportCategory(), creatorUserId);
@@ -88,8 +92,8 @@ public class EventService {
         if (req.organizationId() != null) {
             organization = organizationRepository.findById(req.organizationId())
                     .orElseThrow(() -> ApiException.notFound("Организация не найдена"));
-            if (!organization.getOwner().getId().equals(creatorUserId) && creator.getGlobalRole() != GlobalRole.ADMIN) {
-                throw ApiException.forbidden("Вы не являетесь представителем выбранной организации");
+            if (!canUserManageOrg(organization, creatorUserId) && creator.getGlobalRole() != GlobalRole.ADMIN) {
+                throw ApiException.forbidden("Вы не являетесь создателем или администратором выбранного сообщества");
             }
             if (organization.getStatus() != OrganizationStatus.APPROVED) {
                 throw ApiException.forbidden("Невозможно опубликовать мероприятие от имени организации до её одобрения администратором (текущий статус: " + organization.getStatus() + ")");
@@ -117,6 +121,7 @@ public class EventService {
             series.setLocationAddress(req.locationAddress().trim());
             series.setLatitude(req.latitude());
             series.setLongitude(req.longitude());
+            series.setCoverAttachmentId(req.coverAttachmentId());
 
             ZonedDateTime zdt = req.startsAt().atZone(DEFAULT_ZONE);
             int dow = req.recurringDayOfWeek() != null ? req.recurringDayOfWeek() : zdt.getDayOfWeek().getValue();
@@ -166,6 +171,7 @@ public class EventService {
             primaryEvent.setParticipationConditions(req.participationConditions());
             primaryEvent.setWhatToBring(req.whatToBring());
             primaryEvent.setMaxParticipants(req.maxParticipants());
+            primaryEvent.setCoverAttachmentId(req.coverAttachmentId());
             primaryEvent.setStatus(EventStatus.PUBLISHED);
             primaryEvent = eventRepository.save(primaryEvent);
         }
@@ -246,10 +252,11 @@ public class EventService {
         occ.setEndsAt(endInst);
         occ.setJoinMode(series.getJoinMode());
         occ.setSkillLevel(series.getSkillLevel());
-        occ.setActivityFormat("Регулярная серия");
+        occ.setActivityFormat("Еженедельно");
         occ.setParticipationConditions(series.getParticipationConditions());
         occ.setWhatToBring(series.getWhatToBring());
         occ.setMaxParticipants(series.getMaxParticipants());
+        occ.setCoverAttachmentId(series.getCoverAttachmentId());
         occ.setStatus(EventStatus.PUBLISHED);
         return occ;
     }
@@ -268,17 +275,22 @@ public class EventService {
         List<Event> events = eventRepository.findByStatusOrderByStartsAtAsc(EventStatus.PUBLISHED);
         return events.stream()
                 .filter(e -> sportId == null || e.getSport().getId().equals(sportId))
-                .filter(e -> city == null || city.isBlank() || e.getCity().toLowerCase(Locale.ROOT).contains(city.trim().toLowerCase(Locale.ROOT)))
+                .filter(e -> city == null || city.isBlank() || fuzzyCityMatches(city, e.getCity()))
                 .filter(e -> joinMode == null || e.getJoinMode() == joinMode)
                 .filter(e -> skillLevel == null || e.getSkillLevel() == skillLevel || e.getSkillLevel() == SkillLevel.ANY)
                 .filter(e -> recurring == null || e.isRecurringOccurrence() == recurring)
                 .filter(e -> {
                     if (query == null || query.isBlank()) return true;
-                    String q = query.trim().toLowerCase(Locale.ROOT);
-                    return e.getTitle().toLowerCase(Locale.ROOT).contains(q)
-                            || e.getDescription().toLowerCase(Locale.ROOT).contains(q)
-                            || e.getLocationAddress().toLowerCase(Locale.ROOT).contains(q)
-                            || e.getSport().getName().toLowerCase(Locale.ROOT).contains(q);
+                    return fuzzyTextMatches(
+                            query,
+                            e.getTitle(),
+                            e.getDescription(),
+                            e.getLocationAddress(),
+                            e.getCity(),
+                            e.getSport().getName(),
+                            e.getOrganization() != null ? e.getOrganization().getName() : "",
+                            e.getOrganizer().getDisplayName()
+                    );
                 })
                 .map(e -> toCardDto(e, viewer))
                 .filter(dto -> {
@@ -334,6 +346,10 @@ public class EventService {
     public EventDetailDto joinOrApply(UUID eventId, UserPrincipal viewer, String comment) {
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> ApiException.notFound("Мероприятие не найдено"));
+
+        if (canManageEvent(event, viewer)) {
+            throw ApiException.conflict("Вы являетесь организатором этого мероприятия и уже участвуете в его проведении");
+        }
 
         if (event.getStatus() == EventStatus.UNPUBLISHED_BY_ADMIN) {
             throw ApiException.conflict("Мероприятие снято с публикации администратором. Запись невозможна.");
@@ -405,7 +421,7 @@ public class EventService {
                 .orElseThrow(() -> ApiException.notFound("Мероприятие не найдено"));
 
         if (!canManageEvent(event, organizerViewer)) {
-            throw ApiException.forbidden("Только организатор мероприятия или представитель организации может рассматривать заявки участников");
+            throw ApiException.forbidden("Только организатор мероприятия или администратор сообщества может рассматривать заявки участников");
         }
 
         EventParticipation part = participationRepository.findById(participationId)
@@ -464,7 +480,6 @@ public class EventService {
         part.setStatus(ParticipationStatus.CANCELLED_BY_USER);
         participationRepository.save(part);
 
-        // Если освободилось место и есть участники в листе ожидания (Waitlist), продвигаем первого
         if (wasConfirmed && event.getJoinMode() == JoinMode.OPEN) {
             List<EventParticipation> waitlist = participationRepository.findByEventIdAndStatusOrderByCreatedAtAsc(eventId, ParticipationStatus.WAITLISTED);
             if (!waitlist.isEmpty()) {
@@ -496,6 +511,10 @@ public class EventService {
         boolean timeOrPlaceChanged = !event.getStartsAt().equals(req.startsAt())
                 || !event.getLocationAddress().equals(req.locationAddress().trim());
 
+        if (req.sportId() != null) {
+            sportRepository.findById(req.sportId()).ifPresent(event::setSport);
+        }
+
         event.setTitle(req.title().trim());
         event.setDescription(req.description().trim());
         event.setCity(req.city().trim());
@@ -503,13 +522,18 @@ public class EventService {
         event.setLatitude(req.latitude());
         event.setLongitude(req.longitude());
         event.setStartsAt(req.startsAt());
-        event.setEndsAt(req.endsAt() != null ? req.endsAt() : req.startsAt().plus(90, ChronoUnit.MINUTES));
+        event.setEndsAt(req.endsAt() != null && req.endsAt().isAfter(req.startsAt())
+                ? req.endsAt()
+                : req.startsAt().plus(90, ChronoUnit.MINUTES));
         event.setJoinMode(req.joinMode());
         event.setSkillLevel(req.skillLevel());
         event.setActivityFormat(req.activityFormat());
         event.setParticipationConditions(req.participationConditions());
         event.setWhatToBring(req.whatToBring());
         event.setMaxParticipants(req.maxParticipants());
+        if (req.coverAttachmentId() != null) {
+            event.setCoverAttachmentId(req.coverAttachmentId());
+        }
         if (event.isRecurringOccurrence()) {
             event.setModifiedOccurrence(true);
         }
@@ -566,11 +590,31 @@ public class EventService {
     }
 
     @Transactional
+    public EventDetailDto restoreEventByOrganizer(UUID eventId, UserPrincipal viewer) {
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> ApiException.notFound("Мероприятие не найдено"));
+        if (!canManageEvent(event, viewer)) {
+            throw ApiException.forbidden("Только организатор может возобновить встречу");
+        }
+        if (event.getStatus() == EventStatus.UNPUBLISHED_BY_ADMIN && !viewer.isAdmin()) {
+            throw ApiException.forbidden("Мероприятие снято с публикации администратором. Обратитесь в поддержку или к модератору.");
+        }
+        event.setStatus(EventStatus.PUBLISHED);
+        event.setCancellationReason(null);
+        eventRepository.save(event);
+        return getEventDetail(eventId, viewer);
+    }
+
+    @Transactional
     public EventDetailDto unpublishEventByAdmin(UUID eventId, UserPrincipal adminViewer, String reason) {
         User admin = userRepository.findById(adminViewer.id())
                 .orElseThrow(() -> ApiException.unauthorized("Администратор не найден"));
         Event event = eventRepository.findById(eventId)
                 .orElseThrow(() -> ApiException.notFound("Мероприятие не найдено"));
+
+        if (event.getStatus() == EventStatus.UNPUBLISHED_BY_ADMIN) {
+            throw ApiException.conflict("Мероприятие уже снято с публикации");
+        }
 
         String prevState = event.getStatus().name();
         event.setStatus(EventStatus.UNPUBLISHED_BY_ADMIN);
@@ -611,6 +655,43 @@ public class EventService {
         return getEventDetail(eventId, adminViewer);
     }
 
+    @Transactional
+    public EventDetailDto republishEventByAdmin(UUID eventId, UserPrincipal adminViewer, String reason) {
+        User admin = userRepository.findById(adminViewer.id())
+                .orElseThrow(() -> ApiException.unauthorized("Администратор не найден"));
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> ApiException.notFound("Мероприятие не найдено"));
+
+        if (event.getStatus() == EventStatus.PUBLISHED) {
+            throw ApiException.conflict("Мероприятие уже опубликовано");
+        }
+
+        String prevState = event.getStatus().name();
+        event.setStatus(EventStatus.PUBLISHED);
+        event.setModerationReason(null);
+        eventRepository.save(event);
+
+        auditLogService.record(
+                admin,
+                "REPUBLISH_EVENT",
+                "EVENT",
+                event.getId(),
+                prevState,
+                EventStatus.PUBLISHED.name(),
+                reason != null && !reason.isBlank() ? reason : "Возвращено в публикацию администратором"
+        );
+
+        notificationService.notifyUser(
+                event.getOrganizer(),
+                NotificationType.EVENT_UPDATED,
+                "Мероприятие «" + event.getTitle() + "» возвращено в публикацию!",
+                "Администратор восстановил публикацию вашего мероприятия в каталоге.",
+                "/events/" + event.getId()
+        );
+
+        return getEventDetail(eventId, adminViewer);
+    }
+
     @Transactional(readOnly = true)
     public List<EventCardDto> listAllEventsForAdmin(UserPrincipal adminViewer) {
         return eventRepository.findAllByOrderByStartsAtAsc()
@@ -641,7 +722,7 @@ public class EventService {
         boolean privileged = viewer != null && viewer.isAdmin();
         if (!privileged && viewer != null) {
             privileged = organizationRepository.findById(orgId)
-                    .map(o -> o.getOwner().getId().equals(viewer.id()))
+                    .map(o -> canUserManageOrg(o, viewer.id()))
                     .orElse(false);
         }
         List<Event> list = privileged
@@ -673,11 +754,6 @@ public class EventService {
                 + "END:VCALENDAR\r\n";
     }
 
-    /**
-     * Фоновый планировщик:
-     * 1) поддерживает горизонт регулярных встреч;
-     * 2) отправляет идемпотентные напоминания за 24ч и за 2ч до старта подтверждённым участникам.
-     */
     @Scheduled(fixedDelay = 60000)
     @Transactional
     public void runScheduledMaintenanceAndReminders() {
@@ -740,10 +816,18 @@ public class EventService {
     public boolean canManageEvent(Event event, UserPrincipal viewer) {
         if (viewer == null) return false;
         if (event.getOrganizer().getId().equals(viewer.id())) return true;
-        if (event.getOrganization() != null && event.getOrganization().getOwner().getId().equals(viewer.id())) {
+        if (event.getOrganization() != null && canUserManageOrg(event.getOrganization(), viewer.id())) {
             return true;
         }
         return false;
+    }
+
+    private boolean canUserManageOrg(Organization org, UUID userId) {
+        if (org == null || userId == null) return false;
+        if (org.getOwner().getId().equals(userId)) return true;
+        return subscriptionRepository.findByOrganizationIdAndUserId(org.getId(), userId)
+                .map(s -> "ADMIN".equalsIgnoreCase(s.getMemberRole()))
+                .orElse(false);
     }
 
     public EventCardDto toCardDto(Event e, UserPrincipal viewer) {
@@ -760,6 +844,14 @@ public class EventService {
 
         String orgAvatar = e.getOrganizer().getAvatarAttachmentId() != null
                 ? "/api/v1/attachments/" + e.getOrganizer().getAvatarAttachmentId() + "/content"
+                : null;
+
+        UUID coverId = e.getCoverAttachmentId() != null
+                ? e.getCoverAttachmentId()
+                : (e.getSeries() != null ? e.getSeries().getCoverAttachmentId() : null);
+
+        String coverUrl = coverId != null
+                ? "/api/v1/attachments/" + coverId + "/content"
                 : null;
 
         return new EventCardDto(
@@ -796,6 +888,8 @@ public class EventService {
                 e.getModerationReason(),
                 e.getCancellationReason(),
                 viewerStatus,
+                coverUrl,
+                canManageEvent(e, viewer),
                 e.getCreatedAt()
         );
     }
@@ -830,5 +924,82 @@ public class EventService {
                 );
             }
         }
+    }
+
+    // =========================================================================
+    // УМНЫЙ НЕЧЁТКИЙ ПОИСК (С УЧЁТОМ ДЕФИСОВ, «Ё/Е», ТОКЕНОВ И ОПЕЧАТОК)
+    // =========================================================================
+
+    public static String normalizeSearchText(String input) {
+        if (input == null) return "";
+        return input.toLowerCase(Locale.ROOT)
+                .replace('ё', 'е')
+                .replace('-', ' ')
+                .replaceAll("[^a-zа-я0-9\\s]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    public static boolean fuzzyCityMatches(String filterCity, String entityCity) {
+        if (filterCity == null || filterCity.isBlank()) return true;
+        if (entityCity == null || entityCity.isBlank()) return false;
+        String normFilter = normalizeSearchText(filterCity);
+        String normEntity = normalizeSearchText(entityCity);
+        if (normEntity.contains(normFilter) || normFilter.contains(normEntity)) return true;
+        return fuzzyTextMatches(filterCity, entityCity);
+    }
+
+    public static boolean fuzzyTextMatches(String rawQuery, String... targets) {
+        String normQuery = normalizeSearchText(rawQuery);
+        if (normQuery.isEmpty()) return true;
+
+        StringBuilder combined = new StringBuilder();
+        for (String t : targets) {
+            if (t != null && !t.isBlank()) {
+                combined.append(normalizeSearchText(t)).append(" ");
+            }
+        }
+        String haystack = combined.toString().trim();
+        if (haystack.isEmpty()) return false;
+        if (haystack.contains(normQuery)) return true;
+
+        String[] queryTokens = normQuery.split(" ");
+        String[] hayWords = haystack.split(" ");
+
+        for (String qToken : queryTokens) {
+            if (qToken.isEmpty()) continue;
+            boolean tokenMatched = haystack.contains(qToken);
+            if (!tokenMatched && qToken.length() >= 4) {
+                String stem = qToken.substring(0, Math.min(qToken.length() - 1, 5));
+                int maxDist = qToken.length() >= 6 ? 2 : 1;
+                for (String hw : hayWords) {
+                    if (hw.length() >= 3 && (hw.startsWith(stem) || levenshtein(qToken, hw) <= maxDist)) {
+                        tokenMatched = true;
+                        break;
+                    }
+                }
+            }
+            if (!tokenMatched) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static int levenshtein(String a, String b) {
+        if (Math.abs(a.length() - b.length()) > 2) return 3;
+        int[][] dp = new int[a.length() + 1][b.length() + 1];
+        for (int i = 0; i <= a.length(); i++) dp[i][0] = i;
+        for (int j = 0; j <= b.length(); j++) dp[0][j] = j;
+        for (int i = 1; i <= a.length(); i++) {
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                dp[i][j] = Math.min(
+                        Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1),
+                        dp[i - 1][j - 1] + cost
+                );
+            }
+        }
+        return dp[a.length()][b.length()];
     }
 }

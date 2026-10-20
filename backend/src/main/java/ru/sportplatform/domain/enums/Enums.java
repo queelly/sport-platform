@@ -35,7 +35,8 @@ public class Enums {
         PENDING_REVIEW,
         APPROVED,
         REJECTED,
-        NEEDS_REVISION
+        NEEDS_REVISION,
+        SUSPENDED
     }
 
     public enum JoinMode {

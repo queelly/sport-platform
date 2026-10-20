@@ -12,6 +12,134 @@
     font-family: 'Onest', system-ui, -apple-system, sans-serif;
     letter-spacing: -0.02em;
   }
+
+  /* Custom styled select inputs across the site (#1 & #6) */
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1rem;
+    padding-right: 2.35rem !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  select:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  }
+}
+
+/* Marquee animation for overflowing filter labels (#6) */
+@keyframes marqueeScroll {
+  0% { transform: translateX(0%); }
+  20% { transform: translateX(0%); }
+  80% { transform: translateX(-35%); }
+  100% { transform: translateX(0%); }
+}
+
+.animate-marquee {
+  display: inline-block;
+  animation: marqueeScroll 4.5s ease-in-out infinite;
+}
+
+/* ============================================================================
+   ВЕРСИЯ ДЛЯ СЛАБОВИДЯЩИХ (ACCESSIBILITY MODE #27)
+   ============================================================================ */
+html.a11y-font-lg {
+  font-size: 114%;
+}
+
+html.a11y-font-xl {
+  font-size: 128%;
+}
+
+html.a11y-spacing-wide,
+html.a11y-spacing-wide * {
+  letter-spacing: 0.06em !important;
+  line-height: 1.65 !important;
+}
+
+html.a11y-hide-images img:not(.a11y-keep) {
+  display: none !important;
+}
+
+/* Схема 1: Чёрным по белому (Высокий контраст) */
+html.a11y-contrast-bw body,
+html.a11y-contrast-bw main,
+html.a11y-contrast-bw header,
+html.a11y-contrast-bw div,
+html.a11y-contrast-bw section,
+html.a11y-contrast-bw form,
+html.a11y-contrast-bw input,
+html.a11y-contrast-bw select,
+html.a11y-contrast-bw textarea {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  color: #000000 !important;
+  border-color: #000000 !important;
+}
+
+html.a11y-contrast-bw a,
+html.a11y-contrast-bw button {
+  color: #000000 !important;
+  border: 2px solid #000000 !important;
+  background-color: #f8fafc !important;
+  font-weight: 700 !important;
+}
+
+/* Схема 2: Белым по чёрному (Тёмная высококонтрастная) */
+html.a11y-contrast-wb body,
+html.a11y-contrast-wb main,
+html.a11y-contrast-wb header,
+html.a11y-contrast-wb div,
+html.a11y-contrast-wb section,
+html.a11y-contrast-wb form,
+html.a11y-contrast-wb input,
+html.a11y-contrast-wb select,
+html.a11y-contrast-wb textarea {
+  background-color: #000000 !important;
+  background-image: none !important;
+  color: #ffffff !important;
+  border-color: #ffffff !important;
+}
+
+html.a11y-contrast-wb a,
+html.a11y-contrast-wb button {
+  color: #ffff00 !important;
+  border: 2px solid #ffff00 !important;
+  background-color: #111111 !important;
+  font-weight: 700 !important;
+}
+
+/* Схема 3: Тёмно-синим по голубому */
+html.a11y-contrast-blue body,
+html.a11y-contrast-blue main,
+html.a11y-contrast-blue header,
+html.a11y-contrast-blue div,
+html.a11y-contrast-blue section,
+html.a11y-contrast-blue form,
+html.a11y-contrast-blue input,
+html.a11y-contrast-blue select,
+html.a11y-contrast-blue textarea {
+  background-color: #9dd1ff !important;
+  background-image: none !important;
+  color: #063462 !important;
+  border-color: #063462 !important;
+}
+
+html.a11y-contrast-blue a,
+html.a11y-contrast-blue button {
+  color: #063462 !important;
+  border: 2px solid #063462 !important;
+  background-color: #cce7ff !important;
+  font-weight: 700 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

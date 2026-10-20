@@ -5,16 +5,14 @@ import org.springframework.transaction.annotation.Transactional;
 import ru.sportplatform.domain.entity.*;
 import ru.sportplatform.domain.enums.Enums.NotificationType;
 import ru.sportplatform.domain.enums.Enums.OrganizationStatus;
+import ru.sportplatform.domain.enums.Enums.OrganizationType;
 import ru.sportplatform.dto.ApiDtos.*;
 import ru.sportplatform.exception.ApiException;
 import ru.sportplatform.repository.*;
 import ru.sportplatform.security.UserPrincipal;
 
 import java.time.Instant;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 @Service
 public class OrganizationService {
@@ -46,6 +44,14 @@ public class OrganizationService {
         this.sportService = sportService;
         this.notificationService = notificationService;
         this.auditLogService = auditLogService;
+    }
+
+    public boolean canManageOrganization(Organization org, UUID userId) {
+        if (org == null || userId == null) return false;
+        if (org.getOwner().getId().equals(userId)) return true;
+        return subscriptionRepository.findByOrganizationIdAndUserId(org.getId(), userId)
+                .map(sub -> "ADMIN".equalsIgnoreCase(sub.getMemberRole()))
+                .orElse(false);
     }
 
     @Transactional
@@ -83,11 +89,46 @@ public class OrganizationService {
     }
 
     @Transactional
+    public OrganizationDto createCommunity(UserPrincipal viewer, CreateCommunityRequest req) {
+        User owner = userRepository.findById(viewer.id())
+                .orElseThrow(() -> ApiException.unauthorized("Пользователь не найден"));
+
+        Organization org = new Organization();
+        org.setOwner(owner);
+        org.setName(req.name().trim());
+        org.setOrgType(req.orgType() != null ? req.orgType() : OrganizationType.COMMUNITY);
+        org.setCity(req.city().trim());
+        org.setDescription(req.description().trim());
+        org.setRepresentativeName(owner.getDisplayName());
+        org.setModerationContact(owner.getEmail());
+        org.setPublicContacts(req.publicContacts());
+        org.setWebsiteUrl(req.websiteUrl());
+        org.setSocialUrl(req.socialUrl());
+        if (req.logoAttachmentId() != null) {
+            org.setLogoAttachmentId(req.logoAttachmentId());
+        }
+        org.setStatus(OrganizationStatus.APPROVED);
+        org.setSubmissionVersion(1);
+        org.setReviewedAt(Instant.now());
+
+        Set<Sport> sports = resolveSports(req.sportIds(), req.newSportNames(), owner.getId());
+        org.setSports(sports);
+        org = organizationRepository.save(org);
+
+        saveHistorySnapshot(org, 1, OrganizationStatus.APPROVED, "Создание пользовательского спортивного сообщества", owner.getId());
+
+        return toDto(org, viewer);
+    }
+
+    @Transactional
     public OrganizationDto updateAndResubmit(UUID orgId, UUID currentUserId, UpdateOrganizationApplicationRequest req) {
         Organization org = organizationRepository.findById(orgId)
                 .orElseThrow(() -> ApiException.notFound("Организация не найдена"));
-        if (!org.getOwner().getId().equals(currentUserId)) {
-            throw ApiException.forbidden("Только представитель организации может редактировать и повторно подавать заявку");
+        User actor = userRepository.findById(currentUserId)
+                .orElseThrow(() -> ApiException.unauthorized("Пользователь не найден"));
+
+        if (!canManageOrganization(org, currentUserId) && actor.getGlobalRole() != ru.sportplatform.domain.enums.Enums.GlobalRole.ADMIN) {
+            throw ApiException.forbidden("Только создатель или администратор сообщества может редактировать данные");
         }
 
         org.setName(req.name().trim());
@@ -129,7 +170,7 @@ public class OrganizationService {
             org = organizationRepository.save(org);
         }
 
-        return toDto(org, new UserPrincipal(currentUserId, org.getOwner().getEmail(), org.getOwner().getDisplayName(), org.getOwner().getGlobalRole()));
+        return toDto(org, new UserPrincipal(actor.getId(), actor.getEmail(), actor.getDisplayName(), actor.getGlobalRole()));
     }
 
     @Transactional
@@ -139,9 +180,13 @@ public class OrganizationService {
         Organization org = organizationRepository.findById(orgId)
                 .orElseThrow(() -> ApiException.notFound("Организация не найдена"));
 
-        if (req.decision() == OrganizationStatus.REJECTED || req.decision() == OrganizationStatus.NEEDS_REVISION) {
+        if (org.getStatus() == req.decision()) {
+            throw ApiException.conflict("Организация уже находится в выбранном статусе (" + req.decision() + ")");
+        }
+
+        if (req.decision() == OrganizationStatus.REJECTED || req.decision() == OrganizationStatus.NEEDS_REVISION || req.decision() == OrganizationStatus.SUSPENDED) {
             if (req.reason() == null || req.reason().isBlank()) {
-                throw ApiException.badRequest("При отклонении или возврате заявки необходимо указать понятную причину для организации");
+                throw ApiException.badRequest("При отклонении или блокировке необходимо указать понятную причину для организации");
             }
         }
 
@@ -155,7 +200,6 @@ public class OrganizationService {
         org.setReviewedAt(Instant.now());
         org = organizationRepository.save(org);
 
-        // Обновляем текущую версию в истории либо создаём запись решения
         Organization finalOrg = org;
         historyRepository.findFirstByOrganizationIdOrderByVersionNumberDesc(org.getId())
                 .ifPresentOrElse(latest -> {
@@ -188,7 +232,7 @@ public class OrganizationService {
             notificationService.notifyUser(
                     org.getOwner(),
                     NotificationType.ORG_REJECTED,
-                    "Заявка организации «" + org.getName() + "» отклонена",
+                    "Статус организации «" + org.getName() + "» изменён",
                     "Причина: " + req.reason() + ". Вы можете исправить сведения в кабинете организации и повторно отправить заявку.",
                     "/my-organization"
             );
@@ -207,8 +251,16 @@ public class OrganizationService {
 
     @Transactional(readOnly = true)
     public List<OrganizationDto> listMyOrganizations(UserPrincipal viewer) {
-        return organizationRepository.findByOwnerIdOrderByCreatedAtDesc(viewer.id())
-                .stream()
+        Map<UUID, Organization> map = new LinkedHashMap<>();
+        for (Organization owned : organizationRepository.findByOwnerIdOrderByCreatedAtDesc(viewer.id())) {
+            map.put(owned.getId(), owned);
+        }
+        for (OrganizationSubscription sub : subscriptionRepository.findByUserId(viewer.id())) {
+            if ("ADMIN".equalsIgnoreCase(sub.getMemberRole())) {
+                map.putIfAbsent(sub.getOrganization().getId(), sub.getOrganization());
+            }
+        }
+        return map.values().stream()
                 .map(o -> toDto(o, viewer))
                 .toList();
     }
@@ -226,10 +278,10 @@ public class OrganizationService {
         Organization org = organizationRepository.findById(orgId)
                 .orElseThrow(() -> ApiException.notFound("Организация не найдена"));
 
-        boolean isOwner = viewer != null && org.getOwner().getId().equals(viewer.id());
+        boolean canManage = viewer != null && canManageOrganization(org, viewer.id());
         boolean isAdmin = viewer != null && viewer.isAdmin();
 
-        if (org.getStatus() != OrganizationStatus.APPROVED && !isOwner && !isAdmin) {
+        if (org.getStatus() != OrganizationStatus.APPROVED && !canManage && !isAdmin) {
             throw ApiException.forbidden("Публичная страница организации станет доступна после одобрения администратором");
         }
         return toDto(org, viewer);
@@ -240,7 +292,7 @@ public class OrganizationService {
         Organization org = organizationRepository.findById(orgId)
                 .orElseThrow(() -> ApiException.notFound("Организация не найдена"));
         if (org.getStatus() != OrganizationStatus.APPROVED) {
-            throw ApiException.badRequest("Нельзя подписаться на неодобренную организацию");
+            throw ApiException.badRequest("Нельзя вступить в неодобренное сообщество");
         }
         User user = userRepository.findById(viewer.id())
                 .orElseThrow(() -> ApiException.unauthorized("Пользователь не найден"));
@@ -252,16 +304,113 @@ public class OrganizationService {
                             OrganizationSubscription sub = new OrganizationSubscription();
                             sub.setOrganization(org);
                             sub.setUser(user);
+                            sub.setMemberRole("MEMBER");
                             subscriptionRepository.save(sub);
                         }
                 );
         return toDto(org, viewer);
     }
 
+    @Transactional(readOnly = true)
+    public List<OrganizationMemberDto> listMembers(UUID orgId) {
+        Organization org = organizationRepository.findById(orgId)
+                .orElseThrow(() -> ApiException.notFound("Организация не найдена"));
+
+        List<OrganizationMemberDto> members = new ArrayList<>();
+        User owner = org.getOwner();
+        String ownerAvatar = owner.getAvatarAttachmentId() != null
+                ? "/api/v1/attachments/" + owner.getAvatarAttachmentId() + "/content"
+                : null;
+        members.add(new OrganizationMemberDto(
+                owner.getId(),
+                owner.getDisplayName(),
+                owner.getEmail(),
+                owner.getCity(),
+                ownerAvatar,
+                "OWNER",
+                org.getCreatedAt()
+        ));
+
+        for (OrganizationSubscription sub : subscriptionRepository.findByOrganizationId(orgId)) {
+            User u = sub.getUser();
+            if (u.getId().equals(owner.getId())) continue;
+            String avatar = u.getAvatarAttachmentId() != null
+                    ? "/api/v1/attachments/" + u.getAvatarAttachmentId() + "/content"
+                    : null;
+            members.add(new OrganizationMemberDto(
+                    u.getId(),
+                    u.getDisplayName(),
+                    u.getEmail(),
+                    u.getCity(),
+                    avatar,
+                    sub.getMemberRole() != null ? sub.getMemberRole() : "MEMBER",
+                    sub.getCreatedAt()
+            ));
+        }
+        return members;
+    }
+
+    @Transactional
+    public List<OrganizationMemberDto> assignMemberRole(UUID orgId, UserPrincipal actor, AssignCommunityRoleRequest req) {
+        Organization org = organizationRepository.findById(orgId)
+                .orElseThrow(() -> ApiException.notFound("Сообщество не найдено"));
+
+        if (!canManageOrganization(org, actor.id()) && !actor.isAdmin()) {
+            throw ApiException.forbidden("Только создатель или администратор сообщества может назначать администраторов");
+        }
+
+        User targetUser;
+        if (req.userId() != null) {
+            targetUser = userRepository.findById(req.userId())
+                    .orElseThrow(() -> ApiException.notFound("Пользователь не найден"));
+        } else if (req.email() != null && !req.email().isBlank()) {
+            targetUser = userRepository.findByEmailIgnoreCase(req.email().trim())
+                    .orElseThrow(() -> ApiException.notFound("Пользователь с email «" + req.email() + "» не найден"));
+        } else {
+            throw ApiException.badRequest("Укажите пользователя или его email");
+        }
+
+        if (targetUser.getId().equals(org.getOwner().getId())) {
+            throw ApiException.badRequest("Создатель сообщества уже обладает полными правами владельца");
+        }
+
+        String normalizedRole = "ADMIN".equalsIgnoreCase(req.role()) ? "ADMIN" : "MEMBER";
+        OrganizationSubscription sub = subscriptionRepository.findByOrganizationIdAndUserId(orgId, targetUser.getId())
+                .orElseGet(() -> {
+                    OrganizationSubscription created = new OrganizationSubscription();
+                    created.setOrganization(org);
+                    created.setUser(targetUser);
+                    return created;
+                });
+        sub.setMemberRole(normalizedRole);
+        subscriptionRepository.save(sub);
+
+        if ("ADMIN".equals(normalizedRole)) {
+            notificationService.notifyUser(
+                    targetUser,
+                    NotificationType.ORG_APPROVED,
+                    "Вы назначены администратором сообщества «" + org.getName() + "»",
+                    "Теперь вы можете управлять сообществом, публиковать мероприятия от его имени и назначать администраторов.",
+                    "/organizations/" + org.getId()
+            );
+        }
+
+        return listMembers(orgId);
+    }
+
     public OrganizationDto toDto(Organization org, UserPrincipal viewer) {
         boolean isOwner = viewer != null && org.getOwner().getId().equals(viewer.id());
+        Optional<OrganizationSubscription> viewerSub = viewer != null
+                ? subscriptionRepository.findByOrganizationIdAndUserId(org.getId(), viewer.id())
+                : Optional.empty();
+        boolean isCommunityAdmin = viewerSub.map(s -> "ADMIN".equalsIgnoreCase(s.getMemberRole())).orElse(false);
         boolean isAdmin = viewer != null && viewer.isAdmin();
-        boolean privileged = isOwner || isAdmin;
+        boolean managedByViewer = isOwner || isCommunityAdmin;
+        boolean privileged = managedByViewer || isAdmin;
+
+        String viewerMemberRole = isOwner
+                ? "OWNER"
+                : viewerSub.map(OrganizationSubscription::getMemberRole).orElse(null);
 
         List<SportDto> sports = org.getSports().stream()
                 .map(sportService::toDto)
@@ -282,8 +431,8 @@ public class OrganizationService {
                 .toList()
                 : List.of();
 
-        long subsCount = subscriptionRepository.countByOrganizationId(org.getId());
-        boolean subscribed = viewer != null && subscriptionRepository.existsByOrganizationIdAndUserId(org.getId(), viewer.id());
+        long subsCount = subscriptionRepository.countByOrganizationId(org.getId()) + 1; // +1 including owner
+        boolean subscribed = isOwner || viewerSub.isPresent();
 
         String logoUrl = org.getLogoAttachmentId() != null
                 ? "/api/v1/attachments/" + org.getLogoAttachmentId() + "/content"
@@ -312,6 +461,8 @@ public class OrganizationService {
                 sports,
                 subsCount,
                 subscribed,
+                managedByViewer,
+                viewerMemberRole,
                 history,
                 org.getCreatedAt(),
                 org.getUpdatedAt()
