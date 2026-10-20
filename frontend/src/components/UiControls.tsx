@@ -410,18 +410,31 @@ export const CustomDateTimePicker: React.FC<CustomDateTimePickerProps> = ({
           </div>
 
           <div className="pt-3 border-t border-[#EEF4F1] space-y-2.5">
-            <div className="flex items-center justify-between text-xs font-extrabold text-[#1A2622]">
+            <div className="flex items-center justify-between gap-2 text-xs font-extrabold text-[#1A2622]">
               <span className="inline-flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-[#16B672]" />
-                <span>Время начала</span>
+                <span>Время (вручную ЧЧ:ММ или кнопками)</span>
               </span>
-              <span className="font-mono text-[#11995E] bg-[#E7F8F0] px-2.5 py-0.5 rounded-lg">
-                {pad2(safeDate.getHours())}:{pad2(safeDate.getMinutes())}
-              </span>
+              <FreeTimeInput
+                safeDate={safeDate}
+                minDate={minDate}
+                onApply={(h, m) => {
+                  const candidate = new Date(
+                    safeDate.getFullYear(),
+                    safeDate.getMonth(),
+                    safeDate.getDate(),
+                    h,
+                    m,
+                    0,
+                    0
+                  );
+                  onChange(toLocalIsoString(candidate));
+                }}
+              />
             </div>
 
             <div className="space-y-1.5">
-              <div className="text-[10px] font-bold text-[#7E8E89] uppercase">Часы</div>
+              <div className="text-[10px] font-bold text-[#7E8E89] uppercase">Быстрый выбор часа</div>
               <div className="grid grid-cols-6 gap-1">
                 {hours.map((h) => {
                   const candidate = new Date(
@@ -455,7 +468,7 @@ export const CustomDateTimePicker: React.FC<CustomDateTimePickerProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <div className="text-[10px] font-bold text-[#7E8E89] uppercase">Минуты</div>
+              <div className="text-[10px] font-bold text-[#7E8E89] uppercase">Быстрый выбор минут</div>
               <div className="grid grid-cols-4 gap-1.5">
                 {minutes.map((m) => {
                   const active = safeDate.getMinutes() === m;
@@ -522,3 +535,169 @@ export const CustomDateTimePicker: React.FC<CustomDateTimePickerProps> = ({
     </div>
   );
 };
+
+const FreeTimeInput: React.FC<{
+  safeDate: Date;
+  minDate: Date;
+  onApply: (h: number, m: number) => void;
+}> = ({ safeDate, minDate, onApply }) => {
+  const formatted = `${pad2(safeDate.getHours())}:${pad2(safeDate.getMinutes())}`;
+  const [draft, setDraft] = useState(formatted);
+  const [focused, setFocused] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!focused) {
+      setDraft(`${pad2(safeDate.getHours())}:${pad2(safeDate.getMinutes())}`);
+      setErr(null);
+    }
+  }, [safeDate, focused]);
+
+  const tryCommit = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setErr('Укажите ЧЧ:ММ');
+      return;
+    }
+    const match = trimmed.match(/^(\d{1,2})[:.\-\s]?(\d{2})$/);
+    if (!match) {
+      setErr('Формат ЧЧ:ММ');
+      return;
+    }
+    const h = Number(match[1]);
+    const m = Number(match[2]);
+    if (h < 0 || h > 23 || m < 0 || m > 59) {
+      setErr('00:00–23:59');
+      return;
+    }
+    const candidate = new Date(
+      safeDate.getFullYear(),
+      safeDate.getMonth(),
+      safeDate.getDate(),
+      h,
+      m,
+      0,
+      0
+    );
+    if (candidate.getTime() < minDate.getTime()) {
+      setErr('Время в прошлом');
+      return;
+    }
+    setErr(null);
+    onApply(h, m);
+  };
+
+  return (
+    <div className="flex flex-col items-end">
+      <input
+        type="text"
+        value={draft}
+        aria-label="Время начала ЧЧ:ММ"
+        placeholder="19:00"
+        onFocus={() => setFocused(true)}
+        onChange={(e) => {
+          const val = e.target.value;
+          setDraft(val);
+          if (/^\d{2}:\d{2}$/.test(val.trim())) {
+            tryCommit(val);
+          } else {
+            setErr(null);
+          }
+        }}
+        onBlur={() => {
+          setFocused(false);
+          if (draft.trim()) {
+            tryCommit(draft);
+          } else {
+            setDraft(formatted);
+            setErr(null);
+          }
+        }}
+        className="w-20 text-center font-mono text-xs font-extrabold text-[#11995E] bg-[#E7F8F0] border border-[#16B672]/30 rounded-lg px-2 py-1"
+      />
+      {err && <span className="text-[10px] font-bold text-rose-600 mt-0.5">{err}</span>}
+    </div>
+  );
+};
+
+export const VoiceSearchButton: React.FC<{
+  onResult: (transcript: string) => void;
+  className?: string;
+}> = ({ onResult, className = '' }) => {
+  const [listening, setListening] = useState(false);
+  const [unsupportedMsg, setUnsupportedMsg] = useState<string | null>(null);
+
+  const handleToggleVoice = () => {
+    const SpeechRecognitionCtor =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      setUnsupportedMsg('Голосовой ввод не поддерживается вашим браузером (используйте Chrome/Edge/Safari)');
+      setTimeout(() => setUnsupportedMsg(null), 4000);
+      return;
+    }
+    if (listening) return;
+    try {
+      const recognition = new SpeechRecognitionCtor();
+      recognition.lang = 'ru-RU';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      setListening(true);
+      setUnsupportedMsg(null);
+
+      recognition.onresult = (event: any) => {
+        const text = event?.results?.[0]?.[0]?.transcript;
+        if (text) {
+          onResult(text.trim());
+        }
+        setListening(false);
+      };
+      recognition.onerror = () => {
+        setListening(false);
+      };
+      recognition.onend = () => {
+        setListening(false);
+      };
+      recognition.start();
+    } catch {
+      setListening(false);
+    }
+  };
+
+  return (
+    <div className={`inline-flex items-center ${className}`}>
+      <button
+        type="button"
+        onClick={handleToggleVoice}
+        title={listening ? 'Слушаю... говорите запрос' : 'Голосовой поиск на русском языке'}
+        aria-label="Голосовой поиск"
+        className={`p-2 rounded-xl transition-all ${
+          listening
+            ? 'bg-rose-500 text-white animate-pulse shadow-sm'
+            : 'text-slate-400 hover:text-[#16B672] hover:bg-[#E7F8F0]'
+        }`}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+          <line x1="12" x2="12" y1="19" y2="22" />
+        </svg>
+      </button>
+      {unsupportedMsg && (
+        <span className="ml-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg">
+          {unsupportedMsg}
+        </span>
+      )}
+    </div>
+  );
+};
+

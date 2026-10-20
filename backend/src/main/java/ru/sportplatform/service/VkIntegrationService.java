@@ -402,8 +402,13 @@ public class VkIntegrationService {
                         }
                         long fromId = msgObj.path("from_id").asLong(0);
                         String text = msgObj.path("text").asText("");
-                        if (fromId > 0 && !text.isBlank()) {
-                            processIncomingBotMessage(fromId, text);
+                        String ref = msgObj.path("ref").asText("");
+                        if (fromId > 0) {
+                            if (!ref.isBlank() && ref.toUpperCase().startsWith("SP-")) {
+                                processIncomingBotMessage(fromId, ref);
+                            } else if (!text.isBlank()) {
+                                processIncomingBotMessage(fromId, text);
+                            }
                         }
                     }
                 }

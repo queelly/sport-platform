@@ -9,7 +9,7 @@ import {
   Repeat,
   Users,
 } from 'lucide-react';
-import { EventCardDto, getRegionInfo } from '../types';
+import { EventCardDto, getBrowserLocalTzLabel, getRegionInfo, isOnlineEvent } from '../types';
 import { formatDateTime, SKILL_LABELS } from '../api';
 
 /**
@@ -154,7 +154,9 @@ export const EventCard: React.FC<EventCardProps> = ({
 }) => {
   const isFull =
     event.maxParticipants != null && event.confirmedParticipantsCount >= event.maxParticipants;
+  const isOnline = isOnlineEvent(event.city, event.locationAddress);
   const regionInfo = getRegionInfo(event.city);
+  const tzLabel = isOnline ? getBrowserLocalTzLabel() : regionInfo?.tzLabel || 'МСК';
 
   // VARIANT 1: HORIZONTAL COMPACT CARD (Reference 2 "Event Dates" section)
   if (variant === 'horizontal') {
@@ -191,21 +193,26 @@ export const EventCard: React.FC<EventCardProps> = ({
           <div className="text-xs text-[#7E8E89] flex items-center gap-1 truncate">
             <MapPin className="w-3.5 h-3.5 text-[#16B672] shrink-0" />
             <span className="truncate">
-              {event.city}, {event.locationAddress}
+              {isOnline ? `🌐 Онлайн (${event.locationAddress})` : `${event.city}, ${event.locationAddress}`}
             </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 pt-0.5">
             <span className="text-xs font-extrabold text-[#16B672]">
-              {formatDateTime(event.startsAt)}
+              {formatDateTime(event.startsAt)} ({tzLabel.split(' ')[0]})
             </span>
             <span className="text-[11px] font-bold text-[#7E8E89]">
               • Участников: {event.confirmedParticipantsCount}
               {event.maxParticipants ? `/${event.maxParticipants}` : ''}
             </span>
+            {event.activityFormat && (
+              <span className="px-2 py-0.5 rounded-md bg-[#E7F8F0] text-[#11995E] text-[10px] font-extrabold">
+                {event.activityFormat}
+              </span>
+            )}
             {event.recurringOccurrence && (
               <span className="px-2 py-0.5 rounded-md bg-[#FFF3E6] text-[#D97706] text-[10px] font-extrabold">
-                Еженедельно
+                Повторяющиеся встречи
               </span>
             )}
           </div>
@@ -255,14 +262,19 @@ export const EventCard: React.FC<EventCardProps> = ({
             {event.sport.name}
           </span>
           <div className="flex items-center gap-1.5">
+            {isOnline && (
+              <span className="px-2.5 py-1 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold shadow-sm">
+                🌐 Онлайн
+              </span>
+            )}
             {event.recurringOccurrence && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FF7849] text-white text-[10px] font-extrabold shadow-sm">
                 <Repeat className="w-3 h-3" />
-                Еженедельно
+                Повторяющиеся встречи
               </span>
             )}
             <span className="px-2.5 py-1 rounded-full bg-black/35 backdrop-blur-md text-white text-[10px] font-bold">
-              {regionInfo?.tzLabel || 'МСК'}
+              {tzLabel}
             </span>
           </div>
         </div>
@@ -276,7 +288,7 @@ export const EventCard: React.FC<EventCardProps> = ({
             <div className="text-xs text-[#7E8E89] truncate flex items-center gap-1">
               <MapPin className="w-3.5 h-3.5 text-[#16B672] shrink-0" />
               <span className="truncate">
-                {event.city}, {event.locationAddress}
+                {isOnline ? `🌐 Онлайн (${event.locationAddress})` : `${event.city}, ${event.locationAddress}`}
               </span>
             </div>
             <div className="flex items-center gap-2 pt-0.5">
@@ -328,10 +340,15 @@ export const EventCard: React.FC<EventCardProps> = ({
             </span>
 
             <div className="flex items-center gap-1.5">
+              {isOnline && (
+                <span className="px-2.5 py-1 rounded-full bg-indigo-600 text-white text-[10px] font-extrabold shadow-sm">
+                  🌐 Онлайн
+                </span>
+              )}
               {event.recurringOccurrence && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FF7849] text-white text-[10px] font-extrabold shadow-sm">
                   <Repeat className="w-3 h-3" />
-                  Еженедельно
+                  Повторяющиеся встречи
                 </span>
               )}
               <span
@@ -361,8 +378,11 @@ export const EventCard: React.FC<EventCardProps> = ({
 
         <div className="p-5 space-y-2.5">
           <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-[#7E8E89]">
-            <span>{SKILL_LABELS[event.skillLevel] || event.skillLevel}</span>
-            <span>{regionInfo?.tzLabel || 'МСК'}</span>
+            <span>
+              {SKILL_LABELS[event.skillLevel] || event.skillLevel}
+              {event.activityFormat ? ` • ${event.activityFormat}` : ''}
+            </span>
+            <span>{tzLabel}</span>
           </div>
 
           <h3 className="font-display font-extrabold text-lg text-[#1A2622] group-hover:text-[#16B672] transition-colors line-clamp-2 leading-snug">
@@ -377,7 +397,7 @@ export const EventCard: React.FC<EventCardProps> = ({
             <div className="flex items-center gap-2">
               <MapPin className="w-4 h-4 text-[#16B672] shrink-0" />
               <span className="truncate">
-                {event.city}, {event.locationAddress}
+                {isOnline ? `🌐 Онлайн (${event.locationAddress})` : `${event.city}, ${event.locationAddress}`}
               </span>
             </div>
           </div>

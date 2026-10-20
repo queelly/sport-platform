@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import {
   Bell,
   CheckCheck,
@@ -39,7 +39,10 @@ import { CustomSelect } from '../components/UiControls';
 
 export const SupportPage: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState<'TICKETS' | 'CHAT'>('TICKETS');
+  const location = useLocation();
+  const [tab, setTab] = useState<'TICKETS' | 'CHAT'>(() =>
+    location.pathname.endsWith('/chat') || searchParams.get('tab') === 'CHAT' ? 'CHAT' : 'TICKETS'
+  );
 
   const [tickets, setTickets] = useState<SupportTicketDto[]>([]);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
@@ -68,6 +71,9 @@ export const SupportPage: React.FC = () => {
   const [description, setDescription] = useState('');
   const [targetType, setTargetType] = useState<string>(initialTargetType);
   const [targetId, setTargetId] = useState<string>(initialTargetId);
+  const [lockedContextualTarget, setLockedContextualTarget] = useState<boolean>(
+    Boolean(initialTargetType && initialTargetId)
+  );
   const [attachmentId, setAttachmentId] = useState<string | null>(null);
   const [attachmentName, setAttachmentName] = useState<string>('');
   const [creatingTicket, setCreatingTicket] = useState(false);
@@ -81,9 +87,16 @@ export const SupportPage: React.FC = () => {
   const ticketMessagesRef = useRef<HTMLDivElement>(null);
   const liveChatMessagesRef = useRef<HTMLDivElement>(null);
   const prevTicketMsgLenRef = useRef<number>(0);
+  const prevTicketIdRef = useRef<string | null>(null);
   const prevChatMsgLenRef = useRef<number>(0);
 
   const selectedTicket = tickets.find((t) => t.id === selectedTicketId) || tickets[0] || null;
+
+  useEffect(() => {
+    if (location.pathname.endsWith('/chat') || searchParams.get('tab') === 'CHAT') {
+      setTab('CHAT');
+    }
+  }, [location.pathname, searchParams]);
 
   const loadDirectories = async () => {
     try {
@@ -131,8 +144,9 @@ export const SupportPage: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-sync targetType when category changes manually
+  // Auto-sync targetType when category changes manually (unless locked by contextual link)
   useEffect(() => {
+    if (lockedContextualTarget) return;
     if (category === 'USER_COMPLAINT') {
       if (targetType !== 'USER') {
         setTargetType('USER');
@@ -152,36 +166,44 @@ export const SupportPage: React.FC = () => {
       setTargetType('');
       setTargetId('');
     }
-  }, [category]);
+  }, [category, lockedContextualTarget]);
 
-  // Auto-scroll ticket messages when new message arrives (#24)
+  // Smart scroll ticket messages: only scroll if ticket switched, initial load, or user is near bottom (#16)
   useEffect(() => {
     const count = selectedTicket?.messages?.length || 0;
-    if (count > prevTicketMsgLenRef.current) {
-      prevTicketMsgLenRef.current = count;
+    const ticketSwitched = selectedTicket?.id !== prevTicketIdRef.current;
+    const container = ticketMessagesRef.current;
+    const isNearBottom =
+      !container ||
+      container.scrollHeight - container.scrollTop - container.clientHeight < 140;
+
+    if (ticketSwitched || (count > prevTicketMsgLenRef.current && (prevTicketMsgLenRef.current === 0 || isNearBottom))) {
       setTimeout(() => {
         if (ticketMessagesRef.current) {
           ticketMessagesRef.current.scrollTop = ticketMessagesRef.current.scrollHeight;
         }
       }, 50);
-    } else {
-      prevTicketMsgLenRef.current = count;
     }
+    prevTicketIdRef.current = selectedTicket?.id || null;
+    prevTicketMsgLenRef.current = count;
   }, [selectedTicket?.id, selectedTicket?.messages?.length]);
 
-  // Auto-scroll live support chat when new message arrives (#24)
+  // Smart scroll live support chat: only scroll on initial load or when user is near bottom (#16)
   useEffect(() => {
     const count = chatConv?.messages?.length || 0;
-    if (count > prevChatMsgLenRef.current) {
-      prevChatMsgLenRef.current = count;
+    const container = liveChatMessagesRef.current;
+    const isNearBottom =
+      !container ||
+      container.scrollHeight - container.scrollTop - container.clientHeight < 140;
+
+    if (count > prevChatMsgLenRef.current && (prevChatMsgLenRef.current === 0 || isNearBottom)) {
       setTimeout(() => {
         if (liveChatMessagesRef.current) {
           liveChatMessagesRef.current.scrollTop = liveChatMessagesRef.current.scrollHeight;
         }
       }, 50);
-    } else {
-      prevChatMsgLenRef.current = count;
     }
+    prevChatMsgLenRef.current = count;
   }, [chatConv?.messages?.length, tab]);
 
   const handleUploadTicketAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -328,8 +350,30 @@ export const SupportPage: React.FC = () => {
                 />
               </div>
 
-              {/* Target entity selector for complaints (#22, #25) */}
-              {category === 'USER_COMPLAINT' && (
+              {lockedContextualTarget && targetId && (
+                <div className="p-3 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-between gap-2 text-xs text-blue-950">
+                  <div>
+                    <span className="font-bold block">Объект обращения прикреплён автоматически:</span>
+                    <span className="text-[11px] text-blue-800">
+                      {targetType === 'EVENT'
+                        ? eventsList.find((ev) => ev.id === targetId)?.title || `Мероприятие #${targetId.slice(0, 8)}`
+                        : targetType === 'USER'
+                        ? usersList.find((u) => u.id === targetId)?.displayName || `Пользователь #${targetId.slice(0, 8)}`
+                        : orgsList.find((o) => o.id === targetId)?.name || `Организация #${targetId.slice(0, 8)}`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLockedContextualTarget(false)}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-blue-200 text-blue-700 font-bold text-[11px] hover:bg-blue-100 shrink-0"
+                  >
+                    Изменить
+                  </button>
+                </div>
+              )}
+
+              {/* Target entity selector for complaints (#17) */}
+              {!lockedContextualTarget && category === 'USER_COMPLAINT' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     На какого пользователя подаётся жалоба?
@@ -356,7 +400,7 @@ export const SupportPage: React.FC = () => {
                 </div>
               )}
 
-              {category === 'ORGANIZATION_COMPLAINT' && (
+              {!lockedContextualTarget && category === 'ORGANIZATION_COMPLAINT' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     На какую организацию / сообщество жалоба?
@@ -383,7 +427,7 @@ export const SupportPage: React.FC = () => {
                 </div>
               )}
 
-              {category === 'EVENT_COMPLAINT' && (
+              {!lockedContextualTarget && category === 'EVENT_COMPLAINT' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     Какое мероприятие вызывает вопросы?
@@ -724,6 +768,8 @@ export const NotificationsAndVkPage: React.FC = () => {
   const [simBotInput, setSimBotInput] = useState('');
   const [simBotReply, setSimBotReply] = useState<string | null>(null);
   const [reminderResult, setReminderResult] = useState<string | null>(null);
+  const [vkActionFeedback, setVkActionFeedback] = useState<string | null>(null);
+  const [connectingVk, setConnectingVk] = useState(false);
 
   const loadAll = async () => {
     try {
@@ -743,17 +789,66 @@ export const NotificationsAndVkPage: React.FC = () => {
     loadAll();
   }, []);
 
-  const handleGenerateCode = async () => {
-    const vk = await apiFetch<VkStatusDto>('/api/v1/vk/generate-code', { method: 'POST' });
-    setVkStatus(vk);
-    if (vk.activeLinkCode) {
-      setSimBotInput(vk.activeLinkCode);
+  // Poll VK connection status automatically while waiting for 1-click deep link confirmation (#2)
+  useEffect(() => {
+    if (!vkStatus?.activeLinkCode || vkStatus.linked) return;
+    const interval = setInterval(async () => {
+      try {
+        const vk = await apiFetch<VkStatusDto>('/api/v1/vk/status');
+        setVkStatus(vk);
+        if (vk.linked) {
+          setVkActionFeedback('Аккаунт ВКонтакте успешно привязан к вашему профилю!');
+        }
+      } catch {
+        // ignore
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [vkStatus?.activeLinkCode, vkStatus?.linked]);
+
+  const buildVkBotDeepLink = (clubUrl: string, code: string) => {
+    const match = clubUrl.match(/club(\d+)/i);
+    if (match?.[1]) {
+      return `https://vk.com/write-${match[1]}?ref=${encodeURIComponent(code)}`;
+    }
+    const sep = clubUrl.includes('?') ? '&' : '?';
+    return `${clubUrl}${sep}ref=${encodeURIComponent(code)}`;
+  };
+
+  // Single-button VK connection (#2)
+  const handleOneClickConnectVk = async () => {
+    setConnectingVk(true);
+    setVkActionFeedback(null);
+    try {
+      const vk = await apiFetch<VkStatusDto>('/api/v1/vk/generate-code', { method: 'POST' });
+      setVkStatus(vk);
+      const code = vk.activeLinkCode || '';
+      if (code) {
+        setSimBotInput(code);
+        try {
+          await navigator.clipboard.writeText(code);
+        } catch {
+          // ignore clipboard permission errors
+        }
+        const deepLink = buildVkBotDeepLink(vk.clubUrl, code);
+        window.open(deepLink, '_blank', 'noopener,noreferrer');
+        setVkActionFeedback(
+          `Диалог с VK-ботом открыт (параметр привязки ${code} передан автоматически и скопирован в буфер обмена). Нажмите «Начать» или отправьте сообщение в открывшемся окне VK.`
+        );
+      }
+    } catch (err) {
+      setVkActionFeedback(
+        err instanceof ApiError ? err.message : 'Не удалось подготовить подключение VK-бота'
+      );
+    } finally {
+      setConnectingVk(false);
     }
   };
 
   const handleUnlinkVk = async () => {
     const vk = await apiFetch<VkStatusDto>('/api/v1/vk/unlink', { method: 'POST' });
     setVkStatus(vk);
+    setVkActionFeedback('Аккаунт ВКонтакте отвязан от профиля.');
   };
 
   const handleToggleVkEnabled = async (enabled: boolean) => {
@@ -775,6 +870,9 @@ export const NotificationsAndVkPage: React.FC = () => {
     );
     setSimBotReply(res.botReply);
     setVkStatus(res.status);
+    if (res.status.linked) {
+      setVkActionFeedback('Аккаунт ВКонтакте успешно связан с профилем!');
+    }
   };
 
   const handleTriggerReminders = async () => {
@@ -799,7 +897,7 @@ export const NotificationsAndVkPage: React.FC = () => {
           Уведомления и интеграция с ботом ВКонтакте
         </h1>
         <p className="text-sm text-slate-600 mt-1">
-          Привяжите аккаунт к VK-боту по одноразовому коду, чтобы не забыть о предстоящих тренировках и ответах организаторов
+          Подключите уведомления ВКонтакте одной кнопкой, чтобы получать напоминания о тренировках и ответах организаторов
         </p>
       </div>
 
@@ -820,7 +918,7 @@ export const NotificationsAndVkPage: React.FC = () => {
                   <span className="font-bold text-slate-800">
                     {vkStatus.mode === 'REAL'
                       ? 'Боевой VK Bots Long Poll API (REAL)'
-                      : 'Локальный тестовый провайдер (TEST_LOG — работает без внешнего VK-токена)'}
+                      : 'Локальный режим проверки (TEST_LOG — внешний токен VK не настроен)'}
                   </span>
                 </div>
               </div>
@@ -829,44 +927,44 @@ export const NotificationsAndVkPage: React.FC = () => {
             {vkStatus.linked ? (
               <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-100 text-emerald-900 text-xs font-bold">
                 <ShieldCheck className="w-4 h-4" />
-                <span>VK привязан (ID: {vkStatus.vkUserId})</span>
+                <span>Подключено к VK (ID: {vkStatus.vkUserId})</span>
               </span>
             ) : (
               <span className="px-3.5 py-1.5 rounded-full bg-slate-100 text-slate-700 text-xs font-bold">
-                Аккаунт VK не привязан
+                VK не подключён
               </span>
             )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Step-by-step linking */}
+            {/* One-Click VK Connection (#2) */}
             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4 text-xs">
               <div className="font-display font-bold text-sm text-slate-900">
-                Безопасная привязка аккаунта по одноразовому коду
+                Быстрое подключение уведомлений ВКонтакте
               </div>
-              <ol className="list-decimal list-inside space-y-1.5 text-slate-700">
-                <li>Нажмите «Сгенерировать одноразовый код привязки» ниже.</li>
-                <li>
-                  Откройте диалог с сообществом ВКонтакте (в соответствии с правилами VK API пользователь сам начинает диалог).
-                </li>
-                <li>Отправьте полученный код вида <code className="font-bold">SP-XXXXXX</code> боту.</li>
-              </ol>
+              <p className="text-slate-700 leading-relaxed">
+                Нажмите кнопку ниже — откроется диалог с нашим ботом ВКонтакте с автоматически переданным параметром привязки вашего профиля. После отправки первого сообщения в диалоге аккаунт сразу свяжется с сайтом.
+              </p>
 
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={handleGenerateCode}
-                  className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold"
-                >
-                  Сгенерировать код привязки
-                </button>
-
-                {vkStatus.linked && (
+              <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                {!vkStatus.linked ? (
+                  <button
+                    type="button"
+                    disabled={connectingVk}
+                    onClick={handleOneClickConnectVk}
+                    className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-display font-bold text-xs shadow-sm transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>
+                      {connectingVk ? 'Подготовка ссылки...' : 'Подключить VK для уведомлений'}
+                    </span>
+                  </button>
+                ) : (
                   <>
                     <button
                       type="button"
                       onClick={() => handleToggleVkEnabled(!vkStatus.notificationsEnabled)}
-                      className="px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white font-bold text-slate-700"
+                      className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white font-bold text-slate-700"
                     >
                       {vkStatus.notificationsEnabled
                         ? 'Приостановить доставку в VK'
@@ -875,7 +973,7 @@ export const NotificationsAndVkPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleUnlinkVk}
-                      className="px-3.5 py-2.5 rounded-xl border border-rose-200 text-rose-700 font-bold"
+                      className="px-4 py-2.5 rounded-xl border border-rose-200 text-rose-700 font-bold"
                     >
                       Отвязать VK
                     </button>
@@ -887,23 +985,30 @@ export const NotificationsAndVkPage: React.FC = () => {
                   onClick={handleTriggerReminders}
                   className="px-3.5 py-2.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold"
                 >
-                  Проверить отправку напоминаний сейчас
+                  Проверить отправку напоминаний
                 </button>
               </div>
 
-              {vkStatus.activeLinkCode && (
-                <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-950 flex items-center justify-between">
+              {vkActionFeedback && (
+                <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-950 font-semibold leading-relaxed">
+                  {vkActionFeedback}
+                </div>
+              )}
+
+              {!vkStatus.linked && vkStatus.activeLinkCode && (
+                <div className="p-3.5 rounded-xl bg-white border border-slate-200 text-slate-700 flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-[11px] text-blue-700">Ваш одноразовый код (действует 15 мин):</div>
-                    <div className="font-mono font-extrabold text-lg">{vkStatus.activeLinkCode}</div>
+                    <div className="text-[11px] text-slate-500">
+                      Ожидание подтверждения из диалога VK (параметр привязки: <strong className="font-mono text-slate-900">{vkStatus.activeLinkCode}</strong>)
+                    </div>
                   </div>
                   <a
-                    href={vkStatus.clubUrl}
+                    href={buildVkBotDeepLink(vkStatus.clubUrl, vkStatus.activeLinkCode)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white text-blue-700 font-bold border border-blue-200"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 font-bold border border-blue-200"
                   >
-                    <span>Открыть VK</span>
+                    <span>Открыть диалог с ботом</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
@@ -916,17 +1021,17 @@ export const NotificationsAndVkPage: React.FC = () => {
               )}
             </div>
 
-            {/* Interactive VK Bot Terminal */}
+            {/* Interactive VK Bot Terminal (fallback/sandbox verification when VK token is not configured) */}
             <div className="p-5 rounded-2xl bg-slate-900 text-white space-y-3 text-xs">
               <div className="flex items-center justify-between">
                 <span className="font-display font-bold text-sm flex items-center gap-1.5 text-lime-300">
                   <Sparkles className="w-4 h-4" />
-                  <span>Интерактивный терминал команд VK-бота</span>
+                  <span>Тестовый диалог с ботом (если VK недоступен)</span>
                 </span>
-                <span className="text-[10px] text-slate-400">Проверка без внешнего VK-токена</span>
+                <span className="text-[10px] text-slate-400">Автономная проверка</span>
               </div>
               <p className="text-slate-300">
-                Отправьте сюда сгенерированный код <code className="text-white font-bold">SP-XXXXXX</code> или команды бота: <code className="text-lime-300">Мои мероприятия</code>, <code className="text-lime-300">Статус</code>, <code className="text-lime-300">Помощь</code>, <code className="text-lime-300">Отключить</code>, <code className="text-lime-300">Включить</code>.
+                Если внешний сервер VK не настроен, вы можете подтвердить привязку или протестировать команды бота прямо здесь (<code className="text-lime-300">Мои мероприятия</code>, <code className="text-lime-300">Статус</code>, <code className="text-lime-300">Помощь</code>):
               </p>
 
               <form onSubmit={handleSimulateBotCommand} className="flex gap-2">
@@ -934,14 +1039,14 @@ export const NotificationsAndVkPage: React.FC = () => {
                   type="text"
                   value={simBotInput}
                   onChange={(e) => setSimBotInput(e.target.value)}
-                  placeholder="Введите SP-XXXXXX или команду «Мои мероприятия»..."
+                  placeholder="Параметр привязки подставляется автоматически..."
                   className="flex-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs"
                 />
                 <button
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold"
                 >
-                  Отправить боту
+                  Подтвердить / Отправить
                 </button>
               </form>
 

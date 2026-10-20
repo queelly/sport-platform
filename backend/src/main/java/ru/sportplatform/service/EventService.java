@@ -372,6 +372,15 @@ public class EventService {
             }
         }
 
+        // Проверка пересечения мероприятий по времени (не подтверждаем автоматически при конфликте расписания)
+        Optional<Event> conflictOpt = findConflictingEvent(user.getId(), event);
+        if (conflictOpt.isPresent()) {
+            Event conflict = conflictOpt.get();
+            throw ApiException.conflict("Конфликт расписания: в это же время у вас уже запланировано участие во встрече «"
+                    + conflict.getTitle() + "» (" + formatEventInterval(conflict) + "). "
+                    + "Чтобы записаться на эту встречу, сначала отмените пересекающуюся запись.");
+        }
+
         EventParticipation part = existingOpt.orElseGet(() -> {
             EventParticipation p = new EventParticipation();
             p.setEvent(event);
@@ -431,14 +440,26 @@ public class EventService {
             throw ApiException.badRequest("Заявка не относится к указанному мероприятию");
         }
 
+        if (part.getUser().getId().equals(organizerViewer.id()) || part.getUser().getId().equals(event.getOrganizer().getId())) {
+            throw ApiException.conflict("Организатор не может подавать или подтверждать заявку самому себе");
+        }
+
         if (req.decision() != ParticipationStatus.CONFIRMED && req.decision() != ParticipationStatus.REJECTED) {
             throw ApiException.badRequest("Допустимые решения по заявке: CONFIRMED (принять) или REJECTED (отклонить)");
         }
 
-        if (req.decision() == ParticipationStatus.CONFIRMED && event.getMaxParticipants() != null) {
-            long confirmedCount = participationRepository.countByEventIdAndStatus(eventId, ParticipationStatus.CONFIRMED);
-            if (confirmedCount >= event.getMaxParticipants() && part.getStatus() != ParticipationStatus.CONFIRMED) {
-                throw ApiException.conflict("Достигнут максимальный лимит участников (" + event.getMaxParticipants() + ")");
+        if (req.decision() == ParticipationStatus.CONFIRMED) {
+            Optional<Event> conflictOpt = findConflictingEvent(part.getUser().getId(), event);
+            if (conflictOpt.isPresent()) {
+                Event conflict = conflictOpt.get();
+                throw ApiException.conflict("Конфликт расписания у участника: в это время у пользователя уже подтверждено участие во встрече «"
+                        + conflict.getTitle() + "» (" + formatEventInterval(conflict) + ").");
+            }
+            if (event.getMaxParticipants() != null) {
+                long confirmedCount = participationRepository.countByEventIdAndStatus(eventId, ParticipationStatus.CONFIRMED);
+                if (confirmedCount >= event.getMaxParticipants() && part.getStatus() != ParticipationStatus.CONFIRMED) {
+                    throw ApiException.conflict("Достигнут максимальный лимит участников (" + event.getMaxParticipants() + ")");
+                }
             }
         }
 
@@ -482,18 +503,20 @@ public class EventService {
 
         if (wasConfirmed && event.getJoinMode() == JoinMode.OPEN) {
             List<EventParticipation> waitlist = participationRepository.findByEventIdAndStatusOrderByCreatedAtAsc(eventId, ParticipationStatus.WAITLISTED);
-            if (!waitlist.isEmpty()) {
-                EventParticipation promoted = waitlist.getFirst();
-                promoted.setStatus(ParticipationStatus.CONFIRMED);
-                participationRepository.save(promoted);
+            for (EventParticipation candidate : waitlist) {
+                if (findConflictingEvent(candidate.getUser().getId(), event).isEmpty()) {
+                    candidate.setStatus(ParticipationStatus.CONFIRMED);
+                    participationRepository.save(candidate);
 
-                notificationService.notifyUser(
-                        promoted.getUser(),
-                        NotificationType.WAITLIST_PROMOTED,
-                        "Освободилось место на «" + event.getTitle() + "»!",
-                        "Вы автоматически переведены из листа ожидания в основной состав участников.",
-                        "/events/" + event.getId()
-                );
+                    notificationService.notifyUser(
+                            candidate.getUser(),
+                            NotificationType.WAITLIST_PROMOTED,
+                            "Освободилось место на «" + event.getTitle() + "»!",
+                            "Вы автоматически переведены из листа ожидания в основной состав участников.",
+                            "/events/" + event.getId()
+                    );
+                    break;
+                }
             }
         }
 
@@ -506,6 +529,14 @@ public class EventService {
                 .orElseThrow(() -> ApiException.notFound("Мероприятие не найдено"));
         if (!canManageEvent(event, viewer)) {
             throw ApiException.forbidden("Вы не можете редактировать чужое мероприятие");
+        }
+
+        if (!event.getStartsAt().equals(req.startsAt()) && req.startsAt().isBefore(Instant.now().minus(5, ChronoUnit.MINUTES))) {
+            throw ApiException.badRequest("Нельзя перенести мероприятие в прошлое. Пожалуйста, укажите будущую дату и время начала.");
+        }
+
+        if (req.maxParticipants() != null && req.maxParticipants() < 2) {
+            throw ApiException.badRequest("Лимит участников должен быть не менее 2 человек");
         }
 
         boolean timeOrPlaceChanged = !event.getStartsAt().equals(req.startsAt())
@@ -531,7 +562,13 @@ public class EventService {
         event.setParticipationConditions(req.participationConditions());
         event.setWhatToBring(req.whatToBring());
         event.setMaxParticipants(req.maxParticipants());
-        if (req.coverAttachmentId() != null) {
+        if (Boolean.TRUE.equals(req.removeCoverImage())) {
+            event.setCoverAttachmentId(null);
+            if (event.getSeries() != null) {
+                event.getSeries().setCoverAttachmentId(null);
+                seriesRepository.save(event.getSeries());
+            }
+        } else if (req.coverAttachmentId() != null) {
             event.setCoverAttachmentId(req.coverAttachmentId());
         }
         if (event.isRecurringOccurrence()) {
@@ -553,6 +590,55 @@ public class EventService {
         }
 
         return getEventDetail(eventId, viewer);
+    }
+
+    @Transactional
+    public void deleteEventByOrganizer(UUID eventId, UserPrincipal viewer) {
+        Event event = eventRepository.findById(eventId)
+                .orElseThrow(() -> ApiException.notFound("Мероприятие не найдено"));
+        if (!canManageEvent(event, viewer)) {
+            throw ApiException.forbidden("Только организатор может удалить мероприятие");
+        }
+        notifyParticipantsAboutCancellation(event, "Мероприятие удалено организатором");
+        eventRepository.delete(event);
+    }
+
+    private Optional<Event> findConflictingEvent(UUID userId, Event target) {
+        Instant startA = target.getStartsAt();
+        Instant endA = target.getEndsAt() != null ? target.getEndsAt() : startA.plus(90, ChronoUnit.MINUTES);
+
+        // 1. Проверим подтверждённые записи пользователя
+        List<EventParticipation> myParts = participationRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        for (EventParticipation p : myParts) {
+            if (p.getStatus() != ParticipationStatus.CONFIRMED) continue;
+            Event other = p.getEvent();
+            if (other.getId().equals(target.getId()) || other.getStatus() != EventStatus.PUBLISHED) continue;
+            Instant startB = other.getStartsAt();
+            Instant endB = other.getEndsAt() != null ? other.getEndsAt() : startB.plus(90, ChronoUnit.MINUTES);
+            if (startA.isBefore(endB) && endA.isAfter(startB)) {
+                return Optional.of(other);
+            }
+        }
+
+        // 2. Проверим мероприятия, которые пользователь сам организует
+        List<Event> organized = eventRepository.findByOrganizerIdOrderByStartsAtAsc(userId);
+        for (Event other : organized) {
+            if (other.getId().equals(target.getId()) || other.getStatus() != EventStatus.PUBLISHED) continue;
+            Instant startB = other.getStartsAt();
+            Instant endB = other.getEndsAt() != null ? other.getEndsAt() : startB.plus(90, ChronoUnit.MINUTES);
+            if (startA.isBefore(endB) && endA.isAfter(startB)) {
+                return Optional.of(other);
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    private String formatEventInterval(Event e) {
+        DateTimeFormatter fmtDate = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm").withZone(DEFAULT_ZONE);
+        DateTimeFormatter fmtTime = DateTimeFormatter.ofPattern("HH:mm").withZone(DEFAULT_ZONE);
+        Instant end = e.getEndsAt() != null ? e.getEndsAt() : e.getStartsAt().plus(90, ChronoUnit.MINUTES);
+        return fmtDate.format(e.getStartsAt()) + "–" + fmtTime.format(end) + " МСК";
     }
 
     @Transactional

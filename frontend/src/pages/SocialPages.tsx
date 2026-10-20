@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Calendar,
@@ -7,8 +7,10 @@ import {
   Flag,
   Heart,
   MapPin,
+  MessageCircle,
   Plus,
   Search,
+  Send,
   SkipForward,
   Sparkles,
   UserCheck,
@@ -18,20 +20,191 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { apiFetch, ApiError, SKILL_LABELS, uploadAttachmentFile } from '../api';
+import { apiFetch, ApiError, formatDateTime, SKILL_LABELS, uploadAttachmentFile } from '../api';
 import { useAuth } from '../AuthContext';
 import {
+  DirectMessageDto,
   EventCardDto,
   FriendshipDto,
   PublicUserProfileDto,
   SportDto,
   SportInterestItemDto,
+  UserSummaryDto,
 } from '../types';
 import { EventCard } from '../components/EventCard';
-import { CustomSelect, RegionSelect } from '../components/UiControls';
+import { CustomSelect, RegionSelect, VoiceSearchButton } from '../components/UiControls';
+
+/**
+ * 1-on-1 Direct Messages Modal between accepted friends (#15)
+ */
+const DirectChatModal: React.FC<{
+  friendUserId: string;
+  friendDisplayName: string;
+  onClose: () => void;
+}> = ({ friendUserId, friendDisplayName, onClose }) => {
+  const { user } = useAuth();
+  const [messages, setMessages] = useState<DirectMessageDto[]>([]);
+  const [text, setText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const prevLenRef = useRef<number>(0);
+
+  const loadMessages = async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const list = await apiFetch<DirectMessageDto[]>(`/api/v1/friends/${friendUserId}/messages`);
+      setMessages(list);
+    } catch (err) {
+      if (!silent) {
+        setError(err instanceof ApiError ? err.message : 'Не удалось загрузить переписку');
+      }
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    prevLenRef.current = 0;
+    loadMessages(false);
+    const timer = setInterval(() => {
+      loadMessages(true);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [friendUserId]);
+
+  // Smart scroll: only scroll to bottom on initial load or when user is near bottom (#16)
+  useEffect(() => {
+    if (messages.length > prevLenRef.current) {
+      const isInitial = prevLenRef.current === 0;
+      prevLenRef.current = messages.length;
+      const el = containerRef.current;
+      if (el) {
+        const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+        if (isInitial || isNearBottom) {
+          setTimeout(() => {
+            if (containerRef.current) {
+              containerRef.current.scrollTop = containerRef.current.scrollHeight;
+            }
+          }, 40);
+        }
+      }
+    }
+  }, [messages.length]);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!text.trim() || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      const created = await apiFetch<DirectMessageDto>(`/api/v1/friends/${friendUserId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ content: text.trim() }),
+      });
+      setMessages((prev) => [...prev, created]);
+      setText('');
+      setTimeout(() => {
+        if (containerRef.current) {
+          containerRef.current.scrollTop = containerRef.current.scrollHeight;
+        }
+      }, 40);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Не удалось отправить сообщение');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl border border-slate-200 max-w-lg w-full p-5 sm:p-6 shadow-2xl flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between gap-3 pb-3.5 border-b border-slate-100">
+          <div>
+            <div className="text-[11px] font-extrabold text-[#16B672] uppercase tracking-wider">
+              Личные сообщения со знакомым
+            </div>
+            <h3 className="font-display font-extrabold text-lg text-slate-900">
+              {friendDisplayName}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-xl hover:bg-slate-100 text-slate-500"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {error && (
+          <div className="mt-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-800">
+            {error}
+          </div>
+        )}
+
+        <div
+          ref={containerRef}
+          className="flex-1 overflow-y-auto py-4 space-y-2.5 min-h-[260px] max-h-[420px] pr-1"
+        >
+          {loading ? (
+            <div className="h-40 rounded-2xl bg-slate-100 animate-pulse" />
+          ) : messages.length === 0 ? (
+            <div className="p-8 rounded-2xl bg-[#F7FAF8] text-center text-xs text-slate-500">
+              Сообщений пока нет. Договоритесь о совместной тренировке или времени встречи!
+            </div>
+          ) : (
+            messages.map((m) => {
+              const isMine = m.senderUserId === user?.id;
+              return (
+                <div
+                  key={m.id}
+                  className={`p-3.5 rounded-2xl text-xs space-y-1 max-w-[85%] ${
+                    isMine
+                      ? 'ml-auto bg-[#16B672] text-white'
+                      : 'mr-auto bg-[#F4F8F6] text-slate-900 border border-slate-200/70'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-extrabold">
+                      {isMine ? 'Вы' : m.senderDisplayName}
+                    </span>
+                    <span className={`text-[10px] ${isMine ? 'text-white/80' : 'text-slate-400'}`}>
+                      {formatDateTime(m.createdAt)}
+                    </span>
+                  </div>
+                  <p className="text-sm whitespace-pre-line leading-relaxed">{m.content}</p>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <form onSubmit={handleSend} className="pt-3 border-t border-slate-100 flex gap-2">
+          <input
+            type="text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Напишите сообщение знакомому..."
+            className="flex-1 px-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#16B672]"
+          />
+          <button
+            type="submit"
+            disabled={sending || !text.trim()}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#16B672] hover:bg-[#11995E] disabled:opacity-50 text-white font-display font-bold text-xs shadow-sm"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>Отправить</span>
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 export const MyProfilePage: React.FC = () => {
-  const { user, sports, refreshMe, refreshSports } = useAuth();
+  const { user, sports, refreshMe, refreshSports, updateCurrentUserSummary } = useAuth();
   const [organizedEvents, setOrganizedEvents] = useState<EventCardDto[]>([]);
   const [participatingEvents, setParticipatingEvents] = useState<EventCardDto[]>([]);
   const [saving, setSaving] = useState(false);
@@ -170,7 +343,7 @@ export const MyProfilePage: React.FC = () => {
     try {
       const uploaded = await uploadAttachmentFile(file, 'AVATAR');
       setAvatarAttachmentId(uploaded.id);
-      await apiFetch('/api/v1/profile/me', {
+      const updated = await apiFetch<UserSummaryDto>('/api/v1/profile/me', {
         method: 'PUT',
         body: JSON.stringify({
           displayName,
@@ -188,6 +361,7 @@ export const MyProfilePage: React.FC = () => {
           sportInterests: interests,
         }),
       });
+      updateCurrentUserSummary(updated);
       await refreshMe();
       setFeedback('Фото профиля обновлено! Изменения сразу отображены в шапке сайта и в вашей анкете.');
     } catch (err) {
@@ -203,7 +377,7 @@ export const MyProfilePage: React.FC = () => {
     setFeedback(null);
     setError(null);
     try {
-      await apiFetch('/api/v1/profile/me', {
+      const updated = await apiFetch<UserSummaryDto>('/api/v1/profile/me', {
         method: 'PUT',
         body: JSON.stringify({
           displayName,
@@ -221,6 +395,7 @@ export const MyProfilePage: React.FC = () => {
           sportInterests: interests,
         }),
       });
+      updateCurrentUserSummary(updated);
       await refreshMe();
       setFeedback('Профиль, спортивные интересы и настройки приватности успешно сохранены!');
     } catch (err) {
@@ -559,22 +734,24 @@ export const PublicUserProfilePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [inviteMessage, setInviteMessage] = useState('');
   const [showInviteInput, setShowInviteInput] = useState(false);
+  const [showDirectChat, setShowDirectChat] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const loadProfile = async () => {
+  const loadProfile = async (silent = false) => {
     if (!userId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const p = await apiFetch<PublicUserProfileDto>(`/api/v1/users/${userId}`);
       setProfile(p);
     } catch {
       // ignore
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadProfile();
+    loadProfile(false);
   }, [userId]);
 
   const handleSendFriendRequest = async (customMsg?: string) => {
@@ -583,6 +760,7 @@ export const PublicUserProfilePage: React.FC = () => {
       return;
     }
     if (!profile) return;
+    setActionError(null);
     try {
       await apiFetch('/api/v1/friends/requests', {
         method: 'POST',
@@ -594,30 +772,49 @@ export const PublicUserProfilePage: React.FC = () => {
         }),
       });
       setShowInviteInput(false);
-      await loadProfile();
+      // Update state in-place without full page skeleton reload (#14)
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              friendshipStatusWithViewer: 'PENDING',
+              friendshipIncomingForViewer: false,
+            }
+          : prev
+      );
+      await loadProfile(true);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Не удалось отправить запрос');
+      setActionError(err instanceof ApiError ? err.message : 'Не удалось отправить запрос');
     }
   };
 
   const handleRespondFriend = async (accept: boolean) => {
     if (!profile?.friendshipIdWithViewer) return;
+    setActionError(null);
     try {
       await apiFetch(`/api/v1/friends/${profile.friendshipIdWithViewer}/respond?accept=${accept}`, {
         method: 'POST',
       });
-      await loadProfile();
+      await loadProfile(true);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка');
+      setActionError(err instanceof ApiError ? err.message : 'Ошибка обработки запроса');
     }
   };
 
   if (loading) return <div className="h-80 rounded-3xl bg-slate-200 animate-pulse" />;
   if (!profile) return <div className="p-8 text-center">Профиль не найден</div>;
 
+  const viewerSportIds = new Set((user?.sportInterests || []).map((s) => s.sportId));
+
   return (
     <div className="space-y-8 pb-16">
       <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-9 shadow-sm space-y-5">
+        {actionError && (
+          <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-800">
+            {actionError}
+          </div>
+        )}
+
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-4">
             {profile.avatarUrl ? (
@@ -670,10 +867,20 @@ export const PublicUserProfilePage: React.FC = () => {
                 </>
               )}
               {profile.friendshipStatusWithViewer === 'ACCEPTED' && (
-                <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-100 text-emerald-900 text-xs font-bold">
-                  <UserCheck className="w-4 h-4" />
-                  <span>Ваш спортивный знакомый</span>
-                </span>
+                <>
+                  <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-100 text-emerald-900 text-xs font-bold">
+                    <UserCheck className="w-4 h-4" />
+                    <span>Ваш спортивный знакомый</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowDirectChat(true)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white text-xs font-bold shadow-sm"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>Написать сообщение</span>
+                  </button>
+                </>
               )}
               {profile.friendshipStatusWithViewer === 'PENDING' &&
                 (profile.friendshipIncomingForViewer ? (
@@ -731,6 +938,20 @@ export const PublicUserProfilePage: React.FC = () => {
           </div>
         )}
 
+        {profile.matchReasons && profile.matchReasons.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {profile.matchReasons.map((r, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-[#E7F8F0] text-[#11995E] text-xs font-extrabold"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>{r}</span>
+              </span>
+            ))}
+          </div>
+        )}
+
         {profile.bio && <p className="text-sm text-slate-700">{profile.bio}</p>}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-2xl bg-slate-50 text-xs">
@@ -747,14 +968,22 @@ export const PublicUserProfilePage: React.FC = () => {
         <div className="space-y-2">
           <div className="text-xs font-bold text-slate-500 uppercase">Спортивные интересы</div>
           <div className="flex flex-wrap gap-2">
-            {profile.sportInterests.map((si) => (
-              <span
-                key={si.sportId}
-                className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-200 text-xs font-bold"
-              >
-                {si.sportName} • {SKILL_LABELS[si.skillLevel] || si.skillLevel}
-              </span>
-            ))}
+            {profile.sportInterests.map((si) => {
+              const isCommon = viewerSportIds.has(si.sportId);
+              return (
+                <span
+                  key={si.sportId}
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-bold ${
+                    isCommon
+                      ? 'bg-[#E7F8F0] text-[#11995E] border-[#16B672]'
+                      : 'bg-blue-50 text-blue-800 border-blue-200'
+                  }`}
+                >
+                  {isCommon ? '🤝 Общий спорт: ' : ''}
+                  {si.sportName} • {SKILL_LABELS[si.skillLevel] || si.skillLevel}
+                </span>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -775,6 +1004,14 @@ export const PublicUserProfilePage: React.FC = () => {
           </div>
         )}
       </section>
+
+      {showDirectChat && (
+        <DirectChatModal
+          friendUserId={profile.id}
+          friendDisplayName={profile.displayName}
+          onClose={() => setShowDirectChat(false)}
+        />
+      )}
     </div>
   );
 };
@@ -800,8 +1037,14 @@ export const PartnersAndFriendsPage: React.FC = () => {
   const [customInviteMsg, setCustomInviteMsg] = useState('');
   const [matchSentFeedback, setMatchSentFeedback] = useState<string | null>(null);
 
-  const loadData = async () => {
-    setLoading(true);
+  // Active 1-on-1 Direct Chat Friend (#15)
+  const [activeChatFriend, setActiveChatFriend] = useState<{
+    userId: string;
+    displayName: string;
+  } | null>(null);
+
+  const loadData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const params = new URLSearchParams();
       if (sportId) params.set('sportId', sportId);
@@ -815,7 +1058,9 @@ export const PartnersAndFriendsPage: React.FC = () => {
       ]);
       setPartners(pList);
       setRecommendedPartners(allPList);
-      setMatchIndex(0);
+      if (!silent) {
+        setMatchIndex(0);
+      }
 
       if (user) {
         const fList = await apiFetch<FriendshipDto[]>('/api/v1/friends');
@@ -824,21 +1069,22 @@ export const PartnersAndFriendsPage: React.FC = () => {
     } catch {
       // ignore
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadData(false);
   }, [sportId, city, skillLevel, user]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      loadData();
+      loadData(false);
     }, 320);
     return () => clearTimeout(timer);
   }, [q]);
 
+  // In-place update without full-page skeleton reload (#14)
   const handleSendFriendRequest = async (targetUserId: string, customMessage?: string) => {
     if (!user) {
       navigate('/login');
@@ -856,9 +1102,23 @@ export const PartnersAndFriendsPage: React.FC = () => {
       });
       setMatchSentFeedback('Заявка на совместную тренировку отправлена!');
       setCustomInviteMsg('');
-      await loadData();
+      setPartners((prev) =>
+        prev.map((p) =>
+          p.id === targetUserId
+            ? { ...p, friendshipStatusWithViewer: 'PENDING', friendshipIncomingForViewer: false }
+            : p
+        )
+      );
+      setRecommendedPartners((prev) =>
+        prev.map((p) =>
+          p.id === targetUserId
+            ? { ...p, friendshipStatusWithViewer: 'PENDING', friendshipIncomingForViewer: false }
+            : p
+        )
+      );
+      await loadData(true);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка отправки запроса');
+      setMatchSentFeedback(err instanceof ApiError ? err.message : 'Ошибка отправки запроса');
     }
   };
 
@@ -867,18 +1127,19 @@ export const PartnersAndFriendsPage: React.FC = () => {
       await apiFetch(`/api/v1/friends/${friendshipId}/respond?accept=${accept}`, {
         method: 'POST',
       });
-      await loadData();
+      await loadData(true);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка');
+      setMatchSentFeedback(err instanceof ApiError ? err.message : 'Ошибка обработки заявки');
     }
   };
 
   const handleRemoveOrCancel = async (friendshipId: string) => {
     try {
       await apiFetch(`/api/v1/friends/${friendshipId}`, { method: 'DELETE' });
-      await loadData();
+      setFriendships((prev) => prev.filter((f) => f.id !== friendshipId));
+      await loadData(true);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Ошибка');
+      setMatchSentFeedback(err instanceof ApiError ? err.message : 'Ошибка удаления');
     }
   };
 
@@ -888,6 +1149,7 @@ export const PartnersAndFriendsPage: React.FC = () => {
 
   const deckList = partners.length > 0 ? partners : recommendedPartners;
   const currentMatchCard = deckList.length > 0 ? deckList[matchIndex % deckList.length] : null;
+  const viewerSportIds = new Set((user?.sportInterests || []).map((s) => s.sportId));
 
   const computeCompatibility = (p: PublicUserProfileDto) => {
     let score = 78;
@@ -904,7 +1166,7 @@ export const PartnersAndFriendsPage: React.FC = () => {
             Спорт-Мэтч, Поиск напарников и Знакомые
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Находите напарников по уровню и графику в формате спортивных анкет или каталога
+            Находите напарников по общему виду спорта, уровню и графику тренировок
           </p>
         </div>
 
@@ -951,18 +1213,18 @@ export const PartnersAndFriendsPage: React.FC = () => {
         </div>
       </div>
 
+      {matchSentFeedback && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center justify-between">
+          <span>{matchSentFeedback}</span>
+          <button type="button" onClick={() => setMatchSentFeedback(null)}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* TAB: SPORT-MATCH INTERACTIVE DATING DECK (#10) */}
       {tab === 'MATCH' ? (
         <div className="max-w-xl mx-auto space-y-4">
-          {matchSentFeedback && (
-            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center justify-between">
-              <span>{matchSentFeedback}</span>
-              <button type="button" onClick={() => setMatchSentFeedback(null)}>
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
           {currentMatchCard ? (
             <div className="bento-card overflow-hidden">
               {/* Top scenic banner of the match card (Ref 2 style) */}
@@ -1030,14 +1292,22 @@ export const PartnersAndFriendsPage: React.FC = () => {
                     Дисциплины и уровень
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {currentMatchCard.sportInterests.map((si) => (
-                      <span
-                        key={si.sportId}
-                        className="px-3 py-1.5 rounded-xl bg-[#E7F8F0] text-[#11995E] text-xs font-extrabold"
-                      >
-                        {si.sportName} • {SKILL_LABELS[si.skillLevel] || si.skillLevel}
-                      </span>
-                    ))}
+                    {currentMatchCard.sportInterests.map((si) => {
+                      const isCommon = viewerSportIds.has(si.sportId);
+                      return (
+                        <span
+                          key={si.sportId}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-extrabold ${
+                            isCommon
+                              ? 'bg-[#16B672] text-white shadow-2xs'
+                              : 'bg-[#E7F8F0] text-[#11995E]'
+                          }`}
+                        >
+                          {isCommon ? '🤝 Общий спорт: ' : ''}
+                          {si.sportName} • {SKILL_LABELS[si.skillLevel] || si.skillLevel}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1115,18 +1385,21 @@ export const PartnersAndFriendsPage: React.FC = () => {
         </div>
       ) : tab === 'PARTNERS' ? (
         <div className="space-y-6">
-          {/* Search filters */}
+          {/* Search filters + Voice Search (#9) */}
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <div className="relative flex items-center">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && loadData()}
+                onKeyDown={(e) => e.key === 'Enter' && loadData(false)}
                 placeholder="Имя, вид спорта или интересы..."
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-9 pr-12 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+              <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                <VoiceSearchButton onResult={(spoken) => setQ(spoken)} />
+              </div>
             </div>
 
             <CustomSelect
@@ -1224,14 +1497,22 @@ export const PartnersAndFriendsPage: React.FC = () => {
                           </div>
                           {p.bio && <p className="text-xs text-slate-600 line-clamp-2">{p.bio}</p>}
                           <div className="flex flex-wrap gap-1.5">
-                            {p.sportInterests.map((si) => (
-                              <span
-                                key={si.sportId}
-                                className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold"
-                              >
-                                {si.sportName} ({SKILL_LABELS[si.skillLevel] || si.skillLevel})
-                              </span>
-                            ))}
+                            {p.sportInterests.map((si) => {
+                              const isCommon = viewerSportIds.has(si.sportId);
+                              return (
+                                <span
+                                  key={si.sportId}
+                                  className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                                    isCommon
+                                      ? 'bg-[#E7F8F0] text-[#11995E] border border-[#16B672]'
+                                      : 'bg-blue-50 text-blue-700'
+                                  }`}
+                                >
+                                  {isCommon ? '🤝 Общий спорт: ' : ''}
+                                  {si.sportName} ({SKILL_LABELS[si.skillLevel] || si.skillLevel})
+                                </span>
+                              );
+                            })}
                           </div>
                         </div>
                         <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
@@ -1249,6 +1530,26 @@ export const PartnersAndFriendsPage: React.FC = () => {
                             >
                               <UserPlus className="w-3.5 h-3.5" />
                               <span>Предложить тренировку</span>
+                            </button>
+                          )}
+                          {p.friendshipStatusWithViewer === 'PENDING' && (
+                            <span className="px-3 py-1.5 rounded-xl bg-amber-100 text-amber-800 text-xs font-bold">
+                              Запрос в ожидании
+                            </span>
+                          )}
+                          {p.friendshipStatusWithViewer === 'ACCEPTED' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveChatFriend({
+                                  userId: p.id,
+                                  displayName: p.displayName,
+                                })
+                              }
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#16B672] text-white text-xs font-bold"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              <span>Личный чат</span>
                             </button>
                           )}
                         </div>
@@ -1302,14 +1603,22 @@ export const PartnersAndFriendsPage: React.FC = () => {
                     {p.bio && <p className="text-xs text-slate-600 line-clamp-2">{p.bio}</p>}
 
                     <div className="flex flex-wrap gap-1.5">
-                      {p.sportInterests.map((si) => (
-                        <span
-                          key={si.sportId}
-                          className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold"
-                        >
-                          {si.sportName} ({SKILL_LABELS[si.skillLevel] || si.skillLevel})
-                        </span>
-                      ))}
+                      {p.sportInterests.map((si) => {
+                        const isCommon = viewerSportIds.has(si.sportId);
+                        return (
+                          <span
+                            key={si.sportId}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                              isCommon
+                                ? 'bg-[#E7F8F0] text-[#11995E] border border-[#16B672]'
+                                : 'bg-blue-50 text-blue-700'
+                            }`}
+                          >
+                            {isCommon ? '🤝 Общий спорт: ' : ''}
+                            {si.sportName} ({SKILL_LABELS[si.skillLevel] || si.skillLevel})
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1337,10 +1646,25 @@ export const PartnersAndFriendsPage: React.FC = () => {
                       </span>
                     )}
                     {p.friendshipStatusWithViewer === 'ACCEPTED' && (
-                      <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold">
-                        <UserCheck className="w-3.5 h-3.5" />
-                        В знакомых
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold">
+                          <UserCheck className="w-3.5 h-3.5" />
+                          В знакомых
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveChatFriend({
+                              userId: p.id,
+                              displayName: p.displayName,
+                            })
+                          }
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white text-xs font-bold"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>Чат</span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1461,32 +1785,64 @@ export const PartnersAndFriendsPage: React.FC = () => {
                       </Link>
                       <div className="text-xs text-slate-500">{f.friendCity || 'Москва'}</div>
                       <div className="flex flex-wrap gap-1">
-                        {f.friendSports.map((s) => (
-                          <span
-                            key={s.sportId}
-                            className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[11px] font-bold"
-                          >
-                            {s.sportName}
-                          </span>
-                        ))}
+                        {f.friendSports.map((s) => {
+                          const isCommon = viewerSportIds.has(s.sportId);
+                          return (
+                            <span
+                              key={s.sportId}
+                              className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                                isCommon
+                                  ? 'bg-[#E7F8F0] text-[#11995E] border border-[#16B672]'
+                                  : 'bg-blue-50 text-blue-700'
+                              }`}
+                            >
+                              {isCommon ? '🤝 ' : ''}
+                              {s.sportName}
+                            </span>
+                          );
+                        })}
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveOrCancel(f.id)}
-                      title="Удалить из списка знакомых"
-                      className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold"
-                    >
-                      <UserMinus className="w-3.5 h-3.5" />
-                      <span>Удалить</span>
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveChatFriend({
+                            userId: f.friendUserId,
+                            displayName: f.friendDisplayName,
+                          })
+                        }
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#16B672] hover:bg-[#11995E] text-white text-xs font-bold shadow-xs"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>Написать</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveOrCancel(f.id)}
+                        title="Удалить из списка знакомых"
+                        className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-semibold"
+                      >
+                        <UserMinus className="w-3.5 h-3.5" />
+                        <span>Удалить</span>
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
           </section>
         </div>
+      )}
+
+      {/* 1-on-1 Direct Chat Modal (#15) */}
+      {activeChatFriend && (
+        <DirectChatModal
+          friendUserId={activeChatFriend.userId}
+          friendDisplayName={activeChatFriend.displayName}
+          onClose={() => setActiveChatFriend(null)}
+        />
       )}
     </div>
   );

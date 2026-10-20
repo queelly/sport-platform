@@ -51,9 +51,18 @@ const DEFAULT_A11Y: A11ySettings = {
 };
 
 export const Navbar: React.FC = () => {
-  const { user, myOrganizations, unreadNotificationsCount, logout } = useAuth();
+  const {
+    user,
+    myOrganizations,
+    unreadNotificationsCount,
+    savedSessions,
+    switchAccount,
+    removeSavedAccount,
+    logout,
+  } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [regionDropdownOpen, setRegionDropdownOpen] = useState(false);
+  const [accountSwitcherOpen, setAccountSwitcherOpen] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<string>(() => getSelectedGlobalRegion());
   const [a11yOpen, setA11yOpen] = useState(false);
   const [a11y, setA11y] = useState<A11ySettings>(() => {
@@ -135,37 +144,45 @@ export const Navbar: React.FC = () => {
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-slate-300">Размер шрифта:</span>
-                {(['normal', 'lg', 'xl'] as const).map((sz, i) => (
+                {(
+                  [
+                    { id: 'normal', label: 'Обычный (100%)' },
+                    { id: 'lg', label: 'Увеличенный (115%)' },
+                    { id: 'xl', label: 'Крупный (130%)' },
+                  ] as const
+                ).map((sz) => (
                   <button
-                    key={sz}
+                    key={sz.id}
                     type="button"
-                    onClick={() => setA11y((p) => ({ ...p, fontSize: sz }))}
+                    aria-pressed={a11y.fontSize === sz.id}
+                    onClick={() => setA11y((p) => ({ ...p, fontSize: sz.id }))}
                     className={`px-2.5 py-1 rounded-lg font-bold transition-colors ${
-                      a11y.fontSize === sz
-                        ? 'bg-[#16B672] text-white'
+                      a11y.fontSize === sz.id
+                        ? 'bg-[#16B672] text-white ring-2 ring-white'
                         : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                     }`}
                   >
-                    {i === 0 ? 'А (100%)' : i === 1 ? 'А+ (115%)' : 'А++ (130%)'}
+                    {sz.label}
                   </button>
                 ))}
               </div>
 
               <div className="flex items-center gap-1.5">
-                <span className="font-bold text-slate-300">Цвет сайта:</span>
+                <span className="font-bold text-slate-300">Контрастность:</span>
                 {[
-                  { id: 'normal', label: 'Стандарт' },
-                  { id: 'bw', label: 'Ч/Б' },
-                  { id: 'wb', label: 'Б/Ч' },
-                  { id: 'blue', label: 'Синий' },
+                  { id: 'normal', label: 'Стандартная' },
+                  { id: 'bw', label: 'Чёрно-белая (высокий контраст)' },
+                  { id: 'wb', label: 'Жёлтый на чёрном' },
+                  { id: 'blue', label: 'Синяя' },
                 ].map((c) => (
                   <button
                     key={c.id}
                     type="button"
+                    aria-pressed={a11y.contrast === c.id}
                     onClick={() => setA11y((p) => ({ ...p, contrast: c.id as A11ySettings['contrast'] }))}
                     className={`px-2.5 py-1 rounded-lg font-bold transition-colors ${
                       a11y.contrast === c.id
-                        ? 'bg-[#16B672] text-white'
+                        ? 'bg-[#16B672] text-white ring-2 ring-white'
                         : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                     }`}
                   >
@@ -203,7 +220,7 @@ export const Navbar: React.FC = () => {
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white font-bold"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Обычная версия</span>
+                  <span>Сбросить настройки</span>
                 </button>
               )}
               <button
@@ -355,7 +372,54 @@ export const Navbar: React.FC = () => {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-100">
+            <div className="pt-4 border-t border-slate-100 space-y-2">
+              {savedSessions.length > 0 && (
+                <div className="bg-[#F7FAF8] rounded-2xl p-2.5 space-y-1.5 border border-slate-200/70">
+                  <div className="text-[10px] font-extrabold text-slate-400 uppercase px-1">
+                    Аккаунты на устройстве ({savedSessions.length})
+                  </div>
+                  {savedSessions.map((s) => {
+                    const isCurrent = user?.id === s.user.id;
+                    return (
+                      <div
+                        key={s.user.id}
+                        className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs ${
+                          isCurrent ? 'bg-[#E7F8F0] text-[#11995E] font-extrabold' : 'hover:bg-white text-slate-700 font-semibold'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!isCurrent) await switchAccount(s.user.id);
+                            setMobileOpen(false);
+                          }}
+                          className="flex-1 text-left truncate"
+                        >
+                          {s.user.displayName} {isCurrent ? '• активен' : ''}
+                        </button>
+                        {!isCurrent && (
+                          <button
+                            type="button"
+                            onClick={() => removeSavedAccount(s.user.id)}
+                            className="text-slate-400 hover:text-rose-600 px-1"
+                            title="Забыть сессию"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <Link
+                    to="/login?addAccount=1"
+                    onClick={() => setMobileOpen(false)}
+                    className="block text-center py-1.5 rounded-xl bg-white border border-slate-200 text-[11px] font-bold text-[#16B672]"
+                  >
+                    + Добавить ещё аккаунт
+                  </Link>
+                </div>
+              )}
+
               {user ? (
                 <button
                   onClick={() => {
@@ -567,8 +631,8 @@ export const Navbar: React.FC = () => {
           </nav>
         </div>
 
-        {/* Bottom Promo Card + Logout / Auth (Ref 1 & Ref 2 bottom left card with green circular arrow button) */}
-        <div className="space-y-3 pt-4">
+        {/* Bottom Promo Card + Account Switcher + Logout / Auth */}
+        <div className="space-y-2.5 pt-4">
           <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#DDF3EA] via-[#E7F8F0] to-[#CFECE0] p-4 border border-[#16B672]/15">
             <div className="relative z-10 space-y-1.5">
               <span className="inline-block px-2 py-0.5 rounded-full bg-white/80 text-[#11995E] text-[10px] font-extrabold uppercase tracking-wider">
@@ -598,13 +662,76 @@ export const Navbar: React.FC = () => {
           </div>
 
           {user ? (
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-xs font-bold text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-            >
-              <LogOut className="w-4 h-4 text-rose-500" />
-              <span>Выйти ({user.displayName.split(' ')[0]})</span>
-            </button>
+            <div className="space-y-1.5 relative">
+              <button
+                type="button"
+                onClick={() => setAccountSwitcherOpen((o) => !o)}
+                className="w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-2xl text-xs font-bold bg-[#F7FAF8] hover:bg-[#E7F8F0] text-slate-700 border border-slate-200/70 transition-colors"
+              >
+                <span className="truncate">
+                  Аккаунты ({savedSessions.length || 1}) • Сменить
+                </span>
+                <Users className="w-3.5 h-3.5 text-[#16B672] shrink-0" />
+              </button>
+
+              {accountSwitcherOpen && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-2.5 space-y-1.5">
+                  <div className="text-[10px] font-extrabold text-slate-400 uppercase px-1">
+                    Быстрое переключение
+                  </div>
+                  {savedSessions.map((s) => {
+                    const isCurrent = user.id === s.user.id;
+                    return (
+                      <div
+                        key={s.user.id}
+                        className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl text-xs ${
+                          isCurrent
+                            ? 'bg-[#E7F8F0] text-[#11995E] font-extrabold'
+                            : 'hover:bg-[#F7FAF8] text-slate-700 font-semibold'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!isCurrent) await switchAccount(s.user.id);
+                            setAccountSwitcherOpen(false);
+                          }}
+                          className="flex-1 text-left truncate"
+                        >
+                          <div className="truncate">{s.user.displayName}</div>
+                          <div className="text-[10px] opacity-75 truncate">{s.user.email}</div>
+                        </button>
+                        {!isCurrent && (
+                          <button
+                            type="button"
+                            onClick={() => removeSavedAccount(s.user.id)}
+                            title="Удалить сохранённый аккаунт"
+                            className="text-slate-400 hover:text-rose-600 px-1"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <Link
+                    to="/login?addAccount=1"
+                    onClick={() => setAccountSwitcherOpen(false)}
+                    className="block text-center py-1.5 rounded-xl bg-[#F7FAF8] hover:bg-[#E7F8F0] text-[11px] font-extrabold text-[#16B672]"
+                  >
+                    + Войти в ещё один аккаунт
+                  </Link>
+                </div>
+              )}
+
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-4 py-2 rounded-2xl text-xs font-bold text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+              >
+                <LogOut className="w-4 h-4 text-rose-500" />
+                <span>Выйти ({user.displayName.split(' ')[0]})</span>
+              </button>
+            </div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
               <Link

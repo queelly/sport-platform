@@ -41,8 +41,11 @@ import { useAuth } from '../AuthContext';
 import {
   AttachmentDto,
   DiscussionMessageDto,
+  EVENT_CATEGORIES,
   EventDetailDto,
+  getBrowserLocalTzLabel,
   getRegionInfo,
+  isOnlineEvent,
 } from '../types';
 import { CustomDateTimePicker, CustomSelect, RegionSelect } from '../components/UiControls';
 import { ScenicSportIllustration } from '../components/EventCard';
@@ -62,6 +65,7 @@ export const CreateEventPage: React.FC = () => {
   const [newSportName, setNewSportName] = useState('');
   const [newSportCategory, setNewSportCategory] = useState('Командные и игровые дисциплины');
   const [organizationId, setOrganizationId] = useState<string>(preselectedOrgId);
+  const [isOnline, setIsOnline] = useState(false);
   const [city, setCity] = useState(user?.city || 'Москва');
   const [locationAddress, setLocationAddress] = useState('');
   const [startsAtLocal, setStartsAtLocal] = useState(() => {
@@ -73,7 +77,7 @@ export const CreateEventPage: React.FC = () => {
   const [durationMinutesStr, setDurationMinutesStr] = useState<string>('90');
   const [joinMode, setJoinMode] = useState<'OPEN' | 'APPROVAL_REQUIRED'>('OPEN');
   const [skillLevel, setSkillLevel] = useState('ANY');
-  const [activityFormat, setActivityFormat] = useState('Совместная тренировка / игра');
+  const [activityFormat, setActivityFormat] = useState('Спортивные тренировки');
   const [participationConditions, setParticipationConditions] = useState('Участие бесплатное');
   const [whatToBring, setWhatToBring] = useState('Спортивная форма и вода');
   const [maxParticipants, setMaxParticipants] = useState<string>('12');
@@ -155,8 +159,8 @@ export const CreateEventPage: React.FC = () => {
         newSportCategory: useNewSport ? newSportCategory.trim() : null,
         organizationId: organizationId || null,
         coverAttachmentId: coverAttachment?.id || null,
-        city,
-        locationAddress,
+        city: isOnline ? 'Онлайн' : city,
+        locationAddress: isOnline ? locationAddress || 'Онлайн-платформа' : locationAddress,
         startsAt: startIso,
         endsAt: endIso,
         joinMode,
@@ -194,7 +198,7 @@ export const CreateEventPage: React.FC = () => {
             Создать спортивное мероприятие
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Опубликуйте разовую или еженедельную встречу для совместной тренировки или игры
+            Опубликуйте разовую или повторяющуюся встречу для совместной тренировки, соревнования, фестиваля или квеста
           </p>
         </div>
 
@@ -230,60 +234,61 @@ export const CreateEventPage: React.FC = () => {
             </div>
           )}
 
-          {/* Sport selection or dynamic creation */}
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="block text-xs font-bold text-slate-700">Спортивное направление *</label>
-              <button
-                type="button"
-                onClick={() => setUseNewSport(!useNewSport)}
-                className="text-xs font-bold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>
-                  {useNewSport
-                    ? 'Выбрать из существующего списка'
-                    : 'Нет нужного вида спорта? Добавить новый'}
-                </span>
-              </button>
-            </div>
+          {/* Sport selection and Category (#11) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="block text-xs font-bold text-slate-700">Спортивное направление *</label>
+                <button
+                  type="button"
+                  onClick={() => setUseNewSport(!useNewSport)}
+                  className="text-xs font-bold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{useNewSport ? 'Из списка' : 'Добавить новый'}</span>
+                </button>
+              </div>
 
-            {!useNewSport ? (
-              <CustomSelect
-                value={sportId}
-                onChange={setSportId}
-                options={sports.map((s) => ({
-                  value: s.id,
-                  label: `${s.name} (${s.category})`,
-                }))}
-              />
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200">
-                <div>
-                  <label className="block text-[11px] font-bold text-blue-900 mb-1">
-                    Название нового вида спорта *
-                  </label>
+              {!useNewSport ? (
+                <CustomSelect
+                  value={sportId}
+                  onChange={setSportId}
+                  options={sports.map((s) => ({
+                    value: s.id,
+                    label: `${s.name} (${s.category})`,
+                  }))}
+                />
+              ) : (
+                <div className="space-y-2 p-3 rounded-2xl bg-blue-50/70 border border-blue-200">
                   <input
                     type="text"
                     required
                     value={newSportName}
                     onChange={(e) => setNewSportName(e.target.value)}
-                    placeholder="Например: Падел-теннис, Сквош, Алтимат фрисби"
-                    className="w-full px-3 py-2 rounded-xl border border-blue-300 text-sm bg-white"
+                    placeholder="Название вида спорта (напр. Падел)"
+                    className="w-full px-3 py-2 rounded-xl border border-blue-300 text-xs bg-white"
                   />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-blue-900 mb-1">Категория</label>
                   <input
                     type="text"
                     value={newSportCategory}
                     onChange={(e) => setNewSportCategory(e.target.value)}
-                    placeholder="Например: Ракеточные виды"
-                    className="w-full px-3 py-2 rounded-xl border border-blue-300 text-sm bg-white"
+                    placeholder="Категория (напр. Ракеточные)"
+                    className="w-full px-3 py-2 rounded-xl border border-blue-300 text-xs bg-white"
                   />
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-slate-700">
+                Категория мероприятия *
+              </label>
+              <CustomSelect
+                value={activityFormat}
+                onChange={setActivityFormat}
+                options={EVENT_CATEGORIES}
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
@@ -309,6 +314,7 @@ export const CreateEventPage: React.FC = () => {
                     type="button"
                     onClick={() => setCoverAttachment(null)}
                     className="ml-2 text-rose-600 hover:text-rose-800"
+                    title="Удалить обложку"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -341,25 +347,58 @@ export const CreateEventPage: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Город / Регион *</label>
-              <RegionSelect value={city} onChange={setCity} />
+          {/* Online vs Offline Format (#7) */}
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isOnline}
+                  onChange={(e) => setIsOnline(e.target.checked)}
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-xs font-bold text-slate-900">
+                  🌐 Онлайн-мероприятие (без привязки к физической карте, время по локальному поясу участника: {getBrowserLocalTzLabel()})
+                </span>
+              </label>
             </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-slate-700 mb-1">Адрес или название площадки *</label>
-              <input
-                type="text"
-                required
-                value={locationAddress}
-                onChange={(e) => setLocationAddress(e.target.value)}
-                placeholder="Улица, дом, номер корта или ориентир сбора"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
-              />
-            </div>
+
+            {isOnline ? (
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Платформа проведения или ссылка на подключение (Zoom, Телемост, Discord, стрим) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={locationAddress}
+                  onChange={(e) => setLocationAddress(e.target.value)}
+                  placeholder="Например: Онлайн в Яндекс.Телемост / Zoom (ссылка в чате участников)"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"
+                />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Город / Регион *</label>
+                  <RegionSelect value={city} onChange={setCity} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Адрес или название площадки *</label>
+                  <input
+                    type="text"
+                    required
+                    value={locationAddress}
+                    onChange={(e) => setLocationAddress(e.target.value)}
+                    placeholder="Улица, дом, номер корта или ориентир сбора"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Format: One-time or Weekly */}
+          {/* Format: One-time or Recurring (#8) */}
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
             <div className="flex items-center justify-between">
               <label className="inline-flex items-center gap-2 cursor-pointer">
@@ -370,7 +409,7 @@ export const CreateEventPage: React.FC = () => {
                   className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-xs font-bold text-slate-900">
-                  Повторять еженедельно (автоматически создаются встречи на 4 недели вперёд)
+                  Повторяющиеся встречи (автоматически создаются встречи на 4 недели вперёд)
                 </span>
               </label>
             </div>
@@ -400,7 +439,7 @@ export const CreateEventPage: React.FC = () => {
 
               {recurring && (
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">День недели (Еженедельно)</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">День недели повторения</label>
                   <div className="flex gap-1.5">
                     <div className="flex-1">
                       <CustomSelect
@@ -520,24 +559,31 @@ export const EventDetailPage: React.FC = () => {
   const [rejectingAppId, setRejectingAppId] = useState<string | null>(null);
   const [rejectReasonText, setRejectReasonText] = useState('К сожалению, все места для этого уровня заняты');
 
-  // Organizer inline cancel / edit modals
+  // Organizer inline cancel / edit / delete modals
   const [showCancelBox, setShowCancelBox] = useState(false);
   const [cancelReasonText, setCancelReasonText] = useState('Перенос встречи по погодным/техническим причинам');
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingEvent, setDeletingEvent] = useState(false);
 
   // Edit event form state
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [editIsOnline, setEditIsOnline] = useState(false);
   const [editCity, setEditCity] = useState('');
   const [editAddress, setEditAddress] = useState('');
   const [editStartsAtLocal, setEditStartsAtLocal] = useState('');
   const [editDurationStr, setEditDurationStr] = useState('90');
   const [editJoinMode, setEditJoinMode] = useState<'OPEN' | 'APPROVAL_REQUIRED'>('OPEN');
   const [editSkillLevel, setEditSkillLevel] = useState('ANY');
+  const [editActivityFormat, setEditActivityFormat] = useState('Спортивные тренировки');
   const [editConditions, setEditConditions] = useState('');
   const [editWhatToBring, setEditWhatToBring] = useState('');
   const [editMaxParticipants, setEditMaxParticipants] = useState('');
   const [editCoverAttachmentId, setEditCoverAttachmentId] = useState<string | null>(null);
+  const [editCoverFilename, setEditCoverFilename] = useState<string | null>(null);
+  const [editRemoveCoverImage, setEditRemoveCoverImage] = useState(false);
+  const [uploadingEditCover, setUploadingEditCover] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Discussion form state
@@ -586,23 +632,33 @@ export const EventDetailPage: React.FC = () => {
     return () => clearInterval(interval);
   }, [eventId]);
 
+  // Smart scroll: only scroll to bottom on initial load or when user is already near bottom (#16)
   useEffect(() => {
     if (messages.length > prevMsgCountRef.current) {
+      const isInitial = prevMsgCountRef.current === 0;
       prevMsgCountRef.current = messages.length;
-      setTimeout(() => {
-        if (messagesContainerRef.current) {
-          messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      const el = messagesContainerRef.current;
+      if (el) {
+        const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+        if (isInitial || isNearBottom) {
+          setTimeout(() => {
+            if (messagesContainerRef.current) {
+              messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+            }
+          }, 50);
         }
-      }, 60);
+      }
     }
   }, [messages.length]);
 
   const openEditEventModal = () => {
     if (!detail) return;
     const ev = detail.event;
+    const online = isOnlineEvent(ev.city, ev.locationAddress);
     setEditTitle(ev.title);
     setEditDesc(ev.description);
-    setEditCity(ev.city);
+    setEditIsOnline(online);
+    setEditCity(online ? 'Москва' : ev.city);
     setEditAddress(ev.locationAddress);
     const d = new Date(ev.startsAt);
     const pad = (n: number) => String(n).padStart(2, '0');
@@ -616,11 +672,31 @@ export const EventDetailPage: React.FC = () => {
     setEditDurationStr(String(durMins));
     setEditJoinMode(ev.joinMode);
     setEditSkillLevel(ev.skillLevel);
+    setEditActivityFormat(ev.activityFormat || 'Спортивные тренировки');
     setEditConditions(ev.participationConditions || '');
     setEditWhatToBring(ev.whatToBring || '');
     setEditMaxParticipants(ev.maxParticipants ? String(ev.maxParticipants) : '');
     setEditCoverAttachmentId(null);
+    setEditCoverFilename(null);
+    setEditRemoveCoverImage(false);
     setShowEditModal(true);
+  };
+
+  const handleEditCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingEditCover(true);
+    try {
+      const uploaded = await uploadAttachmentFile(file, 'EVENT_COVER');
+      setEditCoverAttachmentId(uploaded.id);
+      setEditCoverFilename(uploaded.originalFilename);
+      setEditRemoveCoverImage(false);
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Не удалось загрузить обложку');
+    } finally {
+      setUploadingEditCover(false);
+      e.target.value = '';
+    }
   };
 
   if (loading) {
@@ -642,7 +718,9 @@ export const EventDetailPage: React.FC = () => {
   const isOrganizer = Boolean(event.managedByViewer) || (user != null && user.id === event.organizerUserId);
   const isAdmin = user?.globalRole === 'ADMIN';
   const isFull = event.maxParticipants != null && event.confirmedParticipantsCount >= event.maxParticipants;
+  const isOnline = isOnlineEvent(event.city, event.locationAddress);
   const regionInfo = getRegionInfo(event.city);
+  const tzLabel = isOnline ? getBrowserLocalTzLabel() : regionInfo?.tzLabel || 'МСК';
 
   const handleJoinOrApply = async () => {
     if (!user) {
@@ -724,12 +802,31 @@ export const EventDetailPage: React.FC = () => {
     }
   };
 
+  const handleDeleteEventByOrganizer = async () => {
+    setDeletingEvent(true);
+    setActionError(null);
+    try {
+      await apiFetch(`/api/v1/events/${event.id}`, {
+        method: 'DELETE',
+      });
+      navigate('/events');
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : 'Не удалось удалить мероприятие');
+      setDeletingEvent(false);
+    }
+  };
+
   const handleSaveEditedEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingEdit(true);
     setActionError(null);
     try {
       const startD = new Date(editStartsAtLocal);
+      if (isNaN(startD.getTime()) || startD.getTime() < Date.now() - 60000) {
+        setActionError('Нельзя перенести мероприятие в прошлое. Укажите будущую дату и время начала.');
+        setSavingEdit(false);
+        return;
+      }
       const dur = parseInt(editDurationStr, 10) || 90;
       const endD = new Date(startD.getTime() + dur * 60000);
       const updated = await apiFetch<EventDetailDto>(`/api/v1/events/${event.id}`, {
@@ -737,22 +834,23 @@ export const EventDetailPage: React.FC = () => {
         body: JSON.stringify({
           title: editTitle,
           description: editDesc,
-          city: editCity,
-          locationAddress: editAddress,
+          city: editIsOnline ? 'Онлайн' : editCity,
+          locationAddress: editIsOnline ? editAddress || 'Онлайн-платформа' : editAddress,
           startsAt: startD.toISOString(),
           endsAt: endD.toISOString(),
           joinMode: editJoinMode,
           skillLevel: editSkillLevel,
-          activityFormat: event.activityFormat,
+          activityFormat: editActivityFormat,
           participationConditions: editConditions,
           whatToBring: editWhatToBring,
           maxParticipants: editMaxParticipants.trim() ? parseInt(editMaxParticipants.trim(), 10) : null,
           coverAttachmentId: editCoverAttachmentId,
+          removeCoverImage: editRemoveCoverImage,
         }),
       });
       setDetail(updated);
       setShowEditModal(false);
-      setActionFeedback('Изменения мероприятия сохранены! Все участники увидят обновлённое время и место.');
+      setActionFeedback('Изменения мероприятия сохранены! Все участники увидят обновлённую информацию.');
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Не удалось обновить мероприятие');
     } finally {
@@ -945,6 +1043,16 @@ export const EventDetailPage: React.FC = () => {
                 <span className="px-3 py-1 rounded-xl bg-blue-600 text-white text-xs font-bold">
                   {event.sport.name}
                 </span>
+                {event.activityFormat && (
+                  <span className="px-3 py-1 rounded-xl bg-[#E7F8F0] text-[#11995E] text-xs font-bold">
+                    {event.activityFormat}
+                  </span>
+                )}
+                {isOnline && (
+                  <span className="px-3 py-1 rounded-xl bg-indigo-600 text-white text-xs font-bold">
+                    🌐 Онлайн
+                  </span>
+                )}
                 <span className="px-3 py-1 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold">
                   {SKILL_LABELS[event.skillLevel] || event.skillLevel}
                 </span>
@@ -960,7 +1068,7 @@ export const EventDetailPage: React.FC = () => {
                 {event.recurringOccurrence && (
                   <span className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-orange-100 text-orange-800 text-xs font-bold">
                     <Repeat className="w-3.5 h-3.5" />
-                    Еженедельно
+                    Повторяющиеся встречи
                   </span>
                 )}
               </div>
@@ -1002,7 +1110,7 @@ export const EventDetailPage: React.FC = () => {
                   <Calendar className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                   <div>
                     <div className="font-bold text-slate-900">
-                      Дата и время встречи ({regionInfo?.tzLabel || 'МСК'})
+                      Дата и время встречи ({tzLabel})
                     </div>
                     <div className="text-slate-700">
                       {formatDateTime(event.startsAt)} — {formatDateTime(event.endsAt)}
@@ -1012,36 +1120,42 @@ export const EventDetailPage: React.FC = () => {
                 <div className="flex items-start gap-2.5">
                   <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                   <div className="space-y-1.5">
-                    <div className="font-bold text-slate-900">Место проведения</div>
+                    <div className="font-bold text-slate-900">
+                      {isOnline ? 'Формат и платформа подключения' : 'Место проведения'}
+                    </div>
                     <div className="text-slate-700">
-                      {event.city}, {event.locationAddress}
+                      {isOnline
+                        ? `🌐 Онлайн (${event.locationAddress})`
+                        : `${event.city}, ${event.locationAddress}`}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                      <a
-                        href={`https://yandex.ru/maps/?text=${encodeURIComponent(
-                          `${event.city}, ${event.locationAddress}`
-                        )}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-100/90 hover:bg-amber-200 text-amber-950 font-bold text-[11px] transition-colors"
-                      >
-                        <Navigation className="w-3 h-3 text-amber-700" />
-                        <span>Яндекс Карты</span>
-                        <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-                      </a>
-                      <a
-                        href={`https://2gis.ru/search/${encodeURIComponent(
-                          `${event.city} ${event.locationAddress}`
-                        )}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100/90 hover:bg-emerald-200 text-emerald-950 font-bold text-[11px] transition-colors"
-                      >
-                        <MapPin className="w-3 h-3 text-emerald-700" />
-                        <span>Открыть в 2ГИС</span>
-                        <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-                      </a>
-                    </div>
+                    {!isOnline && (
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        <a
+                          href={`https://yandex.ru/maps/?text=${encodeURIComponent(
+                            `${event.city}, ${event.locationAddress}`
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-100/90 hover:bg-amber-200 text-amber-950 font-bold text-[11px] transition-colors"
+                        >
+                          <Navigation className="w-3 h-3 text-amber-700" />
+                          <span>Яндекс Карты</span>
+                          <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                        </a>
+                        <a
+                          href={`https://2gis.ru/search/${encodeURIComponent(
+                            `${event.city} ${event.locationAddress}`
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100/90 hover:bg-emerald-200 text-emerald-950 font-bold text-[11px] transition-colors"
+                        >
+                          <MapPin className="w-3 h-3 text-emerald-700" />
+                          <span>Открыть в 2ГИС</span>
+                          <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                        </a>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1058,12 +1172,12 @@ export const EventDetailPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Series other dates if weekly */}
+            {/* Series other dates if recurring */}
             {seriesOccurrences.length > 1 && (
               <div className="pt-2 space-y-2">
                 <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <Repeat className="w-4 h-4 text-orange-600" />
-                  <span>Расписание еженедельных встреч (запись отдельно на каждую дату):</span>
+                  <span>Расписание повторяющихся встреч (запись отдельно на каждую дату):</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {seriesOccurrences.map((occ) => (
@@ -1217,7 +1331,7 @@ export const EventDetailPage: React.FC = () => {
               </Link>
             </div>
 
-            {/* Flexible Organizer Controls (#26) */}
+            {/* Flexible Organizer Controls (#6, #26) */}
             {isOrganizer && (
               <div className="pt-3 border-t border-slate-100 space-y-2">
                 <div className="text-[11px] font-bold text-slate-500 uppercase">Управление организатора</div>
@@ -1227,7 +1341,7 @@ export const EventDetailPage: React.FC = () => {
                   className="w-full py-2.5 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-900 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <Edit3 className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Изменить время, место или описание</span>
+                  <span>Изменить время, место, обложку или описание</span>
                 </button>
 
                 {event.status === 'PUBLISHED' && !showCancelBox && (
@@ -1288,6 +1402,40 @@ export const EventDetailPage: React.FC = () => {
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span>Возобновить встречу (Открыть запись)</span>
                   </button>
+                )}
+
+                {!showDeleteConfirm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="w-full py-2 rounded-xl border border-rose-200 bg-rose-50/70 hover:bg-rose-100 text-rose-700 text-xs font-bold inline-flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Удалить мероприятие</span>
+                  </button>
+                ) : (
+                  <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 space-y-2">
+                    <div className="text-[11px] font-bold text-rose-900">
+                      Удалить мероприятие навсегда? Записанным участникам придёт уведомление.
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        disabled={deletingEvent}
+                        onClick={handleDeleteEventByOrganizer}
+                        className="flex-1 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold"
+                      >
+                        {deletingEvent ? 'Удаление...' : 'Да, удалить'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-300 text-slate-600 text-[11px] font-bold"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
@@ -1791,7 +1939,7 @@ export const EventDetailPage: React.FC = () => {
         )}
       </section>
 
-      {/* Edit Event Modal (#26) */}
+      {/* Edit Event Modal (#6, #7, #11, #26) */}
       {showEditModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl border border-slate-200 max-w-2xl w-full p-6 sm:p-8 shadow-2xl space-y-5 my-8">
@@ -1809,15 +1957,25 @@ export const EventDetailPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveEditedEvent} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Название встречи *</label>
-                <input
-                  type="text"
-                  required
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Название встречи *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Категория *</label>
+                  <CustomSelect
+                    value={editActivityFormat}
+                    onChange={setEditActivityFormat}
+                    options={EVENT_CATEGORIES}
+                  />
+                </div>
               </div>
 
               <div>
@@ -1831,21 +1989,93 @@ export const EventDetailPage: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Город / Регион *</label>
-                  <RegionSelect value={editCity} onChange={setEditCity} />
+              {/* Cover image management (#6: replace or remove cover) */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs">
+                  <div className="font-bold text-slate-800">Обложка мероприятия</div>
+                  <div className="text-slate-500 mt-0.5">
+                    {editRemoveCoverImage
+                      ? 'Обложка будет удалена (вернётся стандартная иллюстрация)'
+                      : editCoverFilename
+                      ? `Загружена новая обложка: ${editCoverFilename}`
+                      : event.coverImageUrl
+                      ? 'Установлена пользовательская обложка'
+                      : 'Используется стандартная иллюстрация'}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Адрес площадки *</label>
+                <div className="flex items-center gap-2">
+                  <label className="cursor-pointer px-3 py-2 rounded-xl bg-white border border-slate-300 hover:border-blue-400 text-xs font-bold text-slate-700 inline-flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{uploadingEditCover ? 'Загрузка...' : 'Загрузить фото'}</span>
+                    <input
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.webp,.gif"
+                      onChange={handleEditCoverUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  {(event.coverImageUrl || editCoverAttachmentId) && !editRemoveCoverImage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditCoverAttachmentId(null);
+                        setEditCoverFilename(null);
+                        setEditRemoveCoverImage(true);
+                      }}
+                      className="px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 hover:bg-rose-100 text-xs font-bold text-rose-700 inline-flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Удалить обложку</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                <label className="inline-flex items-center gap-2 cursor-pointer">
                   <input
-                    type="text"
-                    required
-                    value={editAddress}
-                    onChange={(e) => setEditAddress(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
+                    type="checkbox"
+                    checked={editIsOnline}
+                    onChange={(e) => setEditIsOnline(e.target.checked)}
+                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                   />
-                </div>
+                  <span className="text-xs font-bold text-slate-900">
+                    🌐 Онлайн-мероприятие (время по локальному поясу участника: {getBrowserLocalTzLabel()})
+                  </span>
+                </label>
+
+                {editIsOnline ? (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Платформа или ссылка на онлайн-подключение *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editAddress}
+                      onChange={(e) => setEditAddress(e.target.value)}
+                      placeholder="Zoom / Телемост / Discord / ссылка"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"
+                    />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Город / Регион *</label>
+                      <RegionSelect value={editCity} onChange={setEditCity} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Адрес площадки *</label>
+                      <input
+                        type="text"
+                        required
+                        value={editAddress}
+                        onChange={(e) => setEditAddress(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

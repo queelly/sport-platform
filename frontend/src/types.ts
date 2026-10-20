@@ -338,12 +338,48 @@ export const RUSSIAN_REGIONS: RegionInfo[] = [
   { value: 'Хабаровск', label: 'Хабаровский край (Хабаровск)', tzLabel: 'МСК+7 (UTC+10)', lat: 48.4827, lng: 135.084 },
 ];
 
+export interface DirectMessageDto {
+  id: string;
+  senderUserId: string;
+  senderDisplayName: string;
+  senderAvatarUrl?: string;
+  recipientUserId: string;
+  content: string;
+  createdAt: string;
+}
+
+export const EVENT_CATEGORIES: Array<{ value: string; label: string }> = [
+  { value: 'Спортивные тренировки', label: '🏃 Спортивные тренировки' },
+  { value: 'Соревнования', label: '🏆 Соревнования' },
+  { value: 'Фестивали', label: '🎉 Фестивали' },
+  { value: 'Квесты', label: '🧭 Квесты' },
+];
+
+export function isOnlineEvent(city?: string, locationAddress?: string): boolean {
+  if (!city) return false;
+  const norm = city.trim().toLowerCase();
+  return norm === 'онлайн' || norm === 'online' || (locationAddress?.trim().toLowerCase().startsWith('онлайн') ?? false);
+}
+
+export function getBrowserLocalTzLabel(): string {
+  try {
+    const offsetMin = -new Date().getTimezoneOffset();
+    const sign = offsetMin >= 0 ? '+' : '-';
+    const hours = Math.floor(Math.abs(offsetMin) / 60);
+    return `Местное время (UTC${sign}${hours})`;
+  } catch {
+    return 'Местное время';
+  }
+}
+
 export function getRegionInfo(cityOrRegion?: string): RegionInfo | undefined {
   if (!cityOrRegion) return undefined;
   const norm = cityOrRegion.trim().toLowerCase().replace('ё', 'е');
+  if (norm === 'онлайн' || norm === 'online') return undefined;
   return RUSSIAN_REGIONS.find(
     (r) =>
       r.value.toLowerCase().replace('ё', 'е') === norm ||
       r.label.toLowerCase().replace('ё', 'е').includes(norm)
   );
 }
+

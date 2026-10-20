@@ -232,3 +232,55 @@ html.a11y-contrast-blue label,
 html.a11y-contrast-blue a {
   color: #063462 !important;
 }
+
+html.a11y-contrast-blue button,
+html.a11y-contrast-blue input,
+html.a11y-contrast-blue select,
+html.a11y-contrast-blue textarea {
+  border: 2px solid #063462 !important;
+  background-color: #e6f4ff !important;
+  color: #063462 !important;
+}
+
+/* High visibility keyboard focus across normal and high-contrast themes */
+*:focus-visible {
+  outline: 3px solid #11995E !important;
+  outline-offset: 2px !important;
+}
+
+html.a11y-contrast-bw *:focus-visible {
+  outline: 3px solid #000000 !important;
+  outline-offset: 2px !important;
+}
+
+html.a11y-contrast-wb *:focus-visible {
+  outline: 3px solid #fff500 !important;
+  outline-offset: 2px !important;
+}
+
+/* Prevent text clipping or horizontal overflow when font size is increased */
+html.a11y-font-lg,
+html.a11y-font-xl {
+  overflow-x: hidden;
+}
+
+html.a11y-font-lg .truncate,
+html.a11y-font-xl .truncate {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  word-break: break-word;
+}
+
+/* Support prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+

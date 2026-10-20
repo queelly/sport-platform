@@ -499,4 +499,166 @@ class SportPlatformIntegrationTest {
                 .andExpect(jsonPath("$.status.linked").value(true))
                 .andExpect(jsonPath("$.status.vkUserId").value(777888999));
     }
+
+    @Test
+    @DisplayName("4. Защита от самозаписи, пересечений расписания, прошедших дат, личные сообщения друзей и разблокировка организаций")
+    void testOverlapSelfJoinDirectMessagesAndOrgUnblock() throws Exception {
+        String adminToken = loginAndGetToken("admin@sportplatform.ru", "AdminPassword123!");
+
+        RegisterUserRequest uA = new RegisterUserRequest("Алексей Организатор", "alex.ov@example.com", "Password123!", true, "Москва");
+        JsonNode authA = objectMapper.readTree(mockMvc.perform(post("/api/v1/auth/register/user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(uA)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8));
+        String tokenA = authA.path("accessToken").asText();
+        UUID userAId = UUID.fromString(authA.path("user").path("id").asText());
+
+        RegisterUserRequest uB = new RegisterUserRequest("Денис Спортсмен", "denis.ov@example.com", "Password123!", true, "Москва");
+        JsonNode authB = objectMapper.readTree(mockMvc.perform(post("/api/v1/auth/register/user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(uB)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8));
+        String tokenB = authB.path("accessToken").asText();
+        UUID userBId = UUID.fromString(authB.path("user").path("id").asText());
+
+        // 1. Запрет создания мероприятия в прошлом -> 400 Bad Request
+        CreateEventRequest pastEvent = new CreateEventRequest(
+                "Тренировка вчера", "Проверка валидации прошлого времени",
+                null, "Бег", "Циклические", null, "Москва", "Лужники", null, null,
+                Instant.now().minus(2, ChronoUnit.DAYS),
+                Instant.now().minus(2, ChronoUnit.DAYS).plus(1, ChronoUnit.HOURS),
+                JoinMode.OPEN, SkillLevel.ANY, "Спортивные тренировки", null, null, 10,
+                false, null, null, null, null, null
+        );
+        mockMvc.perform(post("/api/v1/events")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(pastEvent)))
+                .andExpect(status().isBadRequest());
+
+        // 2. Создаём мероприятие №1 (завтра с 18:00 до 20:00)
+        Instant start1 = Instant.now().plus(24, ChronoUnit.HOURS);
+        Instant end1 = start1.plus(2, ChronoUnit.HOURS);
+        CreateEventRequest ev1Req = new CreateEventRequest(
+                "Вечерний кросс в Лужниках", "Интенсивная пробежка 10 км",
+                null, "Бег", "Циклические", null, "Москва", "Лужники", null, null,
+                start1, end1, JoinMode.OPEN, SkillLevel.ANY, "Спортивные тренировки", null, null, 15,
+                false, null, null, null, null, null
+        );
+        UUID event1Id = UUID.fromString(objectMapper.readTree(
+                mockMvc.perform(post("/api/v1/events")
+                                .header("Authorization", "Bearer " + tokenA)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(ev1Req)))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8)
+        ).path("event").path("id").asText());
+
+        // 3. Организатор НЕ может записаться на собственное мероприятие -> 409 Conflict
+        mockMvc.perform(post("/api/v1/events/" + event1Id + "/join")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isConflict());
+
+        // 4. Денис успешно записывается на мероприятие №1 -> CONFIRMED
+        mockMvc.perform(post("/api/v1/events/" + event1Id + "/join")
+                        .header("Authorization", "Bearer " + tokenB)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.event.viewerParticipationStatus").value("CONFIRMED"));
+
+        // 5. Создаём пересекающееся по времени мероприятие №2 (сдвиг на 30 минут внутри интервала первого)
+        CreateEventRequest ev2Req = new CreateEventRequest(
+                "Функциональный тренинг в Парке Горького", "Силовая тренировка на воздухе",
+                null, "Воркаут", "Силовые", null, "Москва", "Парк Горького", null, null,
+                start1.plus(30, ChronoUnit.MINUTES), end1.plus(30, ChronoUnit.MINUTES),
+                JoinMode.OPEN, SkillLevel.ANY, "Спортивные тренировки", null, null, 15,
+                false, null, null, null, null, null
+        );
+        UUID event2Id = UUID.fromString(objectMapper.readTree(
+                mockMvc.perform(post("/api/v1/events")
+                                .header("Authorization", "Bearer " + tokenA)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(ev2Req)))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8)
+        ).path("event").path("id").asText());
+
+        // Денис пытается записаться на пересекающееся мероприятие №2 -> 409 Conflict с указанием названия «Вечерний кросс в Лужниках»
+        mockMvc.perform(post("/api/v1/events/" + event2Id + "/join")
+                        .header("Authorization", "Bearer " + tokenB)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Вечерний кросс в Лужниках")));
+
+        // 6. Личные сообщения: до подтверждения дружбы — 403 Forbidden
+        mockMvc.perform(post("/api/v1/friends/" + userBId + "/messages")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"Привет!\"}"))
+                .andExpect(status().isForbidden());
+
+        // Отправляем и принимаем заявку в друзья
+        UUID friendshipId = UUID.fromString(objectMapper.readTree(
+                mockMvc.perform(post("/api/v1/friends/requests")
+                                .header("Authorization", "Bearer " + tokenA)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"targetUserId\":\"" + userBId + "\",\"message\":\"Добавляйся!\"}"))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8)
+        ).path("id").asText());
+
+        mockMvc.perform(post("/api/v1/friends/" + friendshipId + "/respond")
+                        .param("accept", "true")
+                        .header("Authorization", "Bearer " + tokenB))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACCEPTED"));
+
+        // Теперь обмен личными сообщениями между друзьями работает в обе стороны
+        mockMvc.perform(post("/api/v1/friends/" + userBId + "/messages")
+                        .header("Authorization", "Bearer " + tokenA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"Привет, Денис! Идёшь завтра на кросс?\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").value("Привет, Денис! Идёшь завтра на кросс?"));
+
+        mockMvc.perform(get("/api/v1/friends/" + userAId + "/messages")
+                        .header("Authorization", "Bearer " + tokenB))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].content").value("Привет, Денис! Идёшь завтра на кросс?"));
+
+        // 7. Блокировка и разблокировка сообщества (SUSPENDED -> APPROVED)
+        CreateCommunityRequest commReq = new CreateCommunityRequest(
+                "Московский Клуб Марафонцев", OrganizationType.COMMUNITY, "Москва",
+                "Открытое беговое сообщество", "t.me/msk_marathon", null, null, null, null, List.of("Марафон")
+        );
+        UUID commId = UUID.fromString(objectMapper.readTree(
+                mockMvc.perform(post("/api/v1/organizations/community")
+                                .header("Authorization", "Bearer " + tokenA)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(commReq)))
+                        .andExpect(status().isOk())
+                        .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8)
+        ).path("id").asText());
+
+        mockMvc.perform(post("/api/v1/admin/organizations/" + commId + "/decision")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new AdminOrgModerationRequest(OrganizationStatus.SUSPENDED, "Временная приостановка", null))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUSPENDED"));
+
+        mockMvc.perform(post("/api/v1/admin/organizations/" + commId + "/decision")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new AdminOrgModerationRequest(OrganizationStatus.APPROVED, "Разблокировано после проверки", null))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+    }
 }

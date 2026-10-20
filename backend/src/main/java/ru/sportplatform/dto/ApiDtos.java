@@ -371,8 +371,20 @@ public final class ApiDtos {
             String participationConditions,
             String whatToBring,
             Integer maxParticipants,
-            UUID coverAttachmentId
-    ) {}
+            UUID coverAttachmentId,
+            Boolean removeCoverImage
+    ) {
+        public UpdateEventRequest(
+                String title, String description, UUID sportId, String city, String locationAddress,
+                Double latitude, Double longitude, Instant startsAt, Instant endsAt, JoinMode joinMode,
+                SkillLevel skillLevel, String activityFormat, String participationConditions,
+                String whatToBring, Integer maxParticipants, UUID coverAttachmentId
+        ) {
+            this(title, description, sportId, city, locationAddress, latitude, longitude, startsAt, endsAt,
+                    joinMode, skillLevel, activityFormat, participationConditions, whatToBring, maxParticipants,
+                    coverAttachmentId, false);
+        }
+    }
 
     public record EventCardDto(
             UUID id,
@@ -499,6 +511,22 @@ public final class ApiDtos {
             String message,
             Instant createdAt,
             Instant updatedAt
+    ) {}
+
+    public record DirectMessageDto(
+            UUID id,
+            UUID senderUserId,
+            String senderDisplayName,
+            String senderAvatarUrl,
+            UUID recipientUserId,
+            String content,
+            Instant createdAt
+    ) {}
+
+    public record SendDirectMessageRequest(
+            @NotBlank(message = "Текст сообщения не может быть пустым")
+            @Size(max = 2500, message = "Сообщение не должно превышать 2500 символов")
+            String content
     ) {}
 
     // --- SUPPORT TICKETS ---

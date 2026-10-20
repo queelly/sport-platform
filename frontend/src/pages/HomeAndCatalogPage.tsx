@@ -22,9 +22,16 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { apiFetch, formatDateTime, SKILL_LABELS } from '../api';
-import { EventCardDto, getRegionInfo, OrganizationDto, PublicUserProfileDto } from '../types';
+import {
+  EVENT_CATEGORIES,
+  EventCardDto,
+  getRegionInfo,
+  isOnlineEvent,
+  OrganizationDto,
+  PublicUserProfileDto,
+} from '../types';
 import { EventCard, ScenicSportIllustration } from '../components/EventCard';
-import { CustomSelect, RegionSelect } from '../components/UiControls';
+import { CustomSelect, RegionSelect, VoiceSearchButton } from '../components/UiControls';
 import { getSelectedGlobalRegion } from '../components/Navbar';
 
 export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalogOnly = false }) => {
@@ -40,6 +47,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
   const [city, setCity] = useState<string>(() => getSelectedGlobalRegion());
   const [joinMode, setJoinMode] = useState<string>('');
   const [skillLevel, setSkillLevel] = useState<string>('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [recurringFilter, setRecurringFilter] = useState<string>('');
   const [onlyAvailable, setOnlyAvailable] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -80,11 +88,11 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
       setRecommendedEvents(allEvList);
       setOrganizations(orgList);
       setPartners(partnerList);
-      if (evList.length > 0) {
-        setSelectedMapEvent(evList[0]);
-      } else if (allEvList.length > 0) {
-        setSelectedMapEvent(allEvList[0]);
-      }
+      const firstOffline =
+        evList.find((ev) => !isOnlineEvent(ev.city, ev.locationAddress)) ||
+        allEvList.find((ev) => !isOnlineEvent(ev.city, ev.locationAddress)) ||
+        null;
+      setSelectedMapEvent(firstOffline);
     } catch {
       // ignore
     } finally {
@@ -109,16 +117,26 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
     setCity('');
     setJoinMode('');
     setSkillLevel('');
+    setCategoryFilter('');
     setRecurringFilter('');
     setOnlyAvailable(false);
     setSearchQuery('');
     setSelectedDayOffset(null);
   };
 
-  const mapEvents = events.length > 0 ? events : recommendedEvents;
+  // Exclude online events without physical address from map view (#7)
+  const mapEvents = useMemo(() => {
+    const base = events.length > 0 ? events : recommendedEvents;
+    return base.filter((ev) => !isOnlineEvent(ev.city, ev.locationAddress));
+  }, [events, recommendedEvents]);
 
   const activeMapCoords = useMemo(() => {
-    const targetCity = selectedMapEvent?.city || city || 'Москва';
+    const targetCity =
+      selectedMapEvent && !isOnlineEvent(selectedMapEvent.city, selectedMapEvent.locationAddress)
+        ? selectedMapEvent.city
+        : city && city !== 'Онлайн'
+        ? city
+        : 'Москва';
     const info = getRegionInfo(targetCity);
     return {
       lat: info?.lat ?? 55.7558,
@@ -145,14 +163,22 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
     });
   }, []);
 
-  // Filtered events by date strip if selected
+  // Filtered events by date strip and category/online filter
   const displayedEvents = useMemo(() => {
-    if (selectedDayOffset === null) return events;
+    let list = events;
+    if (categoryFilter === 'ONLINE') {
+      list = list.filter((ev) => isOnlineEvent(ev.city, ev.locationAddress));
+    } else if (categoryFilter) {
+      list = list.filter((ev) =>
+        (ev.activityFormat || '').toLowerCase().includes(categoryFilter.toLowerCase())
+      );
+    }
+    if (selectedDayOffset === null) return list;
     const targetIso = dateStripDays[selectedDayOffset]?.isoDate;
-    if (!targetIso) return events;
-    const matching = events.filter((ev) => ev.startsAt.slice(0, 10) === targetIso);
-    return matching.length > 0 ? matching : events;
-  }, [events, selectedDayOffset, dateStripDays]);
+    if (!targetIso) return list;
+    const matching = list.filter((ev) => ev.startsAt.slice(0, 10) === targetIso);
+    return matching;
+  }, [events, categoryFilter, selectedDayOffset, dateStripDays]);
 
   // Mini calendar days for Bento Widget #1 (Översikt)
   const eventDayNumbers = useMemo(() => {
@@ -205,7 +231,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                   : 'Добро пожаловать в Точку Сбора! 👋'}
               </h1>
               <p className="text-xs sm:text-sm font-semibold text-slate-600 mt-1">
-                Находите спортивные сборы, открытые тренировки, клубы и напарников в своём городе
+                Находите спортивные тренировки, соревнования, фестивали, квесты и напарников в своём городе или онлайн
               </p>
             </div>
 
@@ -228,18 +254,23 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             </div>
           </div>
 
-          {/* Travenly Search Bar (Ref 2: Floating white input + square green filter button + green Search button) */}
+          {/* Travenly Search Bar + Voice Search (#9) */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+            <div className="relative flex-1 flex items-center">
+              <Search className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && fetchCatalog()}
-                placeholder="Найти тренировку, площадку, вид спорта (поиск работает даже с опечатками)..."
-                className="w-full h-12 pl-11 pr-4 rounded-2xl bg-white border border-white shadow-sm text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#16B672]"
+                placeholder="Найти тренировку, соревнование, площадку или вид спорта (можно голосом)..."
+                className="w-full h-12 pl-11 pr-14 rounded-2xl bg-white border border-white shadow-sm text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#16B672]"
               />
+              <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                <VoiceSearchButton
+                  onResult={(spoken) => setSearchQuery(spoken)}
+                />
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -274,10 +305,50 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             </div>
           </div>
 
+          {/* Quick Category Pills (#11: Тренировки, Соревнования, Фестивали, Квесты, Онлайн) */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+            <button
+              type="button"
+              onClick={() => setCategoryFilter('')}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
+                categoryFilter === ''
+                  ? 'bg-[#16B672] text-white shadow-sm'
+                  : 'bg-white/85 text-slate-700 hover:bg-white'
+              }`}
+            >
+              Все форматы
+            </button>
+            {EVENT_CATEGORIES.map((cat) => (
+              <button
+                key={cat.value}
+                type="button"
+                onClick={() => setCategoryFilter(categoryFilter === cat.value ? '' : cat.value)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
+                  categoryFilter === cat.value
+                    ? 'bg-[#16B672] text-white shadow-sm'
+                    : 'bg-white/85 text-slate-700 hover:bg-white'
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setCategoryFilter(categoryFilter === 'ONLINE' ? '' : 'ONLINE')}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
+                categoryFilter === 'ONLINE'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'bg-white/85 text-indigo-700 hover:bg-white'
+              }`}
+            >
+              🌐 Онлайн-мероприятия
+            </button>
+          </div>
+
           {/* Collapsible Advanced Filters Drawer */}
           {showFiltersPanel && (
             <div className="bg-white/95 backdrop-blur-md rounded-2xl p-4 border border-slate-100 shadow-sm space-y-3 animate-fadeIn">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                 <RegionSelect
                   value={city}
                   onChange={setCity}
@@ -292,6 +363,16 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                   options={[
                     { value: '', label: 'Все виды спорта' },
                     ...sports.map((s) => ({ value: s.id, label: s.name })),
+                  ]}
+                />
+
+                <CustomSelect
+                  value={categoryFilter}
+                  onChange={setCategoryFilter}
+                  options={[
+                    { value: '', label: 'Любая категория события' },
+                    ...EVENT_CATEGORIES,
+                    { value: 'ONLINE', label: '🌐 Онлайн-формат' },
                   ]}
                 />
 
@@ -330,16 +411,16 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                     <span>Только со свободными местами</span>
                   </label>
 
-                  <div className="flex items-center gap-2 min-w-[210px]">
+                  <div className="flex items-center gap-2 min-w-[240px]">
                     <Repeat className="w-3.5 h-3.5 text-[#16B672] shrink-0" />
                     <CustomSelect
                       size="sm"
                       value={recurringFilter}
                       onChange={setRecurringFilter}
                       options={[
-                        { value: '', label: 'Разовые и еженедельные' },
+                        { value: '', label: 'Разовые и повторяющиеся встречи' },
                         { value: 'false', label: 'Только разовые встречи' },
-                        { value: 'true', label: 'Только еженедельно' },
+                        { value: 'true', label: 'Повторяющиеся встречи' },
                       ]}
                     />
                   </div>

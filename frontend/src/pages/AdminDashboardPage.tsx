@@ -104,34 +104,47 @@ export const AdminDashboardPage: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-scroll ticket messages when new message arrives
+  // Smart scroll ticket messages: only scroll on ticket switch, initial load, or when near bottom (#16)
+  const prevAdminTicketIdRef = useRef<string | null>(null);
+  const prevAdminChatIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     const count = selectedTicket?.messages?.length || 0;
-    if (count > prevAdminTicketLenRef.current) {
-      prevAdminTicketLenRef.current = count;
+    const switched = selectedTicket?.id !== prevAdminTicketIdRef.current;
+    const container = adminTicketMessagesRef.current;
+    const isNearBottom =
+      !container ||
+      container.scrollHeight - container.scrollTop - container.clientHeight < 140;
+
+    if (switched || (count > prevAdminTicketLenRef.current && (prevAdminTicketLenRef.current === 0 || isNearBottom))) {
       setTimeout(() => {
         if (adminTicketMessagesRef.current) {
           adminTicketMessagesRef.current.scrollTop = adminTicketMessagesRef.current.scrollHeight;
         }
       }, 50);
-    } else {
-      prevAdminTicketLenRef.current = count;
     }
+    prevAdminTicketIdRef.current = selectedTicket?.id || null;
+    prevAdminTicketLenRef.current = count;
   }, [selectedTicket?.id, selectedTicket?.messages?.length]);
 
-  // Auto-scroll live support chat messages when new message arrives
+  // Smart scroll live support chat messages: only scroll on chat switch, initial load, or when near bottom (#16)
   useEffect(() => {
     const count = selectedChat?.messages?.length || 0;
-    if (count > prevAdminChatLenRef.current) {
-      prevAdminChatLenRef.current = count;
+    const switched = selectedChat?.id !== prevAdminChatIdRef.current;
+    const container = adminChatMessagesRef.current;
+    const isNearBottom =
+      !container ||
+      container.scrollHeight - container.scrollTop - container.clientHeight < 140;
+
+    if (switched || (count > prevAdminChatLenRef.current && (prevAdminChatLenRef.current === 0 || isNearBottom))) {
       setTimeout(() => {
         if (adminChatMessagesRef.current) {
           adminChatMessagesRef.current.scrollTop = adminChatMessagesRef.current.scrollHeight;
         }
       }, 50);
-    } else {
-      prevAdminChatLenRef.current = count;
     }
+    prevAdminChatIdRef.current = selectedChat?.id || null;
+    prevAdminChatLenRef.current = count;
   }, [selectedChat?.id, selectedChat?.messages?.length, tab]);
 
   const handleModerateOrg = async (
@@ -144,13 +157,13 @@ export const AdminDashboardPage: React.FC = () => {
 
     if (decision !== 'APPROVED' && !customReason) {
       setAdminError(
-        'Пожалуйста, укажите причину отклонения или блокировки в текстовом поле карточки организации.'
+        'Пожалуйста, укажите причину отклонения или приостановки в текстовом поле карточки организации.'
       );
       return;
     }
 
     const reason =
-      customReason || 'Организация проверена и допущена администратором';
+      customReason || 'Организация проверена, разблокирована и допущена администратором';
 
     setModeratingOrgId(orgId);
     try {
@@ -165,8 +178,10 @@ export const AdminDashboardPage: React.FC = () => {
       setOrgReasons((prev) => ({ ...prev, [orgId]: '' }));
       setAdminFeedback(
         decision === 'APPROVED'
-          ? 'Статус организации обновлён: Одобрена и опубликована!'
-          : 'Статус организации обновлён: Отклонена / Приостановлена.'
+          ? 'Статус организации обновлён: Разблокирована и одобрена (APPROVED)!'
+          : decision === 'SUSPENDED'
+          ? 'Статус организации обновлён: Приостановлена (SUSPENDED).'
+          : 'Статус организации обновлён: Отклонена (REJECTED).'
       );
       await loadAdminData();
     } catch (err) {
@@ -497,13 +512,17 @@ export const AdminDashboardPage: React.FC = () => {
                         type="button"
                         disabled={isBusy}
                         onClick={() => handleModerateOrg(org.id, 'APPROVED')}
-                        className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold"
                       >
-                        <Check className="w-3.5 h-3.5" />
+                        {org.status === 'SUSPENDED' || org.status === 'REJECTED' ? (
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
                         <span>
                           {org.status === 'PENDING_REVIEW'
                             ? 'Одобрить допуск'
-                            : 'Восстановить / Одобрить допуск'}
+                            : 'Разблокировать / Одобрить (Вернуть в APPROVED)'}
                         </span>
                       </button>
                     )}
@@ -521,15 +540,26 @@ export const AdminDashboardPage: React.FC = () => {
                     )}
 
                     {org.status === 'APPROVED' && (
-                      <button
-                        type="button"
-                        disabled={isBusy}
-                        onClick={() => handleModerateOrg(org.id, 'REJECTED')}
-                        className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 disabled:opacity-50 text-rose-800 text-xs font-bold"
-                      >
-                        <Ban className="w-3.5 h-3.5" />
-                        <span>Отозвать допуск (Снять с публикации)</span>
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleModerateOrg(org.id, 'SUSPENDED')}
+                          className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 disabled:opacity-50 text-amber-900 text-xs font-bold"
+                        >
+                          <Ban className="w-3.5 h-3.5" />
+                          <span>Приостановить (SUSPENDED)</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleModerateOrg(org.id, 'REJECTED')}
+                          className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 disabled:opacity-50 text-rose-800 text-xs font-bold"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Отозвать допуск</span>
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

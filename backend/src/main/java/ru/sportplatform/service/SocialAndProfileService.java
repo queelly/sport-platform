@@ -2,6 +2,7 @@ package ru.sportplatform.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.sportplatform.domain.entity.DirectMessage;
 import ru.sportplatform.domain.entity.Friendship;
 import ru.sportplatform.domain.entity.Sport;
 import ru.sportplatform.domain.entity.User;
@@ -9,6 +10,7 @@ import ru.sportplatform.domain.entity.UserSportInterest;
 import ru.sportplatform.domain.enums.Enums.*;
 import ru.sportplatform.dto.ApiDtos.*;
 import ru.sportplatform.exception.ApiException;
+import ru.sportplatform.repository.DirectMessageRepository;
 import ru.sportplatform.repository.FriendshipRepository;
 import ru.sportplatform.repository.SportRepository;
 import ru.sportplatform.repository.UserRepository;
@@ -24,6 +26,7 @@ public class SocialAndProfileService {
     private final SportRepository sportRepository;
     private final UserSportInterestRepository sportInterestRepository;
     private final FriendshipRepository friendshipRepository;
+    private final DirectMessageRepository directMessageRepository;
     private final EventService eventService;
     private final AuthService authService;
     private final NotificationService notificationService;
@@ -33,6 +36,7 @@ public class SocialAndProfileService {
             SportRepository sportRepository,
             UserSportInterestRepository sportInterestRepository,
             FriendshipRepository friendshipRepository,
+            DirectMessageRepository directMessageRepository,
             EventService eventService,
             AuthService authService,
             NotificationService notificationService
@@ -41,6 +45,7 @@ public class SocialAndProfileService {
         this.sportRepository = sportRepository;
         this.sportInterestRepository = sportInterestRepository;
         this.friendshipRepository = friendshipRepository;
+        this.directMessageRepository = directMessageRepository;
         this.eventService = eventService;
         this.authService = authService;
         this.notificationService = notificationService;
@@ -266,6 +271,60 @@ public class SocialAndProfileService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<DirectMessageDto> listDirectMessages(UUID currentUserId, UUID friendUserId) {
+        ensureAcceptedFriendship(currentUserId, friendUserId);
+        return directMessageRepository.findConversationBetween(currentUserId, friendUserId)
+                .stream()
+                .map(this::toDirectMessageDto)
+                .toList();
+    }
+
+    @Transactional
+    public DirectMessageDto sendDirectMessage(UUID currentUserId, UUID friendUserId, SendDirectMessageRequest req) {
+        if (currentUserId.equals(friendUserId)) {
+            throw ApiException.badRequest("Нельзя отправить сообщение самому себе");
+        }
+        ensureAcceptedFriendship(currentUserId, friendUserId);
+
+        User sender = userRepository.findById(currentUserId)
+                .orElseThrow(() -> ApiException.unauthorized("Пользователь не найден"));
+        User recipient = userRepository.findById(friendUserId)
+                .orElseThrow(() -> ApiException.notFound("Получатель не найден"));
+
+        DirectMessage msg = new DirectMessage();
+        msg.setSender(sender);
+        msg.setRecipient(recipient);
+        msg.setContent(req.content().trim());
+        msg = directMessageRepository.save(msg);
+
+        return toDirectMessageDto(msg);
+    }
+
+    private void ensureAcceptedFriendship(UUID u1, UUID u2) {
+        boolean accepted = friendshipRepository.findBetweenUsers(u1, u2)
+                .stream()
+                .anyMatch(f -> f.getStatus() == FriendshipStatus.ACCEPTED);
+        if (!accepted) {
+            throw ApiException.forbidden("Личные сообщения доступны только между подтверждёнными спортивными знакомыми (друзьями)");
+        }
+    }
+
+    private DirectMessageDto toDirectMessageDto(DirectMessage m) {
+        String avatar = m.getSender().getAvatarAttachmentId() != null
+                ? "/api/v1/attachments/" + m.getSender().getAvatarAttachmentId() + "/content"
+                : null;
+        return new DirectMessageDto(
+                m.getId(),
+                m.getSender().getId(),
+                m.getSender().getDisplayName(),
+                avatar,
+                m.getRecipient().getId(),
+                m.getContent(),
+                m.getCreatedAt()
+        );
+    }
+
     private PublicUserProfileDto buildPublicProfileDto(User target, UserPrincipal viewer, UUID filterSportId, SkillLevel filterSkill) {
         List<UserSportInterest> interests = sportInterestRepository.findByUserId(target.getId());
         List<SportInterestItemDto> sportDtos = interests.stream()
@@ -325,12 +384,20 @@ public class SocialAndProfileService {
                 .filter(f -> f.getStatus() == FriendshipStatus.ACCEPTED)
                 .count();
 
+        Set<UUID> viewerSportIds = new HashSet<>();
+        if (viewer != null && !isSelf) {
+            sportInterestRepository.findByUserId(viewer.id())
+                    .forEach(vi -> viewerSportIds.add(vi.getSport().getId()));
+        }
+
         List<String> matchReasons = new ArrayList<>();
         if (target.getCity() != null && !target.getCity().isBlank()) {
             matchReasons.add("Город: " + target.getCity());
         }
         for (SportInterestItemDto si : sportDtos) {
-            if (filterSportId != null && si.sportId().equals(filterSportId)) {
+            if (viewerSportIds.contains(si.sportId())) {
+                matchReasons.add("Общий спорт: " + si.sportName());
+            } else if (filterSportId != null && si.sportId().equals(filterSportId)) {
                 matchReasons.add("Совпадение по спорту: " + si.sportName());
             } else if (si.primarySport()) {
                 matchReasons.add("Основной спорт: " + si.sportName());

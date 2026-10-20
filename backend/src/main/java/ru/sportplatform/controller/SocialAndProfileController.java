@@ -82,4 +82,19 @@ public class SocialAndProfileController {
         socialService.cancelOrRemoveFriendship(userId, friendshipId);
         return ResponseEntity.ok(Map.of("message", "Связь обновлена"));
     }
+
+    @GetMapping("/friends/{friendUserId}/messages")
+    public ResponseEntity<List<DirectMessageDto>> listDirectMessages(@PathVariable UUID friendUserId) {
+        UUID userId = SecurityUtils.requireUserId();
+        return ResponseEntity.ok(socialService.listDirectMessages(userId, friendUserId));
+    }
+
+    @PostMapping("/friends/{friendUserId}/messages")
+    public ResponseEntity<DirectMessageDto> sendDirectMessage(
+            @PathVariable UUID friendUserId,
+            @Valid @RequestBody SendDirectMessageRequest req
+    ) {
+        UUID userId = SecurityUtils.requireUserId();
+        return ResponseEntity.ok(socialService.sendDirectMessage(userId, friendUserId, req));
+    }
 }

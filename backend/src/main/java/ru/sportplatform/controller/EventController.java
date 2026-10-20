@@ -117,6 +117,13 @@ public class EventController {
         return ResponseEntity.ok(eventService.restoreEventByOrganizer(eventId, viewer));
     }
 
+    @DeleteMapping("/{eventId}")
+    public ResponseEntity<java.util.Map<String, String>> deleteEventByOrganizer(@PathVariable UUID eventId) {
+        var viewer = SecurityUtils.requirePrincipal();
+        eventService.deleteEventByOrganizer(eventId, viewer);
+        return ResponseEntity.ok(java.util.Map.of("message", "Мероприятие удалено организатором"));
+    }
+
     @GetMapping(value = "/{eventId}/ics", produces = "text/calendar;charset=UTF-8")
     public ResponseEntity<byte[]> exportIcsCalendar(@PathVariable UUID eventId) {
         String ics = eventService.generateIcsCalendar(eventId);
