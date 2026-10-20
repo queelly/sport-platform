@@ -1,13 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Activity,
   Bell,
   Building2,
   CalendarCheck,
   CheckCheck,
   ChevronDown,
-  Eye,
   HelpCircle,
   List,
   LogIn,
@@ -16,11 +14,9 @@ import {
   MapPin,
   Moon,
   Plus,
-  RotateCcw,
-  Search,
   ShieldCheck,
-  Sparkles,
   Sun,
+  Type,
   User,
   Users,
   X,
@@ -28,7 +24,6 @@ import {
 import { useAuth } from '../AuthContext';
 import { apiFetch, formatDateTime } from '../api';
 import { getRegionInfo, NotificationDto, RUSSIAN_REGIONS } from '../types';
-import { VoiceSearchButton } from './UiControls';
 
 export function getSelectedGlobalRegion(): string {
   return localStorage.getItem('sp_selected_region') ?? '';
@@ -39,25 +34,20 @@ export function setSelectedGlobalRegion(region: string) {
   window.dispatchEvent(new CustomEvent('sp-region-change', { detail: region }));
 }
 
-interface A11ySettings {
+interface UiSettings {
   theme: 'light' | 'dark';
   fontSize: 'normal' | 'lg' | 'xl';
-  contrast: 'normal' | 'bw' | 'wb' | 'blue';
-  wideSpacing: boolean;
-  hideImages: boolean;
 }
 
-const DEFAULT_A11Y: A11ySettings = {
+const DEFAULT_SETTINGS: UiSettings = {
   theme: 'light',
   fontSize: 'normal',
-  contrast: 'normal',
-  wideSpacing: false,
-  hideImages: false,
 };
 
 export const Navbar: React.FC = () => {
   const {
     user,
+    myOrganizations,
     unreadNotificationsCount,
     refreshUnreadCount,
     savedSessions,
@@ -68,7 +58,7 @@ export const Navbar: React.FC = () => {
 
   const location = useLocation();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   const [selectedRegion, setSelectedRegion] = useState<string>(() => getSelectedGlobalRegion());
   const [cityModalOpen, setCityModalOpen] = useState(false);
@@ -80,19 +70,24 @@ export const Navbar: React.FC = () => {
   const notifPanelRef = useRef<HTMLDivElement>(null);
   const notifBtnRef = useRef<HTMLButtonElement>(null);
 
-  const [a11yOpen, setA11yOpen] = useState(false);
-  const a11yPanelRef = useRef<HTMLDivElement>(null);
-  const a11yBtnRef = useRef<HTMLButtonElement>(null);
+  const [fontOpen, setFontOpen] = useState(false);
+  const fontPanelRef = useRef<HTMLDivElement>(null);
+  const fontBtnRef = useRef<HTMLButtonElement>(null);
 
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
-  const [a11y, setA11y] = useState<A11ySettings>(() => {
+  const [settings, setSettings] = useState<UiSettings>(() => {
     try {
       const saved = localStorage.getItem('sp_a11y');
-      return saved ? { ...DEFAULT_A11Y, ...JSON.parse(saved) } : DEFAULT_A11Y;
+      if (!saved) return DEFAULT_SETTINGS;
+      const parsed = JSON.parse(saved);
+      return {
+        theme: parsed.theme === 'dark' ? 'dark' : 'light',
+        fontSize: parsed.fontSize === 'lg' || parsed.fontSize === 'xl' ? parsed.fontSize : 'normal',
+      };
     } catch {
-      return DEFAULT_A11Y;
+      return DEFAULT_SETTINGS;
     }
   });
 
@@ -112,10 +107,10 @@ export const Navbar: React.FC = () => {
     return () => window.removeEventListener('sp-region-change', handler);
   }, []);
 
-  // Apply theme & accessibility settings to <html>
+  // Apply ONLY theme and font-size scaling (all contrast/color filters removed per user request)
   useEffect(() => {
     const html = document.documentElement;
-    html.dataset.theme = a11y.theme;
+    html.dataset.theme = settings.theme;
     html.classList.remove(
       'a11y-font-lg',
       'a11y-font-xl',
@@ -125,15 +120,10 @@ export const Navbar: React.FC = () => {
       'a11y-spacing-wide',
       'a11y-hide-images'
     );
-    if (a11y.fontSize === 'lg') html.classList.add('a11y-font-lg');
-    if (a11y.fontSize === 'xl') html.classList.add('a11y-font-xl');
-    if (a11y.contrast === 'bw') html.classList.add('a11y-contrast-bw');
-    if (a11y.contrast === 'wb') html.classList.add('a11y-contrast-wb');
-    if (a11y.contrast === 'blue') html.classList.add('a11y-contrast-blue');
-    if (a11y.wideSpacing) html.classList.add('a11y-spacing-wide');
-    if (a11y.hideImages) html.classList.add('a11y-hide-images');
-    localStorage.setItem('sp_a11y', JSON.stringify(a11y));
-  }, [a11y]);
+    if (settings.fontSize === 'lg') html.classList.add('a11y-font-lg');
+    if (settings.fontSize === 'xl') html.classList.add('a11y-font-xl');
+    localStorage.setItem('sp_a11y', JSON.stringify(settings));
+  }, [settings]);
 
   const loadNotifications = useCallback(async () => {
     if (!user) return;
@@ -149,7 +139,6 @@ export const Navbar: React.FC = () => {
     }
   }, [user, refreshUnreadCount]);
 
-  // Close popovers on outside click
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -163,13 +152,13 @@ export const Navbar: React.FC = () => {
         setNotifOpen(false);
       }
       if (
-        a11yOpen &&
-        a11yPanelRef.current &&
-        !a11yPanelRef.current.contains(target) &&
-        a11yBtnRef.current &&
-        !a11yBtnRef.current.contains(target)
+        fontOpen &&
+        fontPanelRef.current &&
+        !fontPanelRef.current.contains(target) &&
+        fontBtnRef.current &&
+        !fontBtnRef.current.contains(target)
       ) {
-        setA11yOpen(false);
+        setFontOpen(false);
       }
       if (profileMenuOpen && profileMenuRef.current && !profileMenuRef.current.contains(target)) {
         setProfileMenuOpen(false);
@@ -177,7 +166,7 @@ export const Navbar: React.FC = () => {
     };
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
-  }, [notifOpen, a11yOpen, profileMenuOpen]);
+  }, [notifOpen, fontOpen, profileMenuOpen]);
 
   const handleMarkAllRead = async () => {
     try {
@@ -189,52 +178,21 @@ export const Navbar: React.FC = () => {
     }
   };
 
-  const isHomeOrEvents = location.pathname === '/' || location.pathname === '/events';
-  const currentView = isHomeOrEvents
-    ? searchParams.get('view') === 'list'
-      ? 'list'
-      : 'map'
-    : null;
-
-  const buildViewLink = (view: 'map' | 'list') => {
-    const params = new URLSearchParams(isHomeOrEvents ? searchParams : undefined);
-    if (view === 'list') {
-      params.set('view', 'list');
-    } else {
-      params.delete('view');
-    }
-    const qs = params.toString();
-    return qs ? `/?${qs}` : '/';
-  };
-
-  const searchQuery = isHomeOrEvents ? searchParams.get('q') ?? '' : '';
-  const updateSearchQuery = (val: string) => {
-    const next = new URLSearchParams(searchParams);
-    if (val) {
-      next.set('q', val);
-    } else {
-      next.delete('q');
-    }
-    if (!isHomeOrEvents) {
-      navigate(`/?${next.toString()}`);
-    } else {
-      setSearchParams(next, { replace: true });
-    }
-  };
-
-  const navTabClass = (active: boolean) =>
-    `h-full -mb-px px-2.5 xl:px-3.5 flex items-center gap-2 border-b-[3px] text-[15px] whitespace-nowrap transition-all ${
-      active
-        ? 'border-brand text-ink font-bold shadow-[inset_0_-3px_10px_rgba(4,215,147,0.3)]'
-        : 'border-transparent text-muted font-semibold hover:text-ink'
-    }`;
-
+  const isHome = location.pathname === '/';
+  const isCatalogRoute = location.pathname === '/events';
+  const viewParam = searchParams.get('view');
+  const isMapActive = isHome && viewParam !== 'list';
+  const isCatalogActive = isCatalogRoute || (isHome && viewParam === 'list');
+  const isPartnersActive =
+    location.pathname.startsWith('/partners') ||
+    location.pathname.startsWith('/friends') ||
+    location.pathname.startsWith('/users/');
+  const isClubsActive =
+    location.pathname.startsWith('/organizations') ||
+    location.pathname.startsWith('/my-organization');
+  const isMyActive = location.pathname === '/my';
+  const isAdminActive = location.pathname.startsWith('/admin');
   const isAdmin = user?.globalRole === 'ADMIN';
-  const isA11yActive =
-    a11y.fontSize !== 'normal' ||
-    a11y.contrast !== 'normal' ||
-    a11y.wideSpacing ||
-    a11y.hideImages;
 
   const currentRegionInfo = getRegionInfo(selectedRegion);
   const filteredRegions = RUSSIAN_REGIONS.filter(
@@ -243,268 +201,186 @@ export const Navbar: React.FC = () => {
       r.label.toLowerCase().includes(cityQuery.trim().toLowerCase())
   );
 
+  const navItemClass = (active: boolean) =>
+    `h-10 px-3.5 rounded-xl flex items-center gap-2 text-xs xl:text-[13px] font-semibold whitespace-nowrap transition-colors ${
+      active
+        ? 'bg-ink text-card font-bold shadow-xs'
+        : 'text-muted hover:text-ink hover:bg-surface/70'
+    }`;
+
   return (
     <>
-      <nav className="bg-card border-b border-line-2 relative z-40 shrink-0 max-w-full">
-        <div className="px-3 sm:px-6 h-16 flex items-center justify-between gap-2 sm:gap-4 max-w-full">
-          {/* Left: Brand + City Selector + Search Bar + Main Navigation Tabs */}
-          <div className="flex-1 self-stretch flex items-center gap-2 lg:gap-3 min-w-0">
+      <header className="bg-card border-b border-line-2 relative z-40 shrink-0">
+        <div className="max-w-[1600px] mx-auto px-3 sm:px-6 h-[68px] flex items-center justify-between gap-3">
+          {/* 1. LEFT ZONE: Brand Mark + Region Selector */}
+          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
             <Link
               to="/"
-              className="flex items-center gap-2.5 shrink-0"
+              className="flex items-center gap-2.5 group shrink-0"
               aria-label="Точка Сбора — на главную"
             >
-              <span className="w-[38px] h-[38px] rounded-[10px] bg-brand text-on-brand flex items-center justify-center shadow-sm">
-                <Activity className="w-5 h-5 stroke-[2.4]" />
+              <span className="w-10 h-10 rounded-xl bg-brand text-white font-display font-extrabold text-sm flex items-center justify-center shadow-xs group-hover:bg-brand-hover transition-colors">
+                ТС
               </span>
-              <span className="text-[20px] sm:text-[22px] font-extrabold tracking-[-0.03em] text-ink md:max-xl:hidden">
-                Точка Сбора
-              </span>
+              <div className="hidden sm:flex flex-col leading-none">
+                <span className="font-display font-extrabold text-[15px] tracking-tight text-ink">
+                  ТОЧКА СБОРА
+                </span>
+                <span className="font-mono text-[10px] font-medium text-brand-ink mt-0.5">
+                  СПОРТ · 2ГИС
+                </span>
+              </div>
             </Link>
 
-            {/* City Selector Button */}
             <button
               type="button"
               onClick={() => setCityModalOpen(true)}
-              title={ currentRegionInfo ? `${currentRegionInfo.value} (${currentRegionInfo.tzLabel})` : 'Все города России' }
-              className="flex shrink-0 h-[42px] px-2.5 items-center gap-1.5 rounded-[10px] text-ink hover:bg-surface border border-transparent hover:border-line-2 transition-colors"
+              title={
+                currentRegionInfo
+                  ? `${currentRegionInfo.label} (${currentRegionInfo.tzLabel})`
+                  : 'Все регионы России'
+              }
+              className="h-10 px-3 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 flex items-center gap-1.5 text-ink transition-colors cursor-pointer shrink-0"
             >
-              <MapPin className="w-[18px] h-[18px] text-brand-ink shrink-0" />
-              <span className="text-sm font-bold max-w-[115px] truncate hidden sm:inline">
-                {selectedRegion || 'Все города'}
+              <MapPin className="w-4 h-4 text-brand shrink-0" />
+              <span className="text-xs sm:text-[13px] font-bold max-w-[130px] truncate">
+                {selectedRegion || 'Все регионы'}
               </span>
-              <ChevronDown className="w-4 h-4 text-muted shrink-0" />
+              {currentRegionInfo && (
+                <span className="hidden xl:inline font-mono text-[10px] font-bold text-muted bg-card px-1.5 py-0.5 rounded-md border border-line">
+                  {currentRegionInfo.tzLabel.split(' ')[0]}
+                </span>
+              )}
+              <ChevronDown className="w-3.5 h-3.5 text-muted shrink-0" />
             </button>
-
-            {/* Inline Search Input with Voice Search */}
-            <div className="hidden lg:flex flex-[2] min-w-[160px] max-w-[460px] h-[42px] items-center gap-2 pl-3 pr-1.5 rounded-[10px] bg-surface border border-line-2 text-muted focus-within:border-ink">
-              <Search className="w-[18px] h-[18px] shrink-0" />
-              <input
-                type="search"
-                aria-label="Поиск мероприятий"
-                placeholder="Спорт, место или клуб"
-                value={searchQuery}
-                onChange={(e) => updateSearchQuery(e.target.value)}
-                className="flex-1 min-w-0 bg-transparent outline-none text-[15px] font-medium text-ink placeholder:text-muted"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => updateSearchQuery('')}
-                  aria-label="Очистить"
-                  className="shrink-0 w-[28px] h-[28px] rounded-lg bg-card text-ink flex items-center justify-center hover:bg-surface-2"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-              <VoiceSearchButton onResult={(transcript) => updateSearchQuery(transcript)} />
-            </div>
-
-            <div className="flex-1" />
-
-            {/* Desktop Horizontal Tabs (Sportikus Architecture) */}
-            <div className="hidden md:flex self-stretch gap-0.5 xl:gap-1 shrink-0">
-              <Link to={buildViewLink('map')} className={navTabClass(currentView === 'map')}>
-                <MapIcon className="w-[18px] h-[18px] shrink-0" />
-                <span>Карта</span>
-              </Link>
-
-              <Link to={buildViewLink('list')} className={navTabClass(currentView === 'list')}>
-                <List className="w-[18px] h-[18px] shrink-0" />
-                <span>Лента</span>
-              </Link>
-
-              <Link
-                to="/recommended"
-                className={navTabClass(
-                  location.pathname === '/recommended' ||
-                    location.pathname === '/partners' ||
-                    location.pathname === '/friends' ||
-                    location.pathname.startsWith('/organizations')
-                )}
-              >
-                <Sparkles className="w-[18px] h-[18px] shrink-0 lg:hidden xl:inline" />
-                <span>Для вас</span>
-              </Link>
-
-              {user && (
-                <Link
-                  to="/my"
-                  className={navTabClass(location.pathname === '/my')}
-                >
-                  <CalendarCheck className="w-[18px] h-[18px] shrink-0 lg:hidden xl:inline" />
-                  <span>Мои события</span>
-                </Link>
-              )}
-
-              {isAdmin && (
-                <Link
-                  to="/admin"
-                  className={navTabClass(location.pathname.startsWith('/admin'))}
-                >
-                  <ShieldCheck className="w-[18px] h-[18px] shrink-0 text-amber-500" />
-                  <span>Модерация</span>
-                </Link>
-              )}
-            </div>
           </div>
 
-          {/* Right Action Controls: Accessibility/Theme, Notifications, Create, Profile */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            {/* Quick Dark/Light Theme Toggle */}
-            <button
-              type="button"
-              onClick={() =>
-                setA11y((p) => ({ ...p, theme: p.theme === 'dark' ? 'light' : 'dark' }))
-              }
-              aria-label={a11y.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
-              title={a11y.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
-              className="w-9 h-9 sm:w-[42px] sm:h-[42px] rounded-[10px] border border-line-2 bg-card flex items-center justify-center text-ink hover:bg-surface transition-colors shrink-0"
-            >
-              {a11y.theme === 'dark' ? (
-                <Sun className="w-4 h-4 sm:w-5 sm:h-5" />
-              ) : (
-                <Moon className="w-4 h-4 sm:w-5 sm:h-5" />
-              )}
-            </button>
+          {/* 2. CENTER ZONE: Symmetrical Intuitive Navigation Pill Bar (Never cramped!) */}
+          <nav
+            aria-label="Основные разделы платформы"
+            className="hidden lg:flex items-center gap-1 p-1 rounded-2xl bg-surface/60 border border-line"
+          >
+            <Link to="/?view=map" className={navItemClass(isMapActive)}>
+              <MapIcon className="w-4 h-4 shrink-0 text-brand" />
+              <span>Карта 2ГИС</span>
+            </Link>
 
-            {/* Accessibility (ГОСТ / Для слабовидящих) Popover Button */}
+            <Link to="/?view=list" className={navItemClass(isCatalogActive)}>
+              <List className="w-4 h-4 shrink-0" />
+              <span>Каталог встреч</span>
+            </Link>
+
+            <Link to="/partners" className={navItemClass(isPartnersActive)}>
+              <Users className="w-4 h-4 shrink-0" />
+              <span>Напарники</span>
+            </Link>
+
+            <Link to="/organizations" className={navItemClass(isClubsActive)}>
+              <Building2 className="w-4 h-4 shrink-0" />
+              <span>Клубы и сообщества</span>
+            </Link>
+
+            {user && (
+              <Link to="/my" className={navItemClass(isMyActive)}>
+                <CalendarCheck className="w-4 h-4 shrink-0" />
+                <span>Мои сборы</span>
+              </Link>
+            )}
+
+            {isAdmin && (
+              <Link to="/admin" className={navItemClass(isAdminActive)}>
+                <ShieldCheck className="w-4 h-4 shrink-0 text-[#FF5A26]" />
+                <span>Модерация</span>
+              </Link>
+            )}
+          </nav>
+
+          {/* 3. RIGHT ZONE: Font Size Only (Аа), Theme, Notifications, Create, Profile */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Font Size Only Switcher (Аа) — all other a11y filters removed per user request */}
             <div className="relative">
               <button
-                ref={a11yBtnRef}
+                ref={fontBtnRef}
                 type="button"
-                onClick={() => setA11yOpen((o) => !o)}
-                aria-label="Доступность для слабовидящих"
-                aria-expanded={a11yOpen}
-                title="Версия для слабовидящих (размер шрифта и контраст)"
-                className={`relative w-9 h-9 sm:w-[42px] sm:h-[42px] rounded-[10px] border flex items-center justify-center transition-colors shrink-0 ${
-                  isA11yActive
-                    ? 'border-brand bg-brand-tint text-brand-ink font-bold'
+                onClick={() => setFontOpen((o) => !o)}
+                aria-label="Размер шрифта"
+                title="Изменить размер текста (Обычный / Увеличенный / Крупный)"
+                className={`h-10 px-2.5 rounded-xl border flex items-center gap-1 text-xs font-bold transition-colors cursor-pointer ${
+                  settings.fontSize !== 'normal'
+                    ? 'border-brand bg-brand-tint text-brand-ink'
                     : 'border-line-2 bg-card text-ink hover:bg-surface'
                 }`}
               >
-                <Eye className="w-4 h-4 sm:w-5 sm:h-5" />
-                {isA11yActive && (
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-brand" />
-                )}
+                <Type className="w-4 h-4" />
+                <span className="hidden sm:inline font-mono text-[11px]">
+                  {settings.fontSize === 'normal'
+                    ? '100%'
+                    : settings.fontSize === 'lg'
+                    ? '112%'
+                    : '124%'}
+                </span>
               </button>
 
-              {a11yOpen && (
+              {fontOpen && (
                 <div
-                  ref={a11yPanelRef}
-                  role="dialog"
-                  aria-label="Настройки доступности для слабовидящих"
-                  className="fixed inset-x-2 top-16 sm:inset-x-auto sm:right-4 sm:top-[68px] w-auto sm:w-[340px] bg-card border border-line-2 rounded-2xl shadow-2xl p-4 z-[2200] space-y-4 anim-fade"
+                  ref={fontPanelRef}
+                  className="fixed right-3 top-[72px] sm:absolute sm:right-0 sm:top-[calc(100%+8px)] w-64 bg-card border border-line-2 rounded-2xl shadow-2xl p-3.5 z-[2200] space-y-2.5 anim-fade"
                 >
-                  <div className="flex items-center justify-between border-b border-line pb-2.5">
-                    <span className="font-extrabold text-sm text-ink flex items-center gap-2">
-                      <Eye className="w-4 h-4 text-brand-ink" />
-                      <span>Версия для слабовидящих</span>
-                    </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-ink">Размер шрифта</span>
                     <button
                       type="button"
-                      onClick={() => setA11yOpen(false)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-muted hover:bg-surface hover:text-ink"
+                      onClick={() => setFontOpen(false)}
+                      className="text-muted hover:text-ink"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
-
-                  <div className="space-y-1.5">
-                    <div className="text-xs font-bold text-muted uppercase tracking-wider">
-                      Размер текста
-                    </div>
-                    <div className="grid grid-cols-3 gap-1.5 p-1 bg-surface rounded-xl">
-                      {(
-                        [
-                          { id: 'normal', label: 'Обычный' },
-                          { id: 'lg', label: 'Крупнее' },
-                          { id: 'xl', label: 'Крупный' },
-                        ] as const
-                      ).map((sz) => (
-                        <button
-                          key={sz.id}
-                          type="button"
-                          aria-pressed={a11y.fontSize === sz.id}
-                          onClick={() => setA11y((p) => ({ ...p, fontSize: sz.id }))}
-                          className={`py-2 px-2 rounded-lg text-xs font-bold transition-all ${
-                            a11y.fontSize === sz.id
-                              ? 'bg-brand text-on-brand shadow-sm'
-                              : 'text-ink hover:bg-card'
-                          }`}
-                        >
-                          {sz.label}
-                        </button>
-                      ))}
-                    </div>
+                  <div className="grid grid-cols-3 gap-1.5 p-1 bg-surface rounded-xl">
+                    {(
+                      [
+                        { id: 'normal', label: '100%', sub: 'Обычный' },
+                        { id: 'lg', label: '112%', sub: 'Средний' },
+                        { id: 'xl', label: '124%', sub: 'Крупный' },
+                      ] as const
+                    ).map((sz) => (
+                      <button
+                        key={sz.id}
+                        type="button"
+                        onClick={() => setSettings((p) => ({ ...p, fontSize: sz.id }))}
+                        className={`py-2 px-1.5 rounded-lg text-center transition-colors cursor-pointer ${
+                          settings.fontSize === sz.id
+                            ? 'bg-brand text-white font-bold shadow-2xs'
+                            : 'text-ink hover:bg-card'
+                        }`}
+                      >
+                        <div className="font-mono text-xs font-bold">{sz.label}</div>
+                        <div className="text-[10px] opacity-85">{sz.sub}</div>
+                      </button>
+                    ))}
                   </div>
-
-                  <div className="space-y-1.5">
-                    <div className="text-xs font-bold text-muted uppercase tracking-wider">
-                      Контрастность
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {[
-                        { id: 'normal', label: 'Стандартная' },
-                        { id: 'bw', label: 'Ч/Б высокий контраст' },
-                        { id: 'wb', label: 'Жёлтый на чёрном' },
-                        { id: 'blue', label: 'Синяя схема' },
-                      ].map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          aria-pressed={a11y.contrast === c.id}
-                          onClick={() =>
-                            setA11y((p) => ({ ...p, contrast: c.id as A11ySettings['contrast'] }))
-                          }
-                          className={`py-2 px-2.5 rounded-xl border text-xs font-bold text-left transition-all ${
-                            a11y.contrast === c.id
-                              ? 'border-brand bg-brand-tint text-brand-ink'
-                              : 'border-line-2 bg-card text-ink hover:bg-surface'
-                          }`}
-                        >
-                          {c.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 pt-1 border-t border-line text-xs font-semibold text-ink">
-                    <label className="flex items-center justify-between cursor-pointer py-1">
-                      <span>Увеличенный интервал букв</span>
-                      <input
-                        type="checkbox"
-                        checked={a11y.wideSpacing}
-                        onChange={(e) => setA11y((p) => ({ ...p, wideSpacing: e.target.checked }))}
-                        className="w-4 h-4 accent-brand"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between cursor-pointer py-1">
-                      <span>Скрыть фоновые иллюстрации</span>
-                      <input
-                        type="checkbox"
-                        checked={a11y.hideImages}
-                        onChange={(e) => setA11y((p) => ({ ...p, hideImages: e.target.checked }))}
-                        className="w-4 h-4 accent-brand"
-                      />
-                    </label>
-                  </div>
-
-                  {isA11yActive && (
-                    <button
-                      type="button"
-                      onClick={() => setA11y((p) => ({ ...DEFAULT_A11Y, theme: p.theme }))}
-                      className="w-full py-2 rounded-xl bg-surface hover:bg-surface-2 text-ink text-xs font-bold flex items-center justify-center gap-1.5"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Сбросить настройки доступности</span>
-                    </button>
-                  )}
                 </div>
               )}
             </div>
 
-            {/* Notifications Bell Popover (Sportikus style) */}
+            {/* Light / Dark Theme Toggle */}
+            <button
+              type="button"
+              onClick={() =>
+                setSettings((p) => ({ ...p, theme: p.theme === 'dark' ? 'light' : 'dark' }))
+              }
+              aria-label={settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+              title={settings.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+              className="w-10 h-10 rounded-xl border border-line-2 bg-card flex items-center justify-center text-ink hover:bg-surface transition-colors cursor-pointer shrink-0"
+            >
+              {settings.theme === 'dark' ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4" />
+              )}
+            </button>
+
+            {/* Notifications Bell */}
             {user && (
               <div className="relative">
                 <button
@@ -516,16 +392,11 @@ export const Navbar: React.FC = () => {
                     if (next) loadNotifications();
                   }}
                   aria-label="Уведомления"
-                  title={
-                    unreadNotificationsCount > 0
-                      ? `${unreadNotificationsCount} новых уведомлений`
-                      : 'Уведомления'
-                  }
-                  className="relative w-9 h-9 sm:w-[42px] sm:h-[42px] rounded-[10px] border border-line-2 bg-card flex items-center justify-center text-ink hover:bg-surface transition-colors shrink-0"
+                  className="relative w-10 h-10 rounded-xl border border-line-2 bg-card flex items-center justify-center text-ink hover:bg-surface transition-colors cursor-pointer shrink-0"
                 >
-                  <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <Bell className="w-4 h-4" />
                   {unreadNotificationsCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-brand text-on-brand text-[10px] leading-none font-extrabold flex items-center justify-center">
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#FF5A26] text-white font-mono text-[10px] font-bold flex items-center justify-center">
                       {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
                     </span>
                   )}
@@ -534,13 +405,11 @@ export const Navbar: React.FC = () => {
                 {notifOpen && (
                   <div
                     ref={notifPanelRef}
-                    role="dialog"
-                    aria-label="Уведомления"
-                    className="fixed inset-x-2 top-16 sm:inset-x-auto sm:right-4 sm:top-[68px] w-auto sm:w-[380px] max-h-[500px] bg-card border border-line-2 rounded-2xl shadow-2xl flex flex-col z-[2200] overflow-hidden anim-fade"
+                    className="fixed inset-x-2 top-[72px] sm:inset-x-auto sm:right-4 sm:top-[72px] w-auto sm:w-[390px] max-h-[500px] bg-card border border-line-2 rounded-2xl shadow-2xl flex flex-col z-[2200] overflow-hidden anim-fade"
                   >
                     <div className="p-4 border-b border-line-2 flex items-center justify-between bg-surface/50">
                       <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-ink text-base">Уведомления</span>
+                        <span className="font-display font-bold text-ink text-sm">Уведомления</span>
                         {unreadNotificationsCount > 0 && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-brand-tint text-brand-ink font-bold">
                             {unreadNotificationsCount} новых
@@ -552,7 +421,7 @@ export const Navbar: React.FC = () => {
                           <button
                             type="button"
                             onClick={handleMarkAllRead}
-                            className="px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink hover:bg-surface rounded-lg flex items-center gap-1 transition-colors"
+                            className="px-2.5 py-1 text-xs font-semibold text-muted hover:text-ink hover:bg-surface rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
                           >
                             <CheckCheck className="w-3.5 h-3.5" />
                             <span>Прочитать все</span>
@@ -588,7 +457,7 @@ export const Navbar: React.FC = () => {
                               setNotifOpen(false);
                               if (n.linkUrl) navigate(n.linkUrl);
                             }}
-                            className={`w-full text-left p-3.5 hover:bg-surface transition-colors block space-y-1 ${
+                            className={`w-full text-left p-3.5 hover:bg-surface transition-colors block space-y-1 cursor-pointer ${
                               !n.read ? 'bg-brand-tint/40' : ''
                             }`}
                           >
@@ -596,7 +465,7 @@ export const Navbar: React.FC = () => {
                               <span className="font-bold text-xs text-ink line-clamp-1">
                                 {n.title}
                               </span>
-                              <span className="text-[11px] text-muted shrink-0">
+                              <span className="font-mono text-[10px] text-muted shrink-0">
                                 {formatDateTime(n.createdAt)}
                               </span>
                             </div>
@@ -609,7 +478,7 @@ export const Navbar: React.FC = () => {
                     <Link
                       to="/notifications"
                       onClick={() => setNotifOpen(false)}
-                      className="shrink-0 border-t border-line-2 py-3 text-center text-sm font-semibold text-brand-ink hover:bg-surface transition-colors"
+                      className="shrink-0 border-t border-line-2 py-3 text-center text-xs font-bold text-brand-ink hover:bg-surface transition-colors"
                     >
                       Все уведомления и подключение VK-бота →
                     </Link>
@@ -618,28 +487,28 @@ export const Navbar: React.FC = () => {
               </div>
             )}
 
-            {/* Primary Create Event Button */}
+            {/* Create Event CTA */}
             <Link
-              to="/events/new"
-              aria-label="Создать мероприятие"
-              className="hidden md:flex items-center gap-1.5 h-[42px] px-3.5 xl:px-4 rounded-[10px] bg-brand text-on-brand text-[15px] font-bold hover:bg-brand-hover transition-colors shrink-0 shadow-sm"
+              to={user ? '/events/new' : '/login'}
+              className="hidden sm:inline-flex items-center gap-1.5 h-10 px-4 rounded-xl bg-brand hover:bg-brand-hover text-white font-display font-bold text-xs transition-colors shrink-0 shadow-xs"
             >
-              <Plus className="w-5 h-5 stroke-[2.4]" />
-              <span className="hidden xl:inline">Создать</span>
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>Создать сбор</span>
             </Link>
 
-            {/* User Profile Pill & Quick Menu (with Multi-Account Switcher) */}
+            {/* User Profile Pill with Live Avatar Update (#12) */}
             {user ? (
               <div className="relative" ref={profileMenuRef}>
                 <button
                   type="button"
                   onClick={() => setProfileMenuOpen((o) => !o)}
                   aria-label="Меню профиля"
-                  className="flex items-center gap-2 rounded-full sm:rounded-[12px] p-0.5 sm:px-2 sm:py-1 hover:bg-surface transition-colors shrink-0"
+                  className="h-10 pl-1.5 pr-2.5 rounded-xl border border-line-2 bg-card hover:bg-surface flex items-center gap-2 transition-colors cursor-pointer shrink-0"
                 >
-                  <span className="w-9 h-9 sm:w-[38px] sm:h-[38px] rounded-full bg-surface-2 text-ink flex items-center justify-center overflow-hidden shrink-0 font-bold text-sm border border-line-2">
+                  <span className="w-7 h-7 rounded-lg bg-brand text-white flex items-center justify-center overflow-hidden shrink-0 font-display font-bold text-xs">
                     {user.avatarUrl ? (
                       <img
+                        key={user.avatarUrl}
                         src={user.avatarUrl}
                         alt={user.displayName}
                         className="w-full h-full object-cover"
@@ -648,70 +517,91 @@ export const Navbar: React.FC = () => {
                       user.displayName.slice(0, 1).toUpperCase()
                     )}
                   </span>
-                  <span className="hidden 2xl:flex flex-col text-left leading-tight">
-                    <span className="text-sm font-bold text-ink max-w-[140px] truncate">
-                      {user.displayName}
-                    </span>
-                    <span className="text-[11px] font-medium text-muted">
-                      {user.city || 'Профиль'}
-                    </span>
+                  <span className="hidden xl:block text-xs font-bold text-ink max-w-[115px] truncate">
+                    {user.displayName}
                   </span>
-                  <ChevronDown className="w-4 h-4 text-muted hidden sm:block" />
+                  <ChevronDown className="w-3.5 h-3.5 text-muted" />
                 </button>
 
                 {profileMenuOpen && (
-                  <div className="fixed right-2 top-16 sm:absolute sm:right-0 sm:top-[calc(100%+8px)] w-[290px] bg-card border border-line-2 rounded-2xl shadow-2xl p-2 z-[2200] space-y-1 anim-fade">
-                    <div className="px-3 py-2.5 border-b border-line">
-                      <div className="font-bold text-sm text-ink truncate">{user.displayName}</div>
-                      <div className="text-xs text-muted truncate">{user.email}</div>
+                  <div className="fixed right-2 top-[72px] sm:absolute sm:right-0 sm:top-[calc(100%+8px)] w-[300px] bg-card border border-line-2 rounded-2xl shadow-2xl p-2 z-[2200] space-y-1 anim-fade">
+                    <div className="px-3 py-2.5 border-b border-line flex items-center gap-3">
+                      <span className="w-10 h-10 rounded-xl bg-brand text-white flex items-center justify-center overflow-hidden shrink-0 font-display font-bold text-sm">
+                        {user.avatarUrl ? (
+                          <img
+                            key={user.avatarUrl}
+                            src={user.avatarUrl}
+                            alt={user.displayName}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          user.displayName.slice(0, 1).toUpperCase()
+                        )}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-bold text-sm text-ink truncate">{user.displayName}</div>
+                        <div className="text-xs text-muted truncate">{user.email}</div>
+                      </div>
                     </div>
 
                     <Link
                       to="/profile"
                       onClick={() => setProfileMenuOpen(false)}
-                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-ink hover:bg-surface transition-colors"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-ink hover:bg-surface transition-colors"
                     >
-                      <User className="w-4 h-4 text-brand-ink" />
-                      <span>Мой профиль и анкета</span>
+                      <User className="w-4 h-4 text-brand" />
+                      <span>Мой профиль и виды спорта</span>
                     </Link>
 
                     <Link
-                      to="/friends"
+                      to="/my"
                       onClick={() => setProfileMenuOpen(false)}
-                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-ink hover:bg-surface transition-colors"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-ink hover:bg-surface transition-colors"
                     >
-                      <Users className="w-4 h-4 text-brand-ink" />
-                      <span>Друзья, напарники и чаты</span>
+                      <CalendarCheck className="w-4 h-4 text-brand" />
+                      <span>Мои события и записи</span>
                     </Link>
 
                     <Link
-                      to="/organizations"
+                      to="/partners"
                       onClick={() => setProfileMenuOpen(false)}
-                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-ink hover:bg-surface transition-colors"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-ink hover:bg-surface transition-colors"
                     >
-                      <Building2 className="w-4 h-4 text-brand-ink" />
-                      <span>Спортивные клубы и секции</span>
+                      <Users className="w-4 h-4 text-brand" />
+                      <span>Напарники, друзья и чаты</span>
+                    </Link>
+
+                    <Link
+                      to={myOrganizations && myOrganizations.length > 0 ? '/my-organization' : '/organizations'}
+                      onClick={() => setProfileMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-ink hover:bg-surface transition-colors"
+                    >
+                      <Building2 className="w-4 h-4 text-brand" />
+                      <span>
+                        {myOrganizations && myOrganizations.length > 0
+                          ? 'Кабинет моего клуба'
+                          : 'Клубы и сообщества'}
+                      </span>
                     </Link>
 
                     <Link
                       to="/notifications"
                       onClick={() => setProfileMenuOpen(false)}
-                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-ink hover:bg-surface transition-colors"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-ink hover:bg-surface transition-colors"
                     >
-                      <Bell className="w-4 h-4 text-brand-ink" />
+                      <Bell className="w-4 h-4 text-brand" />
                       <span>Уведомления и VK-бот</span>
                     </Link>
 
                     <Link
                       to="/support"
                       onClick={() => setProfileMenuOpen(false)}
-                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-ink hover:bg-surface transition-colors"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-ink hover:bg-surface transition-colors"
                     >
-                      <HelpCircle className="w-4 h-4 text-brand-ink" />
-                      <span>Поддержка и обращения</span>
+                      <HelpCircle className="w-4 h-4 text-brand" />
+                      <span>Центр поддержки и тикеты</span>
                     </Link>
 
-                    {/* Multi-Account Switcher (#3) */}
                     {savedSessions.length > 0 && (
                       <div className="pt-2 mt-1 border-t border-line space-y-1">
                         <div className="px-3 py-1 flex items-center justify-between text-[11px] font-bold text-muted uppercase tracking-wider">
@@ -730,7 +620,9 @@ export const Navbar: React.FC = () => {
                             <div
                               key={acc.user.id}
                               className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs ${
-                                isCurrent ? 'bg-brand-tint text-brand-ink font-bold' : 'hover:bg-surface text-ink'
+                                isCurrent
+                                  ? 'bg-brand-tint text-brand-ink font-bold'
+                                  : 'hover:bg-surface text-ink'
                               }`}
                             >
                               <button
@@ -740,9 +632,9 @@ export const Navbar: React.FC = () => {
                                   await switchAccount(acc.user.id);
                                   setProfileMenuOpen(false);
                                 }}
-                                className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                                className="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer"
                               >
-                                <span className="w-6 h-6 rounded-full bg-surface-2 flex items-center justify-center font-bold text-[11px] shrink-0 overflow-hidden">
+                                <span className="w-6 h-6 rounded-lg bg-surface-2 flex items-center justify-center font-bold text-[11px] shrink-0 overflow-hidden">
                                   {acc.user.avatarUrl ? (
                                     <img
                                       src={acc.user.avatarUrl}
@@ -756,14 +648,14 @@ export const Navbar: React.FC = () => {
                                 <span className="truncate">{acc.user.displayName}</span>
                               </button>
                               {isCurrent ? (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand text-on-brand font-bold">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand text-white font-bold">
                                   Активен
                                 </span>
                               ) : (
                                 <button
                                   type="button"
                                   onClick={() => removeSavedAccount(acc.user.id)}
-                                  className="text-muted hover:text-rose-600 p-1"
+                                  className="text-muted hover:text-rose-600 p-1 cursor-pointer"
                                   title="Убрать из списка"
                                 >
                                   <X className="w-3.5 h-3.5" />
@@ -783,7 +675,7 @@ export const Navbar: React.FC = () => {
                           await logout();
                           navigate('/login');
                         }}
-                        className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                       >
                         <LogOut className="w-4 h-4" />
                         <span>Выйти из аккаунта</span>
@@ -795,32 +687,37 @@ export const Navbar: React.FC = () => {
             ) : (
               <Link
                 to="/login"
-                className="flex items-center gap-1.5 h-9 sm:h-[42px] px-3.5 sm:px-4 rounded-[10px] border border-line-2 bg-card text-ink hover:bg-surface transition-colors font-semibold text-sm sm:text-base shrink-0"
+                className="flex items-center gap-1.5 h-10 px-4 rounded-xl border border-line-2 bg-card text-ink hover:bg-surface transition-colors font-bold text-xs sm:text-sm shrink-0"
               >
-                <LogIn className="w-4 h-4 sm:w-5 sm:h-5" />
+                <LogIn className="w-4 h-4" />
                 <span>Войти</span>
               </Link>
             )}
           </div>
         </div>
-      </nav>
+      </header>
 
-      {/* City Selection Modal (Sportikus style) */}
+      {/* Region Selection Modal (#5, #28) */}
       {cityModalOpen && (
         <div
           className="fixed inset-0 z-[2300] bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 anim-fade"
           onClick={() => setCityModalOpen(false)}
         >
           <div
-            className="bg-card border border-line-2 rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4"
+            className="bg-card border border-line-2 rounded-3xl shadow-2xl w-full max-w-md p-5 space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-extrabold text-ink">Выберите город или регион</h2>
+              <div>
+                <h2 className="font-display font-bold text-base text-ink">Выберите регион</h2>
+                <p className="text-xs text-muted mt-0.5">
+                  События и карта 2ГИС подстроятся под ваш часовой пояс
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => setCityModalOpen(false)}
-                className="w-8 h-8 rounded-lg bg-surface text-ink flex items-center justify-center hover:bg-surface-2"
+                className="w-8 h-8 rounded-xl bg-surface text-ink flex items-center justify-center hover:bg-surface-2 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -831,8 +728,8 @@ export const Navbar: React.FC = () => {
               type="text"
               value={cityQuery}
               onChange={(e) => setCityQuery(e.target.value)}
-              placeholder="Введите название города..."
-              className="w-full rounded-xl border border-line-2 bg-surface px-4 py-3 text-sm font-medium text-ink outline-none focus:border-brand"
+              placeholder="Поиск по региону или городу..."
+              className="w-full rounded-xl border border-line-2 bg-surface/60 px-4 py-2.5 text-sm font-medium text-ink outline-none focus:border-brand"
             />
 
             <div className="max-h-72 overflow-y-auto space-y-1 pr-1">
@@ -843,13 +740,13 @@ export const Navbar: React.FC = () => {
                   setCityModalOpen(false);
                   setCityQuery('');
                 }}
-                className={`w-full text-left px-3.5 py-2.5 rounded-xl text-sm font-bold flex items-center justify-between ${
+                className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-between cursor-pointer ${
                   !selectedRegion
                     ? 'bg-brand-tint text-brand-ink'
                     : 'text-ink hover:bg-surface'
                 }`}
               >
-                <span>🌍 Все города России (без ограничения)</span>
+                <span>🌍 Все регионы России (без ограничения)</span>
                 {!selectedRegion && <span className="text-xs">✓</span>}
               </button>
 
@@ -864,13 +761,13 @@ export const Navbar: React.FC = () => {
                       setCityModalOpen(false);
                       setCityQuery('');
                     }}
-                    className={`w-full text-left px-3.5 py-2.5 rounded-xl text-sm flex items-center justify-between transition-colors ${
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl text-xs sm:text-sm flex items-center justify-between transition-colors cursor-pointer ${
                       active ? 'bg-brand-tint text-brand-ink font-bold' : 'text-ink hover:bg-surface'
                     }`}
                   >
                     <div>
-                      <span className="font-bold">{reg.value}</span>
-                      <span className="ml-2 text-xs text-muted">{reg.tzLabel}</span>
+                      <div className="font-bold">{reg.label}</div>
+                      <div className="font-mono text-[11px] text-muted">{reg.tzLabel}</div>
                     </div>
                     {active && <span className="text-xs font-extrabold">✓</span>}
                   </button>
@@ -889,27 +786,16 @@ export const MobileTabBar: React.FC = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const isHomeOrEvents = location.pathname === '/' || location.pathname === '/events';
-  const isListView = isHomeOrEvents && searchParams.get('view') === 'list';
+  const isHome = location.pathname === '/';
+  const isListView = location.pathname === '/events' || (isHome && searchParams.get('view') === 'list');
   const isAdmin = user?.globalRole === 'ADMIN';
-
-  const buildViewLink = (view: 'map' | 'list') => {
-    const params = new URLSearchParams(isHomeOrEvents ? searchParams : undefined);
-    if (view === 'list') {
-      params.set('view', 'list');
-    } else {
-      params.delete('view');
-    }
-    const qs = params.toString();
-    return qs ? `/?${qs}` : '/';
-  };
 
   const tabItem = (to: string, label: string, icon: React.ReactNode, active: boolean) => (
     <Link
       to={to}
       aria-current={active ? 'page' : undefined}
-      className={`flex-1 h-[58px] flex flex-col items-center justify-center gap-[3px] text-xs font-bold ${
-        active ? 'text-ink' : 'text-muted'
+      className={`flex-1 h-[56px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold ${
+        active ? 'text-brand' : 'text-muted'
       }`}
     >
       {icon}
@@ -919,49 +805,16 @@ export const MobileTabBar: React.FC = () => {
 
   return (
     <nav
-      aria-label="Основная навигация"
-      className="md:hidden shrink-0 bg-card border-t border-line-2 flex items-start px-1.5 pt-1.5 pb-[max(8px,env(safe-area-inset-bottom))] relative z-40 max-w-full overflow-hidden"
+      aria-label="Мобильная навигация"
+      className="lg:hidden shrink-0 bg-card border-t border-line-2 flex items-center px-1 pb-[max(4px,env(safe-area-inset-bottom))] relative z-40"
     >
-      {tabItem(
-        buildViewLink('map'),
-        'Карта',
-        <MapIcon className="w-5 h-5" />,
-        isHomeOrEvents && !isListView
-      )}
-      {tabItem(
-        buildViewLink('list'),
-        'Лента',
-        <List className="w-5 h-5" />,
-        isListView
-      )}
-      <div className="flex-1 flex justify-center pt-1">
-        <Link
-          to="/events/new"
-          aria-label="Создать событие"
-          className="w-[54px] h-[44px] rounded-xl bg-brand text-on-brand flex items-center justify-center shadow-sm"
-        >
-          <Plus className="w-6 h-6 stroke-[2.4]" />
-        </Link>
-      </div>
-      {tabItem(
-        '/recommended',
-        'Для вас',
-        <Sparkles className="w-5 h-5" />,
-        location.pathname === '/recommended' || location.pathname === '/partners'
-      )}
+      {tabItem('/?view=map', 'Карта 2ГИС', <MapIcon className="w-4 h-4" />, isHome && !isListView)}
+      {tabItem('/?view=list', 'Каталог', <List className="w-4 h-4" />, isListView)}
+      {tabItem('/partners', 'Напарники', <Users className="w-4 h-4" />, location.pathname.startsWith('/partners'))}
+      {tabItem('/organizations', 'Клубы', <Building2 className="w-4 h-4" />, location.pathname.startsWith('/organizations'))}
       {isAdmin
-        ? tabItem(
-            '/admin',
-            'Модерация',
-            <ShieldCheck className="w-5 h-5" />,
-            location.pathname.startsWith('/admin')
-          )
-        : tabItem(
-            user ? '/my' : '/login',
-            user ? 'Мои события' : 'Войти',
-            <CalendarCheck className="w-5 h-5" />,
-            location.pathname === '/my'
-          )}
+        ? tabItem('/admin', 'Модерация', <ShieldCheck className="w-4 h-4" />, location.pathname.startsWith('/admin'))
+        : tabItem(user ? '/my' : '/login', user ? 'Мои сборы' : 'Войти', <CalendarCheck className="w-4 h-4" />, location.pathname === '/my')}
     </nav>
   );
 };

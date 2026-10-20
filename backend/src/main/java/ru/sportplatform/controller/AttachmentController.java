@@ -67,13 +67,15 @@ public class AttachmentController {
         }
 
         String dispositionType = (att.getAttachmentType() == AttachmentType.DOCUMENT) ? "attachment" : "inline";
+        String asciiFallbackName = att.getOriginalFilename().replaceAll("[^a-zA-Z0-9._-]", "_");
 
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(att.getMimeType()))
                 .contentLength(contentLength)
                 .header("X-Content-Type-Options", "nosniff")
                 .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-                .header(HttpHeaders.CONTENT_DISPOSITION, dispositionType + "; filename*=UTF-8''" + encodedFilename)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        dispositionType + "; filename=\"" + asciiFallbackName + "\"; filename*=UTF-8''" + encodedFilename)
                 .body(resource);
     }
 }

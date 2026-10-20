@@ -2,292 +2,167 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --font-sans: 'Onest', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-    --font-display: 'Onest', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-    --color-page: #f4f5f7;
-    --color-card: #ffffff;
-    --color-surface: #f2f4f7;
-    --color-surface-2: #e3e7ec;
-    --color-ink: #0e1116;
-    --color-muted: #5e6670;
-    --color-line: #e3e6ea;
-    --color-line-2: #d0d5dc;
-    --color-brand: #04d793;
-    --color-brand-hover: #03c485;
-    --color-on-brand: #ffffff;
-    --color-brand-tint: #e8fcf4;
-    --color-brand-tint-2: #d2f7e8;
-    --color-brand-ink: #029e6b;
-    --color-brand-line: #9debcb;
-    --color-flame: #ff7a45;
-    --color-pin-ring: #ffffff;
-  }
-
-  html[data-theme="dark"] {
-    --color-page: #15171a;
-    --color-card: #1c1f24;
-    --color-surface: #23272e;
-    --color-surface-2: #2e333d;
-    --color-ink: #f2f4f5;
-    --color-muted: #98a0a9;
-    --color-line: #2a2f37;
-    --color-line-2: #383e49;
-    --color-brand: #d5f45b;
-    --color-brand-hover: #c4e447;
-    --color-on-brand: #111315;
-    --color-brand-tint: #252b18;
-    --color-brand-tint-2: #313a1d;
-    --color-brand-ink: #d5f45b;
-    --color-brand-line: #546622;
-    --color-pin-ring: #1c1f24;
-    color-scheme: dark;
-  }
-
-  body {
-    font-family: var(--font-sans);
-    background-color: var(--color-page);
-    color: var(--color-ink);
-    -webkit-tap-highlight-color: transparent;
-    margin: 0;
-    padding: 0;
-    overflow-x: hidden;
-    transition: background-color 0.2s, color 0.2s;
-  }
-
-  h1, h2, h3, h4, .font-display {
-    font-family: var(--font-display);
-    letter-spacing: -0.02em;
-  }
-
-  select {
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235e6670' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 0.75rem center;
-    background-size: 1rem;
-    padding-right: 2.35rem !important;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    overflow: hidden;
-  }
+/* ============================================================================
+ * БРЕНДБУК «ТОЧКА СБОРА» v3.0 — COURT & TURF DESIGN SYSTEM + 2GIS MAPS
+ * ============================================================================ */
+:root {
+  --bg-page: #F4F3EF;
+  --bg-card: #FFFFFF;
+  --bg-surface: #EAE8E1;
+  --bg-surface-2: #DDD9CE;
+  --text-ink: #121417;
+  --text-muted: #5C626B;
+  --text-subtle: #8C929C;
+  --border-line: #E2E0D8;
+  --border-line-2: #CFCBC0;
+  --accent-brand: #00B956;
+  --accent-brand-hover: #009E49;
+  --accent-brand-tint: #E6F8EE;
+  --accent-brand-line: #A3E6C1;
+  --accent-brand-ink: #007A37;
 }
 
-@keyframes sp-drop {
-  0% { opacity: 0; transform: translateY(-6px) scale(0.98); }
-  to { opacity: 1; transform: none; }
+[data-theme="dark"] {
+  --bg-page: #0E1013;
+  --bg-card: #16191E;
+  --bg-surface: #20242C;
+  --bg-surface-2: #2B303B;
+  --text-ink: #F3F4F6;
+  --text-muted: #9CA3AF;
+  --text-subtle: #6B7280;
+  --border-line: #262B35;
+  --border-line-2: #343B48;
+  --accent-brand: #1CE370;
+  --accent-brand-hover: #14C860;
+  --accent-brand-tint: rgba(28, 227, 112, 0.14);
+  --accent-brand-line: rgba(28, 227, 112, 0.32);
+  --accent-brand-ink: #1CE370;
+  color-scheme: dark;
 }
-@keyframes sp-sheet {
-  0% { opacity: 0.6; transform: translateY(32px); }
-  to { opacity: 1; transform: none; }
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
 }
-@keyframes sp-drawer {
-  0% { opacity: 0.6; transform: translateX(28px); }
-  to { opacity: 1; transform: none; }
+
+/* Только масштабирование размера шрифта (без Ч/Б и других фильтров) */
+html.a11y-font-lg {
+  font-size: 112%;
 }
-@keyframes sp-fade {
-  0% { opacity: 0; }
+
+html.a11y-font-xl {
+  font-size: 124%;
+}
+
+body {
+  font-family: 'Golos Text', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--bg-page);
+  color: var(--text-ink);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, .font-display {
+  font-family: 'Unbounded', 'Golos Text', sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* Плавные ненавязчивые анимации без дёрганий (#31) */
+@keyframes anim-fade {
+  from { opacity: 0; }
   to { opacity: 1; }
 }
-@keyframes sp-rise {
-  0% { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
+
+@keyframes anim-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.anim-fade { animation: sp-fade 0.18s ease-out; }
-.anim-rise { animation: sp-rise 0.22s ease-out; }
-.anim-sheet { animation: sp-sheet 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.anim-drawer { animation: sp-drawer 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
-
-.no-scrollbar {
-  scrollbar-width: none;
+@keyframes anim-drawer {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
 }
+
+@keyframes anim-sheet {
+  from { opacity: 0; transform: translateY(14px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.anim-fade, .animate-fadeIn {
+  animation: anim-fade 0.16s ease-out both;
+}
+
+.anim-rise {
+  animation: anim-rise 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.anim-drawer {
+  animation: anim-drawer 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.anim-sheet {
+  animation: anim-sheet 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Карточки и поверхности */
+.bento-card {
+  background-color: var(--bg-card);
+  border-radius: 22px;
+  border: 1px solid var(--border-line-2);
+  box-shadow: 0 2px 10px -2px rgba(18, 20, 23, 0.04);
+}
+
+.bento-card-hover {
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.bento-card-hover:hover {
+  border-color: var(--accent-brand);
+  box-shadow: 0 10px 26px -6px rgba(0, 185, 86, 0.14);
+}
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
 
-/* Custom sleek scrollbars */
+/* Marquee / плавный скролл длинного текста при наведении (#6) */
+.select-label-scroll {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Стили контейнера карт 2ГИС */
+.leaflet-container {
+  font-family: 'Golos Text', sans-serif !important;
+  background: #e5e3dc !important;
+}
+
+[data-theme="dark"] .leaflet-tile-pane {
+  filter: brightness(0.84) contrast(1.08) saturate(0.92);
+}
+
+/* Тонкий фокус клавиатуры */
+:focus-visible {
+  outline: 2px solid var(--accent-brand);
+  outline-offset: 2px;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(94, 102, 112, 0.25);
+  background: rgba(92, 98, 107, 0.28);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(94, 102, 112, 0.45);
+  background: rgba(92, 98, 107, 0.48);
 }
-
-/* ============================================================================
-   ACCESSIBILITY MODE (Версия для слабовидящих — ГОСТ Р 52872-2019)
-   ============================================================================ */
-html.a11y-font-lg {
-  font-size: 18px !important;
-}
-
-html.a11y-font-xl {
-  font-size: 20.5px !important;
-}
-
-html.a11y-spacing-wide * {
-  letter-spacing: 0.06em !important;
-  line-height: 1.65 !important;
-}
-
-html.a11y-hide-images img,
-html.a11y-hide-images video,
-html.a11y-hide-images .event-card-cover-banner {
-  display: none !important;
-}
-
-/* High Contrast: Black on White */
-html.a11y-contrast-bw body,
-html.a11y-contrast-bw main,
-html.a11y-contrast-bw aside,
-html.a11y-contrast-bw header,
-html.a11y-contrast-bw footer,
-html.a11y-contrast-bw section,
-html.a11y-contrast-bw div.bg-white,
-html.a11y-contrast-bw .bento-card {
-  background-color: #ffffff !important;
-  background-image: none !important;
-  color: #000000 !important;
-  border-color: #000000 !important;
-}
-
-html.a11y-contrast-bw p,
-html.a11y-contrast-bw span,
-html.a11y-contrast-bw h1,
-html.a11y-contrast-bw h2,
-html.a11y-contrast-bw h3,
-html.a11y-contrast-bw label,
-html.a11y-contrast-bw a {
-  color: #000000 !important;
-}
-
-html.a11y-contrast-bw button,
-html.a11y-contrast-bw input,
-html.a11y-contrast-bw select,
-html.a11y-contrast-bw textarea {
-  border: 2px solid #000000 !important;
-  background-color: #ffffff !important;
-  color: #000000 !important;
-}
-
-/* High Contrast: Yellow/White on Black */
-html.a11y-contrast-wb body,
-html.a11y-contrast-wb main,
-html.a11y-contrast-wb aside,
-html.a11y-contrast-wb header,
-html.a11y-contrast-wb footer,
-html.a11y-contrast-wb section,
-html.a11y-contrast-wb div.bg-white,
-html.a11y-contrast-wb .bento-card {
-  background-color: #000000 !important;
-  background-image: none !important;
-  color: #fff500 !important;
-  border-color: #fff500 !important;
-}
-
-html.a11y-contrast-wb p,
-html.a11y-contrast-wb span,
-html.a11y-contrast-wb h1,
-html.a11y-contrast-wb h2,
-html.a11y-contrast-wb h3,
-html.a11y-contrast-wb label,
-html.a11y-contrast-wb a {
-  color: #fff500 !important;
-}
-
-html.a11y-contrast-wb button,
-html.a11y-contrast-wb input,
-html.a11y-contrast-wb select,
-html.a11y-contrast-wb textarea {
-  border: 2px solid #fff500 !important;
-  background-color: #111111 !important;
-  color: #fff500 !important;
-}
-
-/* High Contrast: Dark Blue on Light Blue */
-html.a11y-contrast-blue body,
-html.a11y-contrast-blue main,
-html.a11y-contrast-blue aside,
-html.a11y-contrast-blue header,
-html.a11y-contrast-blue footer,
-html.a11y-contrast-blue section,
-html.a11y-contrast-blue div.bg-white,
-html.a11y-contrast-blue .bento-card {
-  background-color: #9dd1ff !important;
-  background-image: none !important;
-  color: #063462 !important;
-  border-color: #063462 !important;
-}
-
-html.a11y-contrast-blue p,
-html.a11y-contrast-blue span,
-html.a11y-contrast-blue h1,
-html.a11y-contrast-blue h2,
-html.a11y-contrast-blue h3,
-html.a11y-contrast-blue label,
-html.a11y-contrast-blue a {
-  color: #063462 !important;
-}
-
-html.a11y-contrast-blue button,
-html.a11y-contrast-blue input,
-html.a11y-contrast-blue select,
-html.a11y-contrast-blue textarea {
-  border: 2px solid #063462 !important;
-  background-color: #e6f4ff !important;
-  color: #063462 !important;
-}
-
-/* High visibility keyboard focus across normal and high-contrast themes */
-*:focus-visible {
-  outline: 3px solid #11995E !important;
-  outline-offset: 2px !important;
-}
-
-html.a11y-contrast-bw *:focus-visible {
-  outline: 3px solid #000000 !important;
-  outline-offset: 2px !important;
-}
-
-html.a11y-contrast-wb *:focus-visible {
-  outline: 3px solid #fff500 !important;
-  outline-offset: 2px !important;
-}
-
-/* Prevent text clipping or horizontal overflow when font size is increased */
-html.a11y-font-lg,
-html.a11y-font-xl {
-  overflow-x: hidden;
-}
-
-html.a11y-font-lg .truncate,
-html.a11y-font-xl .truncate {
-  white-space: normal !important;
-  overflow: visible !important;
-  text-overflow: clip !important;
-  word-break: break-word;
-}
-
-/* Support prefers-reduced-motion */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-

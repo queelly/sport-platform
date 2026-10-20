@@ -22,6 +22,7 @@ import {
   PanelLeftOpen,
   Plus,
   Repeat,
+  Search,
   SlidersHorizontal,
   Sparkles,
   Users,
@@ -38,6 +39,7 @@ import {
 } from '../types';
 import { EventCard, getSportCoverUrl, getSportEmoji } from '../components/EventCard';
 import { getSelectedGlobalRegion } from '../components/Navbar';
+import { VoiceSearchButton } from '../components/UiControls';
 import { PartnersAndFriendsPage } from './SocialPages';
 
 declare global {
@@ -390,25 +392,54 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
           : 'min-h-[calc(100dvh-64px)] flex flex-col bg-page'
       }
     >
-      {/* SPORTIKUS 60PX TOP FILTER BAR */}
+      {/* БРЕНДБУК v3.0: ПАНЕЛЬ ПОИСКА И ФИЛЬТРОВ (62PX) */}
       <div
         ref={filterBarRef}
-        className="h-[60px] px-4 lg:px-6 bg-card border-b border-line-2 flex items-center justify-between gap-2 shrink-0 relative z-30"
+        className="min-h-[62px] px-4 lg:px-6 py-2 bg-card border-b border-line-2 flex flex-wrap items-center justify-between gap-2.5 shrink-0 relative z-30"
       >
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+        <div className="flex items-center gap-2 flex-1 min-w-0 overflow-x-auto no-scrollbar py-0.5">
+          {/* 0. Поисковая строка с голосовым вводом (#9, #11) */}
+          <div className="relative flex items-center min-w-[230px] sm:min-w-[290px] max-w-[380px] flex-1 shrink-0">
+            <Search className="w-4 h-4 text-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="search"
+              value={urlQuery}
+              onChange={(e) => {
+                const val = e.target.value;
+                const next = new URLSearchParams(searchParams);
+                if (val) next.set('q', val);
+                else next.delete('q');
+                setSearchParams(next, { replace: true });
+              }}
+              placeholder="Спорт, площадка или клуб..."
+              className="w-full h-9 pl-9 pr-9 rounded-xl bg-surface/75 hover:bg-surface focus:bg-card border border-line-2 focus:border-brand text-[13px] font-medium text-ink placeholder:text-muted outline-none transition-colors"
+            />
+            <div className="absolute right-1 top-1/2 -translate-y-1/2">
+              <VoiceSearchButton
+                onResult={(spoken) => {
+                  const next = new URLSearchParams(searchParams);
+                  next.set('q', spoken);
+                  setSearchParams(next, { replace: true });
+                }}
+              />
+            </div>
+          </div>
+
           {/* 1. КОГДА (Date filter popover) */}
           <div className="relative shrink-0">
             <button
               type="button"
               onClick={() => setOpenDropdown(openDropdown === 'date' ? null : 'date')}
-              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
                 datePreset
-                  ? 'bg-ink text-card font-semibold shadow-xs'
-                  : 'bg-surface hover:bg-surface-2 text-ink border border-line/60'
+                  ? 'bg-ink text-card font-semibold shadow-2xs'
+                  : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
               }`}
             >
-              <Calendar className="w-3.5 h-3.5 opacity-80" />
-              <span className=" whitespace-nowrap">{dateFilterLabel}</span>
+              <Calendar className="w-3.5 h-3.5 text-brand shrink-0" />
+              <span className="whitespace-nowrap">
+                Когда: <strong className="font-bold">{datePreset ? dateFilterLabel : 'Любое время'}</strong>
+              </span>
               <ChevronDown
                 className={`w-3.5 h-3.5 opacity-60 transition-transform ${
                   openDropdown === 'date' ? 'rotate-180' : ''
@@ -417,7 +448,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             </button>
 
             {openDropdown === 'date' && (
-              <div className="fixed sm:absolute left-4 sm:left-0 top-[118px] sm:top-full mt-1.5 w-[300px] bg-card rounded-2xl shadow-2xl border border-line p-4 z-50 anim-fade">
+              <div className="fixed sm:absolute left-4 sm:left-0 top-[126px] sm:top-full mt-1.5 w-[300px] bg-card rounded-2xl shadow-2xl border border-line-2 p-4 z-50 anim-fade">
                 <div className="grid grid-cols-2 gap-1.5 mb-3">
                   {[
                     { id: '', label: 'Любое время' },
@@ -434,7 +465,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                       }}
                       className={`px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors cursor-pointer ${
                         datePreset === p.id
-                          ? 'bg-brand text-white'
+                          ? 'bg-brand text-white font-bold'
                           : 'bg-surface hover:bg-surface-2 text-ink'
                       }`}
                     >
@@ -503,13 +534,18 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             <button
               type="button"
               onClick={() => setOpenDropdown(openDropdown === 'sport' ? null : 'sport')}
-              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
                 selectedSportId
-                  ? 'bg-ink text-card font-semibold shadow-xs'
-                  : 'bg-surface hover:bg-surface-2 text-ink border border-line/60'
+                  ? 'bg-ink text-card font-semibold shadow-2xs'
+                  : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
               }`}
             >
-              <span>{selectedSportObj ? `${getSportEmoji(selectedSportObj.name)} ${selectedSportObj.name}` : 'Вид спорта'}</span>
+              <span className="whitespace-nowrap">
+                Спорт:{' '}
+                <strong className="font-bold">
+                  {selectedSportObj ? `${getSportEmoji(selectedSportObj.name)} ${selectedSportObj.name}` : 'Все виды'}
+                </strong>
+              </span>
               <ChevronDown
                 className={`w-3.5 h-3.5 opacity-60 transition-transform ${
                   openDropdown === 'sport' ? 'rotate-180' : ''
@@ -518,7 +554,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             </button>
 
             {openDropdown === 'sport' && (
-              <div className="fixed sm:absolute left-4 sm:left-0 top-[118px] sm:top-full mt-1.5 w-64 max-h-80 overflow-y-auto bg-card rounded-2xl shadow-2xl border border-line p-1.5 z-50 anim-fade">
+              <div className="fixed sm:absolute left-4 sm:left-0 top-[126px] sm:top-full mt-1.5 w-64 max-h-80 overflow-y-auto bg-card rounded-2xl shadow-2xl border border-line-2 p-1.5 z-50 anim-fade">
                 <button
                   type="button"
                   onClick={() => {
@@ -526,7 +562,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                     setOpenDropdown(null);
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
-                    !selectedSportId ? 'bg-brand-tint text-brand-ink font-semibold' : 'text-ink hover:bg-surface'
+                    !selectedSportId ? 'bg-brand-tint text-brand-ink font-bold' : 'text-ink hover:bg-surface'
                   }`}
                 >
                   <span>Все виды спорта</span>
@@ -543,7 +579,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                         setOpenDropdown(null);
                       }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
-                        active ? 'bg-brand-tint text-brand-ink font-semibold' : 'text-ink hover:bg-surface'
+                        active ? 'bg-brand-tint text-brand-ink font-bold' : 'text-ink hover:bg-surface'
                       }`}
                     >
                       <span className="flex items-center gap-2">
@@ -563,13 +599,15 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             <button
               type="button"
               onClick={() => setOpenDropdown(openDropdown === 'category' ? null : 'category')}
-              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
                 categoryFilter
-                  ? 'bg-ink text-card font-semibold shadow-xs'
-                  : 'bg-surface hover:bg-surface-2 text-ink border border-line/60'
+                  ? 'bg-ink text-card font-semibold shadow-2xs'
+                  : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
               }`}
             >
-              <span>{categoryFilter || 'Категория'}</span>
+              <span className="whitespace-nowrap">
+                Категория: <strong className="font-bold">{categoryFilter || 'Все'}</strong>
+              </span>
               <ChevronDown
                 className={`w-3.5 h-3.5 opacity-60 transition-transform ${
                   openDropdown === 'category' ? 'rotate-180' : ''
@@ -578,7 +616,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             </button>
 
             {openDropdown === 'category' && (
-              <div className="fixed sm:absolute left-4 sm:left-0 top-[118px] sm:top-full mt-1.5 w-64 bg-card rounded-2xl shadow-2xl border border-line p-1.5 z-50 anim-fade">
+              <div className="fixed sm:absolute left-4 sm:left-0 top-[126px] sm:top-full mt-1.5 w-64 bg-card rounded-2xl shadow-2xl border border-line-2 p-1.5 z-50 anim-fade">
                 <button
                   type="button"
                   onClick={() => {
@@ -586,7 +624,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                     setOpenDropdown(null);
                   }}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
-                    !categoryFilter ? 'bg-brand-tint text-brand-ink font-semibold' : 'text-ink hover:bg-surface'
+                    !categoryFilter ? 'bg-brand-tint text-brand-ink font-bold' : 'text-ink hover:bg-surface'
                   }`}
                 >
                   <span>Все категории</span>
@@ -603,7 +641,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                         setOpenDropdown(null);
                       }}
                       className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
-                        active ? 'bg-brand-tint text-brand-ink font-semibold' : 'text-ink hover:bg-surface'
+                        active ? 'bg-brand-tint text-brand-ink font-bold' : 'text-ink hover:bg-surface'
                       }`}
                     >
                       <span>{cat.label}</span>
@@ -620,18 +658,18 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             <button
               type="button"
               onClick={() => setOpenDropdown(openDropdown === 'format' ? null : 'format')}
-              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+              className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
                 formatFilter
-                  ? 'bg-ink text-card font-semibold shadow-xs'
-                  : 'bg-surface hover:bg-surface-2 text-ink border border-line/60'
+                  ? 'bg-ink text-card font-semibold shadow-2xs'
+                  : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
               }`}
             >
-              <span>
+              <span className="whitespace-nowrap">
                 {formatFilter === 'ONLINE'
                   ? '🌐 Онлайн'
                   : formatFilter === 'OFFLINE'
-                  ? 'На площадке'
-                  : 'Формат'}
+                  ? '📍 На площадке'
+                  : 'Формат: Все'}
               </span>
               <ChevronDown
                 className={`w-3.5 h-3.5 opacity-60 transition-transform ${
@@ -641,7 +679,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
             </button>
 
             {openDropdown === 'format' && (
-              <div className="fixed sm:absolute left-4 sm:left-0 top-[118px] sm:top-full mt-1.5 w-56 bg-card rounded-2xl shadow-2xl border border-line p-1.5 z-50 anim-fade">
+              <div className="fixed sm:absolute left-4 sm:left-0 top-[126px] sm:top-full mt-1.5 w-60 bg-card rounded-2xl shadow-2xl border border-line-2 p-1.5 z-50 anim-fade">
                 {[
                   { id: '', label: 'Любой формат' },
                   { id: 'OFFLINE', label: '📍 На площадке (офлайн)' },
@@ -656,7 +694,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                     }}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
                       formatFilter === opt.id
-                        ? 'bg-brand-tint text-brand-ink font-semibold'
+                        ? 'bg-brand-tint text-brand-ink font-bold'
                         : 'text-ink hover:bg-surface'
                     }`}
                   >
@@ -676,51 +714,28 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
               className="h-9 px-3 rounded-xl text-xs font-semibold text-muted hover:text-ink hover:bg-surface transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
-              <span>Сбросить всё</span>
+              <span>Сбросить</span>
             </button>
           )}
         </div>
 
-        {/* Right Filter Modal Button + View Switcher */}
+        {/* Right Filter Modal Button */}
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setShowFiltersModal(true)}
-            className={`h-9 px-3.5 rounded-xl text-[13px] font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+            className={`h-9 px-3.5 rounded-xl text-[13px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
               joinMode || skillLevel || onlyAvailable || recurringFilter
-                ? 'bg-ink text-card font-semibold'
-                : 'bg-surface hover:bg-surface-2 text-ink border border-line/60'
+                ? 'bg-ink text-card'
+                : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
             }`}
           >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Фильтры</span>
+            <SlidersHorizontal className="w-3.5 h-3.5 text-brand" />
+            <span>Фильтры</span>
             {(joinMode || skillLevel || onlyAvailable || recurringFilter) && (
               <span className="w-2 h-2 rounded-full bg-brand" />
             )}
           </button>
-
-          <div className="hidden sm:flex items-center bg-surface p-0.5 rounded-xl border border-line/60">
-            <button
-              type="button"
-              onClick={() => setViewMode('map')}
-              className={`h-8 px-3 rounded-[10px] text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                viewMode === 'map' ? 'bg-card text-ink shadow-xs' : 'text-muted hover:text-ink'
-              }`}
-            >
-              <MapIcon className="w-3.5 h-3.5" />
-              <span>Карта</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('list')}
-              className={`h-8 px-3 rounded-[10px] text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                viewMode === 'list' ? 'bg-card text-ink shadow-xs' : 'text-muted hover:text-ink'
-              }`}
-            >
-              <List className="w-3.5 h-3.5" />
-              <span>Лента</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -1413,7 +1428,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
 };
 
 /* ============================================================================
- * SPORTIKUS INTERACTIVE LEAFLET MAP WITH CUSTOM SPORT PINS
+ * 2ГИС ИНТЕРАКТИВНАЯ КАРТА СПОРТИВНЫХ ПЛОЩАДОК (#8)
  * ============================================================================ */
 const SportikusLeafletMap: React.FC<{
   events: EventCardDto[];
@@ -1448,14 +1463,13 @@ const SportikusLeafletMap: React.FC<{
         center: [centerCoords.lat, centerCoords.lng],
         zoom: 12,
         zoomControl: false,
+        attributionControl: false,
       });
 
-      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      const tileSub = isDark ? 'dark_all' : 'light_all';
-      L.tileLayer(`https://{s}.basemaps.cartocdn.com/${tileSub}/{z}/{x}/{y}{r}.png`, {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: 'abcd',
-        maxZoom: 19,
+      // Официальные русскоязычные тайлы 2ГИС (без водяных знаков API KEY REQUIRED)
+      L.tileLayer('https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1', {
+        subdomains: ['0', '1', '2', '3'],
+        maxZoom: 18,
       }).addTo(map);
 
       markersLayerRef.current = L.layerGroup().addTo(map);
@@ -1475,12 +1489,12 @@ const SportikusLeafletMap: React.FC<{
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
-    map.setView([centerCoords.lat, centerCoords.lng], selectedEvent ? 13 : 11, {
+    map.setView([centerCoords.lat, centerCoords.lng], selectedEvent ? 14 : 12, {
       animate: true,
     });
   }, [centerCoords.lat, centerCoords.lng, selectedEvent?.id]);
 
-  // Render circular sport markers
+  // Render 2GIS-style circular sport markers
   useEffect(() => {
     const L = window.L;
     const map = mapInstanceRef.current;
@@ -1493,29 +1507,31 @@ const SportikusLeafletMap: React.FC<{
       const coords = getDeterministicEventCoords(ev);
       const isSelected = selectedEvent?.id === ev.id;
       const emoji = getSportEmoji(ev.sport.name);
-      const bg = isSelected ? '#04D793' : '#0e1116';
-      const scale = isSelected ? 'scale(1.16)' : 'scale(1)';
+      const bg = isSelected ? '#00B956' : '#FFFFFF';
+      const color = isSelected ? '#FFFFFF' : '#121417';
+      const border = isSelected ? '3px solid #FFFFFF' : '2.5px solid #00B956';
+      const scale = isSelected ? 'scale(1.18)' : 'scale(1)';
 
       const icon = L.divIcon({
-        className: 'custom-leaflet-pin',
+        className: 'custom-2gis-pin',
         html: `<div style="
-          width: 38px;
-          height: 38px;
+          width: 40px;
+          height: 40px;
           border-radius: 9999px;
           background: ${bg};
-          color: #ffffff;
+          color: ${color};
           display: flex;
           align-items: center;
           justify-content: center;
           font-size: 18px;
-          border: 2.5px solid #ffffff;
-          box-shadow: 0 6px 16px rgba(0,0,0,0.28);
+          border: ${border};
+          box-shadow: 0 6px 18px rgba(18, 20, 23, 0.24);
           transform: ${scale};
           transition: transform 0.15s ease, background 0.15s ease;
           cursor: pointer;
         " title="${ev.title.replace(/"/g, '&quot;')}">${emoji}</div>`,
-        iconSize: [38, 38],
-        iconAnchor: [19, 19],
+        iconSize: [40, 40],
+        iconAnchor: [20, 20],
       });
 
       const marker = L.marker([coords.lat, coords.lng], { icon });
@@ -1540,13 +1556,19 @@ const SportikusLeafletMap: React.FC<{
     );
   };
 
+  const openIn2GisUrl = selectedEvent
+    ? `https://2gis.ru/search/${encodeURIComponent(
+        `${selectedEvent.city} ${selectedEvent.locationAddress}`
+      )}`
+    : `https://2gis.ru/search/${encodeURIComponent(selectedCity || 'Москва спорт')}`;
+
   return (
     <div className="relative w-full h-full">
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-      {/* Right Map Floating Controls (Sportikus exact layout) */}
+      {/* Right Map Floating Controls (2GIS style) */}
       <div className="absolute right-4 top-1/2 -translate-y-1/2 z-[400] flex flex-col gap-2">
-        <div className="bg-card rounded-xl shadow-lg border border-line overflow-hidden flex flex-col">
+        <div className="bg-card rounded-xl shadow-lg border border-line-2 overflow-hidden flex flex-col">
           <button
             type="button"
             onClick={() => handleZoom(1)}
@@ -1570,10 +1592,24 @@ const SportikusLeafletMap: React.FC<{
           onClick={handleLocateMe}
           title="Моё местоположение"
           aria-label="Моё местоположение"
-          className="w-10 h-10 bg-card rounded-xl shadow-lg border border-line flex items-center justify-center text-ink hover:bg-surface transition-colors cursor-pointer"
+          className="w-10 h-10 bg-card rounded-xl shadow-lg border border-line-2 flex items-center justify-center text-ink hover:bg-surface transition-colors cursor-pointer"
         >
           <LocateFixed className="w-5 h-5" />
         </button>
+      </div>
+
+      {/* Bottom-Right Official 2GIS Attribution & Quick Open Link */}
+      <div className="absolute right-3 bottom-3 z-[400] flex items-center gap-2">
+        <a
+          href={openIn2GisUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="px-3 py-1.5 rounded-xl bg-card/95 backdrop-blur-xs border border-line-2 shadow-md text-xs font-bold text-ink hover:border-brand flex items-center gap-1.5 transition-colors"
+        >
+          <span className="w-2 h-2 rounded-full bg-brand" />
+          <span>Карта 2ГИС</span>
+          <ExternalLink className="w-3 h-3 text-muted" />
+        </a>
       </div>
     </div>
   );
@@ -1850,7 +1886,7 @@ export const MyEventsPage: React.FC = () => {
         {[
           { id: 'participating', label: 'Я участвую', count: participating.length },
           { id: 'organizing', label: 'Я организую', count: organizing.length },
-          { id: 'recurring', label: 'Регулярные серии', count: recurring.length },
+          { id: 'recurring', label: 'Повторяющиеся встречи', count: recurring.length },
         ].map((t) => (
           <button
             key={t.id}
@@ -1887,7 +1923,7 @@ export const MyEventsPage: React.FC = () => {
               ? 'У вас пока нет активных записей на события'
               : tab === 'organizing'
               ? 'Вы пока не организовали ни одного события'
-              : 'Нет регулярных серий тренировок'}
+              : 'Нет повторяющихся встреч'}
           </div>
           <p className="text-xs text-muted max-w-md mx-auto">
             {tab === 'participating'

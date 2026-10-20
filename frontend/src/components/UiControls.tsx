@@ -55,57 +55,55 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
 
   const sizeClasses =
     size === 'sm'
-      ? 'px-3.5 py-2 text-xs rounded-2xl min-h-[38px]'
-      : 'px-4 py-2.5 text-sm rounded-2xl min-h-[44px]';
+      ? 'px-3.5 py-2 text-xs rounded-xl min-h-[38px]'
+      : 'px-4 py-2.5 text-sm rounded-xl min-h-[44px]';
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className={`w-full flex items-center justify-between gap-2 bg-[#F7FAF8] hover:bg-white border transition-all text-left font-bold ${sizeClasses} ${
+        title={displayLabel}
+        className={`w-full flex items-center justify-between gap-2.5 bg-card hover:bg-surface/60 border transition-colors text-left font-semibold cursor-pointer ${sizeClasses} ${
           open
-            ? 'border-[#16B672] bg-white ring-3 ring-[#16B672]/15 text-[#1A2622]'
-            : 'border-[#DCEAE4] hover:border-[#16B672]/50 text-[#1A2622]'
+            ? 'border-brand ring-2 ring-brand/20 text-ink'
+            : 'border-line-2 hover:border-brand/60 text-ink'
         }`}
       >
-        <div className="flex-1 min-w-0 overflow-hidden group">
+        <div className="flex-1 min-w-0 overflow-hidden">
           <span
-            className={`block whitespace-nowrap ${
-              displayLabel.length > 22 ? 'animate-marquee' : 'truncate'
-            } ${!selectedOption ? 'text-[#7E8E89] font-medium' : ''}`}
-            title={displayLabel}
+            className={`block truncate ${!selectedOption ? 'text-muted font-medium' : 'text-ink'}`}
           >
             {displayLabel}
           </span>
         </div>
         <ChevronDown
-          className={`w-4 h-4 text-[#16B672] shrink-0 transition-transform duration-200 ${
+          className={`w-4 h-4 text-brand shrink-0 transition-transform duration-150 ${
             open ? 'rotate-180' : ''
           }`}
         />
       </button>
 
       {open && (
-        <div className="absolute z-50 left-0 right-0 mt-2 min-w-[230px] bg-white rounded-2xl border border-[#DCEAE4] shadow-2xl shadow-emerald-950/10 py-2 max-h-72 overflow-y-auto">
+        <div className="absolute z-50 left-0 mt-1.5 min-w-[250px] w-max max-w-[340px] bg-card rounded-2xl border border-line-2 shadow-2xl py-1.5 max-h-72 overflow-y-auto anim-fade">
           {searchable && (
-            <div className="px-3 pb-2 pt-1 sticky top-0 bg-white border-b border-[#EEF4F1]">
+            <div className="px-3 pb-2 pt-1 sticky top-0 bg-card border-b border-line">
               <div className="relative">
-                <Search className="w-3.5 h-3.5 text-[#7E8E89] absolute left-3 top-1/2 -translate-y-1/2" />
+                <Search className="w-3.5 h-3.5 text-muted absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Быстрый поиск..."
+                  placeholder="Быстрый поиск региона..."
                   autoFocus
-                  className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-[#DCEAE4] bg-[#F7FAF8] text-xs font-medium"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-line-2 bg-surface/60 text-xs font-medium text-ink focus:outline-none focus:border-brand"
                 />
               </div>
             </div>
           )}
 
           {filtered.length === 0 ? (
-            <div className="px-4 py-3 text-xs text-[#7E8E89] text-center">Ничего не найдено</div>
+            <div className="px-4 py-3 text-xs text-muted text-center">Ничего не найдено</div>
           ) : (
             filtered.map((opt) => {
               const active = opt.value === value;
@@ -118,17 +116,19 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
                     setOpen(false);
                     setSearch('');
                   }}
-                  className={`w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left text-xs sm:text-sm transition-colors ${
+                  className={`w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left text-xs sm:text-sm transition-colors cursor-pointer ${
                     active
-                      ? 'bg-[#E7F8F0] text-[#11995E] font-extrabold'
-                      : 'text-[#1A2622] hover:bg-[#F7FAF8]'
+                      ? 'bg-brand-tint text-brand-ink font-bold'
+                      : 'text-ink hover:bg-surface/70'
                   }`}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate">{opt.label}</div>
-                    {opt.sublabel && <div className="text-[11px] text-[#7E8E89] truncate">{opt.sublabel}</div>}
+                    <div className="leading-snug">{opt.label}</div>
+                    {opt.sublabel && (
+                      <div className="text-[11px] text-muted mt-0.5">{opt.sublabel}</div>
+                    )}
                   </div>
-                  {active && <Check className="w-4 h-4 text-[#16B672] shrink-0" />}
+                  {active && <Check className="w-4 h-4 text-brand shrink-0" />}
                 </button>
               );
             })
