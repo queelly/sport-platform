@@ -209,8 +209,11 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
         apiFetch<EventCardDto[]>(`/api/v1/events?${params.toString()}`),
         apiFetch<EventCardDto[]>('/api/v1/events'),
       ]);
-      setEvents(evList);
-      setRecommendedEvents(allEvList);
+      const nowMs = Date.now();
+      const isUpcomingActive = (ev: EventCardDto) =>
+        ev.status === 'PUBLISHED' && new Date(ev.startsAt).getTime() >= nowMs;
+      setEvents(evList.filter(isUpcomingActive));
+      setRecommendedEvents(allEvList.filter(isUpcomingActive));
     } catch {
       // ignore
     } finally {
@@ -248,7 +251,10 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
   };
 
   const displayedEvents = useMemo(() => {
-    let list = events;
+    const nowMs = Date.now();
+    let list = events.filter(
+      (ev) => ev.status === 'PUBLISHED' && new Date(ev.startsAt).getTime() >= nowMs
+    );
 
     if (formatFilter === 'ONLINE') {
       list = list.filter((ev) => isOnlineEvent(ev.city, ev.locationAddress));
@@ -369,356 +375,359 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
       {/* ПАНЕЛЬ ПОИСКА ПО АДРЕСАМ И ФИЛЬТРОВ */}
       <div
         ref={filterBarRef}
-        className="px-3 sm:px-4 lg:px-6 py-2.5 bg-card border-b border-line-2 flex flex-wrap items-center justify-between gap-2 shrink-0 relative z-40"
+        className="px-3 sm:px-4 lg:px-6 py-2.5 bg-card border-b border-line-2 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 shrink-0 relative z-40"
       >
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
-          {/* 0. Поиск по мероприятиям и реальным адресам */}
-          <div className="relative w-full sm:w-auto sm:min-w-[280px] max-w-[440px] flex-1">
-            <div className="relative flex items-center">
-              <Search className="w-4 h-4 text-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="search"
-                value={urlQuery}
-                onFocus={() => setShowAddressDropdown(true)}
-                onChange={(e) => {
-                  const val = e.target.value;
+        {/* Поиск по мероприятиям и реальным адресам (на мобильном занимает отдельную верхнюю строку без наложений) */}
+        <div className="relative w-full lg:w-auto lg:min-w-[300px] lg:max-w-[440px] lg:flex-1">
+          <div className="relative flex items-center">
+            <Search className="w-4 h-4 text-muted absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="search"
+              value={urlQuery}
+              onFocus={() => setShowAddressDropdown(true)}
+              onChange={(e) => {
+                const val = e.target.value;
+                const next = new URLSearchParams(searchParams);
+                if (val) next.set('q', val);
+                else next.delete('q');
+                setSearchParams(next, { replace: true });
+                setShowAddressDropdown(true);
+              }}
+              placeholder="Поиск по улице, адресу, спорткомплексу или спорту..."
+              className="w-full h-9 pl-9 pr-9 rounded-xl bg-surface/75 hover:bg-surface focus:bg-card border border-line-2 focus:border-brand text-[13px] font-medium text-ink placeholder:text-muted outline-none transition-colors"
+            />
+            <div className="absolute right-1 top-1/2 -translate-y-1/2">
+              <VoiceSearchButton
+                onResult={(spoken) => {
                   const next = new URLSearchParams(searchParams);
-                  if (val) next.set('q', val);
-                  else next.delete('q');
+                  next.set('q', spoken);
                   setSearchParams(next, { replace: true });
                   setShowAddressDropdown(true);
                 }}
-                placeholder="Поиск по улице, адресу, спорткомплексу или спорту..."
-                className="w-full h-9 pl-9 pr-9 rounded-xl bg-surface/75 hover:bg-surface focus:bg-card border border-line-2 focus:border-brand text-[13px] font-medium text-ink placeholder:text-muted outline-none transition-colors"
               />
-              <div className="absolute right-1 top-1/2 -translate-y-1/2">
-                <VoiceSearchButton
-                  onResult={(spoken) => {
-                    const next = new URLSearchParams(searchParams);
-                    next.set('q', spoken);
-                    setSearchParams(next, { replace: true });
-                    setShowAddressDropdown(true);
-                  }}
-                />
-              </div>
             </div>
-
-            {/* Выпадающий список найденных реальных адресов */}
-            {showAddressDropdown && addressSuggestions.length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-1.5 bg-card rounded-2xl border border-line-2 shadow-2xl py-1.5 z-[220] anim-fade">
-                <div className="px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted flex items-center justify-between">
-                  <span>Адреса и спортивные площадки</span>
-                  <span>Показать точку</span>
-                </div>
-                {addressSuggestions.map((place, idx) => (
-                  <button
-                    key={`${place.lat}-${place.lng}-${idx}`}
-                    type="button"
-                    onClick={() => {
-                      setSearchedAddressPin(place);
-                      setShowAddressDropdown(false);
-                      setMobileMapShowList(false);
-                      const streetPart = place.address.split(',')[0].trim();
-                      const hasMatchingEvent = events.some((ev) =>
-                        ev.locationAddress.toLowerCase().includes(streetPart.toLowerCase())
-                      );
-                      if (!hasMatchingEvent) {
-                        const next = new URLSearchParams(searchParams);
-                        next.delete('q');
-                        next.set('view', 'map');
-                        setSearchParams(next, { replace: true });
-                      } else if (viewMode !== 'map') {
-                        setViewMode('map');
-                      }
-                    }}
-                    className="w-full px-3.5 py-2 text-left hover:bg-brand-tint/60 flex items-start justify-between gap-2 transition-colors cursor-pointer"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-ink truncate">
-                        {place.address}
-                      </div>
-                      {place.subtitle && (
-                        <div className="text-[11px] text-muted truncate">{place.subtitle}</div>
-                      )}
-                    </div>
-                    <span className="font-mono text-[10px] font-bold text-brand-ink bg-brand-tint px-1.5 py-0.5 rounded shrink-0">
-                      На карте →
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
-          {/* 1. КОГДА (Выпадающий календарь и пресеты дат) */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setOpenDropdown((prev) => (prev === 'date' ? null : 'date'))}
-              className={`h-9 px-3 rounded-xl text-xs sm:text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
-                datePreset || openDropdown === 'date'
-                  ? 'bg-ink text-card font-semibold shadow-2xs'
-                  : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5 text-brand shrink-0" />
-              <span className="whitespace-nowrap">
-                Когда: <strong className="font-bold">{datePreset ? dateFilterLabel : 'Все даты'}</strong>
-              </span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 opacity-70 transition-transform ${
-                  openDropdown === 'date' ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
-
-            {openDropdown === 'date' && (
-              <div className="absolute left-0 top-full mt-2 w-[300px] sm:w-[310px] bg-card rounded-2xl shadow-2xl border border-line-2 p-4 z-[220] anim-fade">
-                <div className="grid grid-cols-2 gap-1.5 mb-3">
-                  {[
-                    { id: '', label: 'Любое время' },
-                    { id: 'today', label: 'Сегодня' },
-                    { id: 'tomorrow', label: 'Завтра' },
-                    { id: 'weekend', label: 'На выходных' },
-                  ].map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => {
-                        setDatePreset(p.id);
-                        setOpenDropdown(null);
-                      }}
-                      className={`px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors cursor-pointer ${
-                        datePreset === p.id
-                          ? 'bg-brand text-white font-bold'
-                          : 'bg-surface hover:bg-surface-2 text-ink'
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="border-t border-line pt-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-ink capitalize">
-                      {calendarView.monthTitle}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setCalendarMonthOffset((m) => m - 1)}
-                        className="w-6 h-6 rounded-lg hover:bg-surface flex items-center justify-center text-muted hover:text-ink cursor-pointer"
-                      >
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setCalendarMonthOffset((m) => m + 1)}
-                        className="w-6 h-6 rounded-lg hover:bg-surface flex items-center justify-center text-muted hover:text-ink cursor-pointer"
-                      >
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-muted mb-1">
-                    {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
-                      <div key={d}>{d}</div>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-7 gap-1">
-                    {calendarView.days.map((cell, idx) =>
-                      cell ? (
-                        <button
-                          key={cell.iso}
-                          type="button"
-                          onClick={() => {
-                            setDatePreset(cell.iso);
-                            setOpenDropdown(null);
-                          }}
-                          className={`h-8 rounded-lg text-xs font-semibold flex items-center justify-center transition-colors cursor-pointer ${
-                            datePreset === cell.iso
-                              ? 'bg-brand text-white font-bold'
-                              : 'hover:bg-surface text-ink'
-                          }`}
-                        >
-                          {cell.day}
-                        </button>
-                      ) : (
-                        <div key={`empty-${idx}`} />
-                      )
-                    )}
-                  </div>
-                </div>
+          {/* Выпадающий список найденных реальных адресов */}
+          {showAddressDropdown && addressSuggestions.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1.5 bg-card rounded-2xl border border-line-2 shadow-2xl py-1.5 z-[220] anim-fade">
+              <div className="px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted flex items-center justify-between">
+                <span>Адреса и спортивные площадки</span>
+                <span>Показать точку</span>
               </div>
-            )}
-          </div>
-
-          {/* 2. ВИД СПОРТА (Выпадающий список без значков) */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setOpenDropdown((prev) => (prev === 'sport' ? null : 'sport'))}
-              className={`h-9 px-3 rounded-xl text-xs sm:text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
-                selectedSportId || openDropdown === 'sport'
-                  ? 'bg-ink text-card font-semibold shadow-2xs'
-                  : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
-              }`}
-            >
-              <span className="whitespace-nowrap">
-                Спорт:{' '}
-                <strong className="font-bold">
-                  {selectedSportObj ? selectedSportObj.name : 'Все виды'}
-                </strong>
-              </span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 opacity-70 transition-transform ${
-                  openDropdown === 'sport' ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
-
-            {openDropdown === 'sport' && (
-              <div className="absolute left-0 top-full mt-2 w-64 max-h-80 overflow-y-auto bg-card rounded-2xl shadow-2xl border border-line-2 p-1.5 z-[220] anim-fade">
+              {addressSuggestions.map((place, idx) => (
                 <button
+                  key={`${place.lat}-${place.lng}-${idx}`}
                   type="button"
                   onClick={() => {
-                    setSelectedSportId('');
-                    setOpenDropdown(null);
+                    setSearchedAddressPin(place);
+                    setShowAddressDropdown(false);
+                    setMobileMapShowList(false);
+                    const streetPart = place.address.split(',')[0].trim();
+                    const hasMatchingEvent = events.some((ev) =>
+                      ev.locationAddress.toLowerCase().includes(streetPart.toLowerCase())
+                    );
+                    if (!hasMatchingEvent) {
+                      const next = new URLSearchParams(searchParams);
+                      next.delete('q');
+                      next.set('view', 'map');
+                      setSearchParams(next, { replace: true });
+                    } else if (viewMode !== 'map') {
+                      setViewMode('map');
+                    }
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
-                    !selectedSportId ? 'bg-brand-tint text-brand-ink font-bold' : 'text-ink hover:bg-surface'
-                  }`}
+                  className="w-full px-3.5 py-2 text-left hover:bg-brand-tint/60 flex items-start justify-between gap-2 transition-colors cursor-pointer"
                 >
-                  <span>Все виды спорта</span>
-                  {!selectedSportId && <Check className="w-4 h-4 text-brand" />}
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-ink truncate">
+                      {place.address}
+                    </div>
+                    {place.subtitle && (
+                      <div className="text-[11px] text-muted truncate">{place.subtitle}</div>
+                    )}
+                  </div>
+                  <span className="font-mono text-[10px] font-bold text-brand-ink bg-brand-tint px-1.5 py-0.5 rounded shrink-0">
+                    На карте →
+                  </span>
                 </button>
-                {sports.map((s) => {
-                  const active = selectedSportId === s.id;
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedSportId(active ? '' : s.id);
-                        setOpenDropdown(null);
-                      }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
-                        active ? 'bg-brand-tint text-brand-ink font-bold' : 'text-ink hover:bg-surface'
-                      }`}
-                    >
-                      <span>{s.name}</span>
-                      {active && <Check className="w-4 h-4 text-brand" />}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* 3. ФОРМАТ (На площадке / Онлайн) */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setOpenDropdown((prev) => (prev === 'format' ? null : 'format'))}
-              className={`h-9 px-3 rounded-xl text-xs sm:text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
-                formatFilter || openDropdown === 'format'
-                  ? 'bg-ink text-card font-semibold shadow-2xs'
-                  : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
-              }`}
-            >
-              <span className="whitespace-nowrap">
-                {formatFilter === 'ONLINE'
-                  ? 'Онлайн'
-                  : formatFilter === 'OFFLINE'
-                  ? 'На площадке'
-                  : 'Формат: Все'}
-              </span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 opacity-70 transition-transform ${
-                  openDropdown === 'format' ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
-
-            {openDropdown === 'format' && (
-              <div className="absolute left-0 top-full mt-2 w-60 bg-card rounded-2xl shadow-2xl border border-line-2 p-1.5 z-[220] anim-fade">
-                {[
-                  { id: '', label: 'Любой формат' },
-                  { id: 'OFFLINE', label: 'На площадке (офлайн)' },
-                  { id: 'ONLINE', label: 'Онлайн-трансляция' },
-                ].map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => {
-                      setFormatFilter(opt.id as '' | 'OFFLINE' | 'ONLINE');
-                      setOpenDropdown(null);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
-                      formatFilter === opt.id
-                        ? 'bg-brand-tint text-brand-ink font-bold'
-                        : 'text-ink hover:bg-surface'
-                    }`}
-                  >
-                    <span>{opt.label}</span>
-                    {formatFilter === opt.id && <Check className="w-4 h-4 text-brand" />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Кнопка сброса фильтров */}
-          {activeFiltersCount > 0 && (
-            <button
-              type="button"
-              onClick={handleResetFilters}
-              className="h-9 px-3 rounded-xl text-xs font-semibold text-muted hover:text-ink hover:bg-surface transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-              <span>Сбросить</span>
-            </button>
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Расширенные фильтры + Мобильный переключатель Карта/Список */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {viewMode === 'map' && (
+        {/* Строка чипсов быстрых фильтров + кнопок Список/Фильтры */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 w-full lg:w-auto">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            {/* 1. КОГДА (Выпадающий календарь и пресеты дат) */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setOpenDropdown((prev) => (prev === 'date' ? null : 'date'))}
+                className={`h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  datePreset || openDropdown === 'date'
+                    ? 'bg-ink text-card font-semibold shadow-2xs'
+                    : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5 text-brand shrink-0" />
+                <span className="whitespace-nowrap">
+                  Когда: <strong className="font-bold">{datePreset ? dateFilterLabel : 'Все даты'}</strong>
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 opacity-70 transition-transform ${
+                    openDropdown === 'date' ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {openDropdown === 'date' && (
+                <div className="absolute left-0 top-full mt-2 w-[290px] sm:w-[310px] bg-card rounded-2xl shadow-2xl border border-line-2 p-4 z-[220] anim-fade">
+                  <div className="grid grid-cols-2 gap-1.5 mb-3">
+                    {[
+                      { id: '', label: 'Любое время' },
+                      { id: 'today', label: 'Сегодня' },
+                      { id: 'tomorrow', label: 'Завтра' },
+                      { id: 'weekend', label: 'На выходных' },
+                    ].map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setDatePreset(p.id);
+                          setOpenDropdown(null);
+                        }}
+                        className={`px-3 py-2 rounded-xl text-xs font-semibold text-left transition-colors cursor-pointer ${
+                          datePreset === p.id
+                            ? 'bg-brand text-white font-bold'
+                            : 'bg-surface hover:bg-surface-2 text-ink'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="border-t border-line pt-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-ink capitalize">
+                        {calendarView.monthTitle}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setCalendarMonthOffset((m) => m - 1)}
+                          className="w-6 h-6 rounded-lg hover:bg-surface flex items-center justify-center text-muted hover:text-ink cursor-pointer"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCalendarMonthOffset((m) => m + 1)}
+                          className="w-6 h-6 rounded-lg hover:bg-surface flex items-center justify-center text-muted hover:text-ink cursor-pointer"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-muted mb-1">
+                      {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
+                        <div key={d}>{d}</div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1">
+                      {calendarView.days.map((cell, idx) =>
+                        cell ? (
+                          <button
+                            key={cell.iso}
+                            type="button"
+                            onClick={() => {
+                              setDatePreset(cell.iso);
+                              setOpenDropdown(null);
+                            }}
+                            className={`h-8 rounded-lg text-xs font-semibold flex items-center justify-center transition-colors cursor-pointer ${
+                              datePreset === cell.iso
+                                ? 'bg-brand text-white font-bold'
+                                : 'hover:bg-surface text-ink'
+                            }`}
+                          >
+                            {cell.day}
+                          </button>
+                        ) : (
+                          <div key={`empty-${idx}`} />
+                        )
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 2. ВИД СПОРТА (Выпадающий список без значков) */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setOpenDropdown((prev) => (prev === 'sport' ? null : 'sport'))}
+                className={`h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  selectedSportId || openDropdown === 'sport'
+                    ? 'bg-ink text-card font-semibold shadow-2xs'
+                    : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
+                }`}
+              >
+                <span className="whitespace-nowrap">
+                  Спорт:{' '}
+                  <strong className="font-bold">
+                    {selectedSportObj ? selectedSportObj.name : 'Все виды'}
+                  </strong>
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 opacity-70 transition-transform ${
+                    openDropdown === 'sport' ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {openDropdown === 'sport' && (
+                <div className="absolute left-0 top-full mt-2 w-64 max-h-80 overflow-y-auto bg-card rounded-2xl shadow-2xl border border-line-2 p-1.5 z-[220] anim-fade">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedSportId('');
+                      setOpenDropdown(null);
+                    }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
+                      !selectedSportId ? 'bg-brand-tint text-brand-ink font-bold' : 'text-ink hover:bg-surface'
+                    }`}
+                  >
+                    <span>Все виды спорта</span>
+                    {!selectedSportId && <Check className="w-4 h-4 text-brand" />}
+                  </button>
+                  {sports.map((s) => {
+                    const active = selectedSportId === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedSportId(active ? '' : s.id);
+                          setOpenDropdown(null);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
+                          active ? 'bg-brand-tint text-brand-ink font-bold' : 'text-ink hover:bg-surface'
+                        }`}
+                      >
+                        <span>{s.name}</span>
+                        {active && <Check className="w-4 h-4 text-brand" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 3. ФОРМАТ (На площадке / Онлайн) */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setOpenDropdown((prev) => (prev === 'format' ? null : 'format'))}
+                className={`h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-[13px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  formatFilter || openDropdown === 'format'
+                    ? 'bg-ink text-card font-semibold shadow-2xs'
+                    : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
+                }`}
+              >
+                <span className="whitespace-nowrap">
+                  {formatFilter === 'ONLINE'
+                    ? 'Онлайн'
+                    : formatFilter === 'OFFLINE'
+                    ? 'На площадке'
+                    : 'Формат: Все'}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 opacity-70 transition-transform ${
+                    openDropdown === 'format' ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {openDropdown === 'format' && (
+                <div className="absolute left-0 top-full mt-2 w-60 bg-card rounded-2xl shadow-2xl border border-line-2 p-1.5 z-[220] anim-fade">
+                  {[
+                    { id: '', label: 'Любой формат' },
+                    { id: 'OFFLINE', label: 'На площадке (офлайн)' },
+                    { id: 'ONLINE', label: 'Онлайн-трансляция' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        setFormatFilter(opt.id as '' | 'OFFLINE' | 'ONLINE');
+                        setOpenDropdown(null);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-[13px] font-medium transition-colors cursor-pointer ${
+                        formatFilter === opt.id
+                          ? 'bg-brand-tint text-brand-ink font-bold'
+                          : 'text-ink hover:bg-surface'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      {formatFilter === opt.id && <Check className="w-4 h-4 text-brand" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Кнопка сброса фильтров */}
+            {activeFiltersCount > 0 && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl text-xs font-semibold text-muted hover:text-ink hover:bg-surface transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Сбросить</span>
+              </button>
+            )}
+          </div>
+
+          {/* Расширенные фильтры + Мобильный переключатель Карта/Список */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto">
+            {viewMode === 'map' && (
+              <button
+                type="button"
+                onClick={() => setMobileMapShowList((v) => !v)}
+                className="lg:hidden h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl bg-brand text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              >
+                {mobileMapShowList ? (
+                  <>
+                    <MapIcon className="w-3.5 h-3.5" />
+                    <span>На карту</span>
+                  </>
+                ) : (
+                  <>
+                    <List className="w-3.5 h-3.5" />
+                    <span>Список ({displayedEvents.length})</span>
+                  </>
+                )}
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={() => setMobileMapShowList((v) => !v)}
-              className="lg:hidden h-9 px-3 rounded-xl bg-brand text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              onClick={() => setShowFiltersModal(true)}
+              className={`h-8 sm:h-9 px-2.5 sm:px-3 rounded-xl text-xs sm:text-[13px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                joinMode || skillLevel || onlyAvailable || recurringFilter
+                  ? 'bg-ink text-card'
+                  : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
+              }`}
             >
-              {mobileMapShowList ? (
-                <>
-                  <MapIcon className="w-3.5 h-3.5" />
-                  <span>На карту</span>
-                </>
-              ) : (
-                <>
-                  <List className="w-3.5 h-3.5" />
-                  <span>Список ({displayedEvents.length})</span>
-                </>
+              <SlidersHorizontal className="w-3.5 h-3.5 text-brand" />
+              <span>Фильтры</span>
+              {(joinMode || skillLevel || onlyAvailable || recurringFilter) && (
+                <span className="w-2 h-2 rounded-full bg-brand" />
               )}
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setShowFiltersModal(true)}
-            className={`h-9 px-3 rounded-xl text-xs sm:text-[13px] font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-              joinMode || skillLevel || onlyAvailable || recurringFilter
-                ? 'bg-ink text-card'
-                : 'bg-surface/75 hover:bg-surface text-ink border border-line-2'
-            }`}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5 text-brand" />
-            <span>Фильтры</span>
-            {(joinMode || skillLevel || onlyAvailable || recurringFilter) && (
-              <span className="w-2 h-2 rounded-full bg-brand" />
-            )}
-          </button>
+          </div>
         </div>
       </div>
 
@@ -939,22 +948,12 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
               <button
                 type="button"
                 onClick={() => setListCollapsed(false)}
-                className="hidden lg:flex absolute top-4 left-4 z-[500] h-10 px-3.5 rounded-xl bg-card text-ink font-semibold text-xs shadow-lg border border-line items-center gap-2 hover:bg-surface transition-colors cursor-pointer"
+                className="hidden lg:flex absolute top-4 left-4 z-20 h-10 px-3.5 rounded-xl bg-card text-ink font-semibold text-xs shadow-lg border border-line items-center gap-2 hover:bg-surface transition-colors cursor-pointer"
               >
                 <PanelLeftOpen className="w-4 h-4 text-brand" />
                 <span>Показать список ({displayedEvents.length})</span>
               </button>
             )}
-
-            {/* На мобильных плавающая кнопка быстрого открытия списка встреч поверх карты */}
-            <button
-              type="button"
-              onClick={() => setMobileMapShowList(true)}
-              className="lg:hidden absolute top-3 left-3 z-[450] h-10 px-3.5 rounded-xl bg-card/95 backdrop-blur-md text-ink font-bold text-xs shadow-lg border border-line-2 flex items-center gap-2 cursor-pointer"
-            >
-              <List className="w-4 h-4 text-brand" />
-              <span>Список рядом ({displayedEvents.length})</span>
-            </button>
 
             <SportikusLeafletMap
               events={mapEvents}
@@ -1105,7 +1104,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                           Уровень: {SKILL_LABELS[selectedEvent.skillLevel] || selectedEvent.skillLevel}
                         </span>
                         <span>
-                          {selectedEvent.recurringOccurrence ? 'Повторяющаяся встреча' : 'Разовая встреча'}
+                          {selectedEvent.recurringOccurrence ? 'Регулярная встреча' : 'Разовая встреча'}
                         </span>
                       </div>
                     </div>
@@ -1277,7 +1276,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
                   Чат с поддержкой
                 </Link>
                 <Link to="/support" className="text-brand-ink hover:underline font-semibold">
-                  Тикеты и обращения
+                  Поддержка и обращения
                 </Link>
               </div>
             </div>
@@ -1380,7 +1379,7 @@ export const HomeAndCatalogPage: React.FC<{ catalogOnly?: boolean }> = ({ catalo
 
                 <label className="flex items-center justify-between p-3 rounded-xl bg-surface cursor-pointer">
                   <div>
-                    <div className="text-sm font-semibold text-ink">Только повторяющиеся встречи</div>
+                    <div className="text-sm font-semibold text-ink">Только регулярные встречи</div>
                     <div className="text-xs text-muted">Еженедельные занятия по расписанию</div>
                   </div>
                   <input
@@ -1565,7 +1564,7 @@ const SportikusLeafletMap: React.FC<{
     <div className="relative w-full h-full">
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-      <div className="absolute right-4 top-1/2 -translate-y-1/2 z-[400] flex flex-col gap-2">
+      <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-2">
         <div className="bg-card rounded-xl shadow-lg border border-line-2 overflow-hidden flex flex-col">
           <button
             type="button"
@@ -1596,7 +1595,7 @@ const SportikusLeafletMap: React.FC<{
         </button>
       </div>
 
-      <div className="absolute right-3 bottom-3 z-[400] flex items-center gap-2">
+      <div className="absolute right-3 bottom-3 z-20 flex items-center gap-2">
         <a
           href={openIn2GisUrl}
           target="_blank"
@@ -2036,7 +2035,7 @@ export const MyEventsPage: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-extrabold text-ink tracking-tight">
-            Мои записи и календарь
+            Мои записи
           </h1>
           <p className="text-xs sm:text-sm text-muted mt-0.5">
             Предстоящие тренировки, архив посещённых сборов и наглядный календарь расписания
@@ -2072,7 +2071,7 @@ export const MyEventsPage: React.FC = () => {
           { id: 'calendar', label: 'Календарь расписания', count: allMyEvents.length },
           { id: 'archive', label: 'Архив прошедших', count: archivedEvents.length },
           { id: 'organizing', label: 'Я организую', count: organizing.length },
-          { id: 'recurring', label: 'Повторяющиеся', count: recurring.length },
+          { id: 'recurring', label: 'Регулярные', count: recurring.length },
         ].map((t) => (
           <button
             key={t.id}
@@ -2101,7 +2100,7 @@ export const MyEventsPage: React.FC = () => {
       {/* Интерактивный визуальный календарь всех записей (предстоящих и архивных) */}
       {tab === 'calendar' ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <div className="lg:col-span-8 bg-card rounded-3xl border border-line-2 p-4 sm:p-6 shadow-xs space-y-4">
+          <div className="lg:col-span-8 bg-card rounded-3xl border border-line-2 p-3.5 sm:p-6 shadow-xs space-y-3.5 sm:space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="font-display text-lg sm:text-xl font-extrabold text-ink capitalize">
@@ -2140,7 +2139,7 @@ export const MyEventsPage: React.FC = () => {
             </div>
 
             {/* Легенда календаря */}
-            <div className="flex flex-wrap items-center gap-4 text-[11px] font-semibold text-muted pt-1">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] font-semibold text-muted pt-1">
               <span className="inline-flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-brand" />
                 <span>Предстоящая запись</span>
@@ -2156,7 +2155,7 @@ export const MyEventsPage: React.FC = () => {
             </div>
 
             {/* Сетка дней недели */}
-            <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-bold text-muted uppercase tracking-wider pt-1">
+            <div className="grid grid-cols-7 gap-1 sm:gap-1.5 text-center text-[10px] sm:text-[11px] font-bold text-muted uppercase tracking-wider pt-1">
               {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
                 <div key={d} className="py-1">
                   {d}
@@ -2165,7 +2164,7 @@ export const MyEventsPage: React.FC = () => {
             </div>
 
             {/* Ячейки месяца */}
-            <div className="grid grid-cols-7 gap-1.5">
+            <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
               {calendarCells.map((cell) => {
                 const isSelected = selectedDayKey === cell.key;
                 const hasEvents = cell.events.length > 0;
@@ -2174,7 +2173,7 @@ export const MyEventsPage: React.FC = () => {
                     key={cell.key}
                     type="button"
                     onClick={() => setSelectedDayKey(isSelected ? null : cell.key)}
-                    className={`min-h-[74px] sm:min-h-[92px] p-1.5 sm:p-2 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                    className={`h-12 sm:h-auto sm:min-h-[92px] p-1 sm:p-2 rounded-xl sm:rounded-2xl border text-center sm:text-left flex flex-col items-center sm:items-stretch justify-center sm:justify-between transition-all cursor-pointer ${
                       isSelected
                         ? 'border-brand ring-2 ring-brand/25 bg-brand-tint/25'
                         : cell.isToday
@@ -2184,7 +2183,7 @@ export const MyEventsPage: React.FC = () => {
                         : 'border-transparent bg-surface/20 opacity-45 hover:opacity-75'
                     }`}
                   >
-                    <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center justify-center sm:justify-between w-full">
                       <span
                         className={`w-6 h-6 rounded-lg text-xs font-bold inline-flex items-center justify-center ${
                           cell.isToday
@@ -2197,13 +2196,36 @@ export const MyEventsPage: React.FC = () => {
                         {cell.dayNum}
                       </span>
                       {hasEvents && (
-                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-card border border-line text-ink">
+                        <span className="hidden sm:inline-block text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-card border border-line text-ink">
                           {cell.events.length}
                         </span>
                       )}
                     </div>
 
-                    <div className="space-y-1 w-full mt-1 overflow-hidden">
+                    {/* На мобильном — компактные цветные точки без сжатия текста */}
+                    <div className="flex sm:hidden items-center justify-center gap-1 mt-1 h-2">
+                      {cell.events.slice(0, 3).map((ev) => {
+                        const past = isPastOrCompleted(ev);
+                        const isOrg = organizing.some((o) => o.id === ev.id);
+                        const dotClass = past
+                          ? 'bg-slate-400'
+                          : isOrg
+                          ? 'bg-amber-500'
+                          : 'bg-brand';
+                        return (
+                          <span
+                            key={ev.id}
+                            className={`w-1.5 h-1.5 rounded-full ${dotClass}`}
+                          />
+                        );
+                      })}
+                      {cell.events.length > 3 && (
+                        <span className="text-[8px] font-bold text-muted leading-none">+</span>
+                      )}
+                    </div>
+
+                    {/* На планшетах и ПК — полные карточки-плашки с временем и названием */}
+                    <div className="hidden sm:block space-y-1 w-full mt-1 overflow-hidden">
                       {cell.events.slice(0, 2).map((ev) => {
                         const past = isPastOrCompleted(ev);
                         const isOrg = organizing.some((o) => o.id === ev.id);
@@ -2222,7 +2244,7 @@ export const MyEventsPage: React.FC = () => {
                             className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold truncate ${pillClass}`}
                             title={`${timeStr} · ${ev.title}`}
                           >
-                            <span className="hidden sm:inline">{timeStr} </span>
+                            <span>{timeStr} </span>
                             {ev.title}
                           </div>
                         );
@@ -2340,7 +2362,7 @@ export const MyEventsPage: React.FC = () => {
               ? 'Архив прошедших тренировок пока пуст'
               : tab === 'organizing'
               ? 'Вы пока не организовали ни одного события'
-              : 'Нет повторяющихся встреч'}
+              : 'Нет регулярных встреч'}
           </div>
           <p className="text-xs text-muted max-w-md mx-auto">
             {tab === 'participating'

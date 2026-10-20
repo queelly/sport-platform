@@ -107,10 +107,10 @@ public class SupportService {
     @Transactional(readOnly = true)
     public SupportTicketDto getTicket(UUID ticketId, UserPrincipal viewer) {
         SupportTicket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> ApiException.notFound("Тикет не найден"));
+                .orElseThrow(() -> ApiException.notFound("Обращение не найдено"));
 
         if (!viewer.isAdmin() && !ticket.getAuthor().getId().equals(viewer.id())) {
-            throw ApiException.forbidden("Вы не можете просматривать чужие тикеты");
+            throw ApiException.forbidden("Вы не можете просматривать чужие обращения");
         }
         return toTicketDto(ticket);
     }
@@ -118,11 +118,11 @@ public class SupportService {
     @Transactional
     public SupportTicketDto replyOrUpdateTicket(UUID ticketId, UserPrincipal viewer, ReplyTicketRequest req) {
         SupportTicket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> ApiException.notFound("Тикет не найден"));
+                .orElseThrow(() -> ApiException.notFound("Обращение не найдено"));
 
         boolean isAdmin = viewer.isAdmin();
         if (!isAdmin && !ticket.getAuthor().getId().equals(viewer.id())) {
-            throw ApiException.forbidden("Вы не можете отвечать в чужом тикете");
+            throw ApiException.forbidden("Вы не можете отвечать в чужом обращении");
         }
 
         User sender = userRepository.findById(viewer.id())
@@ -170,7 +170,7 @@ public class SupportService {
             notificationService.notifyUser(
                     ticket.getAuthor(),
                     NotificationType.TICKET_REPLY,
-                    "Ответ администратора по тикету " + ticket.getTicketNumber(),
+                    "Ответ администратора по обращению " + ticket.getTicketNumber(),
                     "По вашему обращению «" + ticket.getSubject() + "» получен ответ. Текущий статус: " + ticket.getStatus(),
                     "/support/tickets/" + ticket.getId()
             );

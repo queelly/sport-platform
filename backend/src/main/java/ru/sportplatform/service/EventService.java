@@ -217,15 +217,17 @@ public class EventService {
         while (!cursor.isAfter(horizon)) {
             if (cursor.getDayOfWeek().getValue() == series.getDayOfWeek()) {
                 LocalDate occDate = cursor;
-                Optional<Event> existing = eventRepository.findBySeriesIdAndOccurrenceDate(series.getId(), occDate);
-                if (existing.isEmpty()) {
-                    ZonedDateTime startZdt = ZonedDateTime.of(occDate, LocalTime.of(hour, minute), DEFAULT_ZONE);
-                    Instant startInst = startZdt.toInstant();
-                    Instant endInst = startInst.plus(series.getDurationMinutes(), ChronoUnit.MINUTES);
-                    Event occ = buildEventFromSeries(series, occDate, startInst, endInst);
-                    result.add(eventRepository.save(occ));
-                } else {
-                    result.add(existing.get());
+                ZonedDateTime startZdt = ZonedDateTime.of(occDate, LocalTime.of(hour, minute), DEFAULT_ZONE);
+                Instant startInst = startZdt.toInstant();
+                if (!startInst.isBefore(Instant.now())) {
+                    Optional<Event> existing = eventRepository.findBySeriesIdAndOccurrenceDate(series.getId(), occDate);
+                    if (existing.isEmpty()) {
+                        Instant endInst = startInst.plus(series.getDurationMinutes(), ChronoUnit.MINUTES);
+                        Event occ = buildEventFromSeries(series, occDate, startInst, endInst);
+                        result.add(eventRepository.save(occ));
+                    } else {
+                        result.add(existing.get());
+                    }
                 }
             }
             cursor = cursor.plusDays(1);
@@ -272,8 +274,10 @@ public class EventService {
             String query,
             UserPrincipal viewer
     ) {
+        Instant now = Instant.now();
         List<Event> events = eventRepository.findByStatusOrderByStartsAtAsc(EventStatus.PUBLISHED);
         return events.stream()
+                .filter(e -> !e.getStartsAt().isBefore(now))
                 .filter(e -> sportId == null || e.getSport().getId().equals(sportId))
                 .filter(e -> city == null || city.isBlank() || fuzzyCityMatches(city, e.getCity()))
                 .filter(e -> joinMode == null || e.getJoinMode() == joinMode)
@@ -356,6 +360,9 @@ public class EventService {
         }
         if (event.getStatus() == EventStatus.CANCELLED_BY_ORGANIZER) {
             throw ApiException.conflict("Мероприятие отменено организатором. Запись закрыта.");
+        }
+        if (event.getStatus() == EventStatus.COMPLETED || event.getStartsAt().isBefore(Instant.now())) {
+            throw ApiException.conflict("Мероприятие уже прошло и находится в архиве. Запись закрыта.");
         }
         if (event.getStatus() != EventStatus.PUBLISHED) {
             throw ApiException.conflict("Запись на это мероприятие закрыта");
@@ -856,9 +863,13 @@ public class EventService {
                     .map(o -> canUserManageOrg(o, viewer.id()))
                     .orElse(false);
         }
+        Instant now = Instant.now();
         List<Event> list = privileged
                 ? eventRepository.findByOrganizationIdOrderByStartsAtAsc(orgId)
-                : eventRepository.findByOrganizationIdAndStatusOrderByStartsAtAsc(orgId, EventStatus.PUBLISHED);
+                : eventRepository.findByOrganizationIdAndStatusOrderByStartsAtAsc(orgId, EventStatus.PUBLISHED)
+                .stream()
+                .filter(e -> !e.getStartsAt().isBefore(now))
+                .toList();
         return list.stream().map(e -> toCardDto(e, viewer)).toList();
     }
 
@@ -888,6 +899,14 @@ public class EventService {
     @Scheduled(fixedDelay = 60000)
     @Transactional
     public void runScheduledMaintenanceAndReminders() {
+        Instant now = Instant.now();
+        for (Event ev : eventRepository.findByStatusOrderByStartsAtAsc(EventStatus.PUBLISHED)) {
+            Instant end = ev.getEndsAt() != null ? ev.getEndsAt() : ev.getStartsAt().plus(90, ChronoUnit.MINUTES);
+            if (end.isBefore(now)) {
+                ev.setStatus(EventStatus.COMPLETED);
+                eventRepository.save(ev);
+            }
+        }
         List<EventSeries> activeSeries = seriesRepository.findByActiveTrue();
         for (EventSeries s : activeSeries) {
             generateOccurrencesForSeries(s, recurringWeeksAhead);
@@ -985,6 +1004,10 @@ public class EventService {
                 ? "/api/v1/attachments/" + coverId + "/content"
                 : null;
 
+        EventStatus effectiveStatus = (e.getStatus() == EventStatus.PUBLISHED && e.getStartsAt().isBefore(Instant.now()))
+                ? EventStatus.COMPLETED
+                : e.getStatus();
+
         return new EventCardDto(
                 e.getId(),
                 e.getTitle(),
@@ -1015,7 +1038,7 @@ public class EventService {
                 confirmedCount,
                 pendingCount,
                 waitlistCount,
-                e.getStatus(),
+                effectiveStatus,
                 e.getModerationReason(),
                 e.getCancellationReason(),
                 viewerStatus,

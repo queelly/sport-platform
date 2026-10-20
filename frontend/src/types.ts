@@ -46,6 +46,25 @@ export interface OrganizationHistoryItemDto {
   decidedAt?: string;
 }
 
+export interface OrganizationPendingChangesDto {
+  name: string;
+  orgType: 'SPORTS_CLUB' | 'COMMUNITY' | 'FEDERATION' | 'SECTION' | 'SCHOOL' | 'OTHER';
+  city: string;
+  description: string;
+  representativeName: string;
+  moderationContact?: string;
+  publicContacts?: string;
+  websiteUrl?: string;
+  socialUrl?: string;
+  verificationLink?: string;
+  extraModerationInfo?: string;
+  logoAttachmentId?: string;
+  logoUrl?: string;
+  sportIds?: string[];
+  sports?: SportDto[];
+  submittedAt: string;
+}
+
 export interface OrganizationDto {
   id: string;
   ownerUserId: string;
@@ -71,6 +90,8 @@ export interface OrganizationDto {
   subscribedByViewer: boolean;
   managedByViewer?: boolean;
   viewerMemberRole?: 'OWNER' | 'ADMIN' | 'MEMBER' | null;
+  hasPendingChanges?: boolean;
+  pendingChanges?: OrganizationPendingChangesDto | null;
   applicationHistory: OrganizationHistoryItemDto[];
   createdAt: string;
   updatedAt: string;

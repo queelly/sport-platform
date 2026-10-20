@@ -1,5 +1,6 @@
 package ru.sportplatform.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.sportplatform.domain.entity.*;
@@ -27,6 +28,7 @@ public class OrganizationService {
     private final SportService sportService;
     private final NotificationService notificationService;
     private final AuditLogService auditLogService;
+    private final ObjectMapper objectMapper;
 
     public OrganizationService(
             OrganizationRepository organizationRepository,
@@ -38,7 +40,8 @@ public class OrganizationService {
             SportRepository sportRepository,
             SportService sportService,
             NotificationService notificationService,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            ObjectMapper objectMapper
     ) {
         this.organizationRepository = organizationRepository;
         this.historyRepository = historyRepository;
@@ -50,6 +53,7 @@ public class OrganizationService {
         this.sportService = sportService;
         this.notificationService = notificationService;
         this.auditLogService = auditLogService;
+        this.objectMapper = objectMapper;
     }
 
     public boolean canManageOrganization(Organization org, UUID userId) {
@@ -150,17 +154,88 @@ public class OrganizationService {
         }
 
         String updatedName = req.name().trim();
-        org.setName(updatedName);
+        OrganizationType targetType = org.getOrgType();
         if (org.getOrgType() == OrganizationType.COMMUNITY) {
-            org.setOrgType(OrganizationType.COMMUNITY);
+            targetType = OrganizationType.COMMUNITY;
         } else if (req.orgType() != null && req.orgType() != OrganizationType.COMMUNITY) {
-            org.setOrgType(req.orgType());
+            targetType = req.orgType();
         }
-        org.setCity(req.city().trim());
-        org.setDescription(req.description().trim());
         String repName = (org.getOrgType() == OrganizationType.COMMUNITY && req.representativeName() != null && !req.representativeName().isBlank())
                 ? req.representativeName().trim()
                 : updatedName;
+
+        // Если это верифицированная официальная организация и редактирует не администратор платформы:
+        // сохраняем заявку на изменение (pendingChangesJson), а текущая версия организации остаётся публичной и верифицированной!
+        if (org.getOrgType() != OrganizationType.COMMUNITY
+                && org.getStatus() == OrganizationStatus.APPROVED
+                && actor.getGlobalRole() != ru.sportplatform.domain.enums.Enums.GlobalRole.ADMIN) {
+
+            UUID nextLogoId = req.logoAttachmentId() != null ? req.logoAttachmentId() : org.getLogoAttachmentId();
+            String nextLogoUrl = nextLogoId != null ? "/api/v1/attachments/" + nextLogoId + "/content" : null;
+            List<UUID> nextSportIds = (req.sportIds() != null && !req.sportIds().isEmpty())
+                    ? req.sportIds()
+                    : org.getSports().stream().map(Sport::getId).toList();
+            List<SportDto> nextSports = sportRepository.findAllById(nextSportIds).stream()
+                    .map(sportService::toDto)
+                    .toList();
+
+            OrganizationPendingChangesDto pending = new OrganizationPendingChangesDto(
+                    updatedName,
+                    targetType,
+                    req.city().trim(),
+                    req.description().trim(),
+                    repName,
+                    req.moderationContact().trim(),
+                    req.publicContacts(),
+                    req.websiteUrl(),
+                    req.socialUrl(),
+                    req.verificationLink(),
+                    req.extraModerationInfo(),
+                    nextLogoId,
+                    nextLogoUrl,
+                    nextSportIds,
+                    nextSports,
+                    Instant.now()
+            );
+
+            try {
+                org.setPendingChangesJson(objectMapper.writeValueAsString(pending));
+            } catch (Exception e) {
+                throw ApiException.badRequest("Не удалось сформировать заявку на изменение данных организации");
+            }
+
+            int nextVer = org.getSubmissionVersion() + 1;
+            org.setSubmissionVersion(nextVer);
+            // Статус остаётся APPROVED!
+            org = organizationRepository.save(org);
+
+            OrganizationApplicationHistory h = new OrganizationApplicationHistory();
+            h.setOrganization(org);
+            h.setVersionNumber(nextVer);
+            h.setSubmittedSnapshot("Запрос на обновление верифицированной организации -> Название: " + pending.name()
+                    + " | Тип: " + pending.orgType()
+                    + " | Город: " + pending.city()
+                    + " | Контакт: " + pending.moderationContact()
+                    + " | Ссылки: " + (pending.verificationLink() != null ? pending.verificationLink() : "-"));
+            h.setStatus(OrganizationStatus.PENDING_REVIEW);
+            h.setDecisionReason("Ожидает проверки изменений модератором (текущая версия организации остаётся опубликованной)");
+            historyRepository.save(h);
+
+            notificationService.notifyUser(
+                    org.getOwner(),
+                    NotificationType.ORG_RESUBMITTED,
+                    "Изменения организации отправлены на рассмотрение",
+                    "Обновлённые сведения организации «" + org.getName() + "» (версия #" + nextVer + ") отправлены администратору. Текущая верифицированная страница организации остаётся активной и видимой всем пользователям.",
+                    "/my-organization"
+            );
+
+            return toDto(org, new UserPrincipal(actor.getId(), actor.getEmail(), actor.getDisplayName(), actor.getGlobalRole()));
+        }
+
+        org.setName(updatedName);
+        org.setOrgType(targetType);
+        org.setCity(req.city().trim());
+        org.setDescription(req.description().trim());
         org.setRepresentativeName(repName);
         if (org.getOrgType() != OrganizationType.COMMUNITY && org.getOwner().getId().equals(actor.getId())) {
             actor.setDisplayName(updatedName);
@@ -178,6 +253,11 @@ public class OrganizationService {
         if (req.sportIds() != null && !req.sportIds().isEmpty()) {
             Set<Sport> sports = new HashSet<>(sportRepository.findAllById(req.sportIds()));
             org.setSports(sports);
+        }
+
+        // Если редактировал админ напрямую, сбрасываем висящие pendingChanges
+        if (actor.getGlobalRole() == ru.sportplatform.domain.enums.Enums.GlobalRole.ADMIN) {
+            org.setPendingChangesJson(null);
         }
 
         // Если организация была отклонена или возвращена на доработку, переводим в PENDING_REVIEW и увеличиваем версию заявки
@@ -210,7 +290,9 @@ public class OrganizationService {
         Organization org = organizationRepository.findById(orgId)
                 .orElseThrow(() -> ApiException.notFound("Организация не найдена"));
 
-        if (org.getStatus() == req.decision()) {
+        boolean hasPendingEdit = org.getPendingChangesJson() != null && !org.getPendingChangesJson().isBlank();
+
+        if (!hasPendingEdit && org.getStatus() == req.decision()) {
             throw ApiException.conflict("Организация уже находится в выбранном статусе (" + req.decision() + ")");
         }
 
@@ -220,8 +302,92 @@ public class OrganizationService {
             }
         }
 
+        // Если у верифицированной организации есть ожидающие изменения и админ принимает/отклоняет их:
+        if (hasPendingEdit && org.getStatus() == OrganizationStatus.APPROVED && req.decision() != OrganizationStatus.SUSPENDED) {
+            OrganizationPendingChangesDto pending = parsePendingChanges(org.getPendingChangesJson());
+            if (req.decision() == OrganizationStatus.APPROVED && pending != null) {
+                org.setName(pending.name());
+                if (pending.orgType() != null && pending.orgType() != OrganizationType.COMMUNITY) {
+                    org.setOrgType(pending.orgType());
+                }
+                org.setCity(pending.city());
+                org.setDescription(pending.description());
+                org.setRepresentativeName(pending.name());
+                org.setModerationContact(pending.moderationContact());
+                org.setPublicContacts(pending.publicContacts());
+                org.setWebsiteUrl(pending.websiteUrl());
+                org.setSocialUrl(pending.socialUrl());
+                org.setVerificationLink(pending.verificationLink());
+                org.setExtraModerationInfo(pending.extraModerationInfo());
+                if (pending.logoAttachmentId() != null) {
+                    org.setLogoAttachmentId(pending.logoAttachmentId());
+                }
+                if (pending.sportIds() != null && !pending.sportIds().isEmpty()) {
+                    org.setSports(new HashSet<>(sportRepository.findAllById(pending.sportIds())));
+                }
+                User owner = org.getOwner();
+                owner.setDisplayName(pending.name());
+                userRepository.save(owner);
+
+                org.setPendingChangesJson(null);
+                org.setRejectionReason(null);
+            } else {
+                // Отклонение предложенных изменений: текущая версия остаётся APPROVED и опубликованной!
+                org.setPendingChangesJson(null);
+                org.setRejectionReason(req.reason());
+            }
+
+            if (req.adminNotes() != null) {
+                org.setAdminNotes(req.adminNotes());
+            }
+            org.setReviewedByAdminId(adminId);
+            org.setReviewedAt(Instant.now());
+            org = organizationRepository.save(org);
+
+            Organization finalOrg = org;
+            historyRepository.findFirstByOrganizationIdOrderByVersionNumberDesc(org.getId())
+                    .ifPresentOrElse(latest -> {
+                        latest.setStatus(req.decision());
+                        latest.setDecisionReason(req.reason() != null ? req.reason() : "Изменения одобрены администратором");
+                        latest.setDecidedByAdminId(adminId);
+                        latest.setDecidedAt(Instant.now());
+                        historyRepository.save(latest);
+                    }, () -> saveHistorySnapshot(finalOrg, finalOrg.getSubmissionVersion(), req.decision(), req.reason(), adminId));
+
+            auditLogService.record(
+                    admin,
+                    "MODERATE_ORGANIZATION_CHANGES",
+                    "ORGANIZATION",
+                    org.getId(),
+                    "APPROVED_WITH_PENDING_CHANGES",
+                    req.decision().name(),
+                    req.reason() != null ? req.reason() : "Изменения верифицированной организации одобрены"
+            );
+
+            if (req.decision() == OrganizationStatus.APPROVED) {
+                notificationService.notifyUser(
+                        org.getOwner(),
+                        NotificationType.ORG_APPROVED,
+                        "Изменения организации «" + org.getName() + "» одобрены!",
+                        "Администратор проверил и опубликовал обновлённые данные вашей организации.",
+                        "/organizations/" + org.getId()
+                );
+            } else {
+                notificationService.notifyUser(
+                        org.getOwner(),
+                        NotificationType.ORG_REJECTED,
+                        "Изменения организации «" + org.getName() + "» отклонены",
+                        "Причина: " + req.reason() + ". Текущая верифицированная версия вашей организации остаётся опубликованной и видимой всем пользователям.",
+                        "/my-organization"
+                );
+            }
+
+            return toDto(org, new UserPrincipal(admin.getId(), admin.getEmail(), admin.getDisplayName(), admin.getGlobalRole()));
+        }
+
         String prevState = org.getStatus().name();
         org.setStatus(req.decision());
+        org.setPendingChangesJson(null);
         org.setRejectionReason(req.reason());
         if (req.adminNotes() != null) {
             org.setAdminNotes(req.adminNotes());
@@ -362,9 +528,13 @@ public class OrganizationService {
 
     @Transactional(readOnly = true)
     public List<OrganizationDto> listAllForAdmin(UserPrincipal adminViewer, OrganizationStatus statusFilter) {
+        List<Organization> all = organizationRepository.findAllByOrderByUpdatedAtDesc();
         List<Organization> list = (statusFilter != null)
-                ? organizationRepository.findByStatusOrderByCreatedAtAsc(statusFilter)
-                : organizationRepository.findAllByOrderByUpdatedAtDesc();
+                ? all.stream().filter(o -> o.getStatus() == statusFilter
+                || (statusFilter == OrganizationStatus.PENDING_REVIEW
+                    && o.getPendingChangesJson() != null
+                    && !o.getPendingChangesJson().isBlank())).toList()
+                : all;
         return list.stream().map(o -> toDto(o, adminViewer)).toList();
     }
 
@@ -533,6 +703,11 @@ public class OrganizationService {
                 ? "/api/v1/attachments/" + org.getLogoAttachmentId() + "/content"
                 : null;
 
+        boolean hasPending = org.getPendingChangesJson() != null && !org.getPendingChangesJson().isBlank();
+        OrganizationPendingChangesDto pendingChanges = (privileged && hasPending)
+                ? parsePendingChanges(org.getPendingChangesJson())
+                : null;
+
         return new OrganizationDto(
                 org.getId(),
                 org.getOwner().getId(),
@@ -558,10 +733,21 @@ public class OrganizationService {
                 subscribed,
                 managedByViewer,
                 viewerMemberRole,
+                hasPending,
+                pendingChanges,
                 history,
                 org.getCreatedAt(),
                 org.getUpdatedAt()
         );
+    }
+
+    private OrganizationPendingChangesDto parsePendingChanges(String json) {
+        if (json == null || json.isBlank()) return null;
+        try {
+            return objectMapper.readValue(json, OrganizationPendingChangesDto.class);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private void saveHistorySnapshot(Organization org, int version, OrganizationStatus status, String reason, UUID adminId) {

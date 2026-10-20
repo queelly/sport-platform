@@ -194,6 +194,25 @@ public final class ApiDtos {
             Instant decidedAt
     ) {}
 
+    public record OrganizationPendingChangesDto(
+            String name,
+            OrganizationType orgType,
+            String city,
+            String description,
+            String representativeName,
+            String moderationContact,
+            String publicContacts,
+            String websiteUrl,
+            String socialUrl,
+            String verificationLink,
+            String extraModerationInfo,
+            UUID logoAttachmentId,
+            String logoUrl,
+            List<UUID> sportIds,
+            List<SportDto> sports,
+            Instant submittedAt
+    ) {}
+
     public record OrganizationDto(
             UUID id,
             UUID ownerUserId,
@@ -219,6 +238,8 @@ public final class ApiDtos {
             boolean subscribedByViewer,
             boolean managedByViewer,
             String viewerMemberRole,
+            boolean hasPendingChanges,
+            OrganizationPendingChangesDto pendingChanges,
             List<OrganizationHistoryItemDto> applicationHistory,
             Instant createdAt,
             Instant updatedAt

@@ -1018,15 +1018,23 @@ export const PublicUserProfilePage: React.FC = () => {
   );
 };
 
-export const PartnersAndFriendsPage: React.FC = () => {
+export const PartnersAndFriendsPage: React.FC<{ mode?: 'FRIENDS' | 'SEARCH' }> = ({
+  mode = 'SEARCH',
+}) => {
   const { user, sports } = useAuth();
   const navigate = useNavigate();
 
-  const [tab, setTab] = useState<'PARTNERS' | 'MATCH' | 'FRIENDS'>('PARTNERS');
+  const [tab, setTab] = useState<'PARTNERS' | 'MATCH' | 'FRIENDS'>(
+    mode === 'FRIENDS' ? 'FRIENDS' : 'PARTNERS'
+  );
   const [partners, setPartners] = useState<PublicUserProfileDto[]>([]);
   const [recommendedPartners, setRecommendedPartners] = useState<PublicUserProfileDto[]>([]);
   const [friendships, setFriendships] = useState<FriendshipDto[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setTab(mode === 'FRIENDS' ? 'FRIENDS' : 'PARTNERS');
+  }, [mode]);
 
   // Partner search filters
   const [sportId, setSportId] = useState('');
@@ -1112,10 +1120,10 @@ export const PartnersAndFriendsPage: React.FC = () => {
           targetUserId,
           message:
             customMessage?.trim() ||
-            'Привет! Нашёл твою анкету в Спорт-Мэтче, давай проведём совместную тренировку!',
+            'Привет! Нашёл твою анкету, давай проведём совместную тренировку!',
         }),
       });
-      setMatchSentFeedback('Заявка на совместную тренировку отправлена!');
+      setMatchSentFeedback('Заявка в друзья и на совместную тренировку отправлена!');
       setCustomInviteMsg('');
       setPartners((prev) =>
         prev.map((p) =>
@@ -1182,62 +1190,78 @@ export const PartnersAndFriendsPage: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-display font-extrabold text-2xl sm:text-3xl text-slate-900">
-            Спорт-Мэтч, Поиск напарников и Знакомые
+            {mode === 'FRIENDS' ? 'Мои друзья' : 'Поиск друзей'}
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Находите напарников по общему виду спорта, уровню и графику тренировок
+            {mode === 'FRIENDS'
+              ? 'Ваши спортивные друзья, заявки в друзья и личные сообщения'
+              : 'Находите новых друзей и напарников по общему виду спорта, уровню и графику тренировок'}
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-1.5 p-1 rounded-2xl bg-slate-200/80">
-          <button
-            type="button"
-            onClick={() => setTab('PARTNERS')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
-              tab === 'PARTNERS' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-700'
-            }`}
-          >
-            Каталог анкет ({partners.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setTab('MATCH');
-              setMatchSentFeedback(null);
-            }}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
-              tab === 'MATCH'
-                ? 'bg-gradient-to-r from-orange-500 to-rose-600 text-white shadow-sm'
-                : 'text-slate-700 hover:text-slate-900'
-            }`}
-          >
-            <Flame className="w-3.5 h-3.5" />
-            <span>Спорт-Мэтч (Дейтинг)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('FRIENDS')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 ${
-              tab === 'FRIENDS' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-700'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Мои знакомые ({acceptedFriends.length})</span>
-            {incomingRequests.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px]">
-                +{incomingRequests.length}
-              </span>
-            )}
+        {mode === 'FRIENDS' ? (
+          <div className="flex flex-wrap items-center gap-2">
             {totalUnreadDirectCount > 0 && (
-              <span
-                className="px-1.5 py-0.5 rounded-full bg-[#16B672] text-white text-[10px]"
-                title="Непрочитанные личные сообщения от знакомых"
-              >
-                💬 {totalUnreadDirectCount}
+              <span className="px-3 py-2 rounded-xl bg-[#E7F8F0] text-[#11995E] text-xs font-extrabold">
+                Непрочитанных сообщений: {totalUnreadDirectCount}
               </span>
             )}
-          </button>
-        </div>
+            <Link
+              to="/partners"
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold shadow-xs"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Найти друзей</span>
+            </Link>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-1.5 p-1 rounded-2xl bg-slate-200/80">
+            <button
+              type="button"
+              onClick={() => setTab('PARTNERS')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                tab === 'PARTNERS' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-700'
+              }`}
+            >
+              Каталог анкет ({partners.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTab('MATCH');
+                setMatchSentFeedback(null);
+              }}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                tab === 'MATCH'
+                  ? 'bg-gradient-to-r from-orange-500 to-rose-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              <Flame className="w-3.5 h-3.5" />
+              <span>Спорт-Мэтч</span>
+            </button>
+            <Link
+              to="/friends"
+              className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 hover:text-slate-900 flex items-center gap-1.5"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Мои друзья ({acceptedFriends.length})</span>
+              {incomingRequests.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-rose-600 text-white text-[10px]">
+                  +{incomingRequests.length}
+                </span>
+              )}
+              {totalUnreadDirectCount > 0 && (
+                <span
+                  className="px-1.5 py-0.5 rounded-full bg-[#16B672] text-white text-[10px]"
+                  title="Непрочитанные личные сообщения от друзей"
+                >
+                  💬 {totalUnreadDirectCount}
+                </span>
+              )}
+            </Link>
+          </div>
+        )}
       </div>
 
       {matchSentFeedback && (

@@ -273,7 +273,7 @@ export const AdminDashboardPage: React.FC = () => {
       setTicketReply('');
       await loadAdminData();
     } catch (err) {
-      setAdminError(err instanceof ApiError ? err.message : 'Ошибка ответа в тикет');
+      setAdminError(err instanceof ApiError ? err.message : 'Ошибка ответа в обращение');
     }
   };
 
@@ -302,12 +302,12 @@ export const AdminDashboardPage: React.FC = () => {
     return url.includes('?') ? `${url}&token=${encodeURIComponent(token)}` : `${url}?token=${encodeURIComponent(token)}`;
   };
 
-  const pendingOrgsCount = orgs.filter((o) => o.status === 'PENDING_REVIEW').length;
+  const pendingOrgsCount = orgs.filter((o) => o.status === 'PENDING_REVIEW' || o.hasPendingChanges).length;
   const openTicketsCount = tickets.filter((t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS').length;
   const unreadChatsCount = chats.filter((c) => c.unreadByAdmin).length;
 
   const filteredOrgs = orgs.filter((o) => {
-    if (orgFilter === 'PENDING_REVIEW') return o.status === 'PENDING_REVIEW';
+    if (orgFilter === 'PENDING_REVIEW') return o.status === 'PENDING_REVIEW' || o.hasPendingChanges;
     if (orgFilter === 'APPROVED') return o.status === 'APPROVED';
     if (orgFilter === 'REJECTED')
       return o.status === 'REJECTED' || o.status === 'NEEDS_REVISION' || o.status === 'SUSPENDED';
@@ -327,7 +327,7 @@ export const AdminDashboardPage: React.FC = () => {
                 Панель администратора и модерации
               </h1>
               <p className="text-xs sm:text-sm text-slate-300">
-                Допуск организаций, модерация мероприятий и сообщений, обработка тикетов, чат техподдержки и аудит
+                Допуск организаций, модерация мероприятий и сообщений, обработка обращений, чат техподдержки и аудит
               </p>
             </div>
           </div>
@@ -369,7 +369,7 @@ export const AdminDashboardPage: React.FC = () => {
             }`}
           >
             <Ticket className="w-4 h-4" />
-            <span>Тикеты и жалобы ({tickets.length})</span>
+            <span>Обращения и жалобы ({tickets.length})</span>
             {openTicketsCount > 0 && (
               <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px]">
                 {openTicketsCount}
@@ -433,7 +433,7 @@ export const AdminDashboardPage: React.FC = () => {
               { id: 'ALL', label: `Все (${orgs.length})` },
               {
                 id: 'PENDING_REVIEW',
-                label: `На проверке (${orgs.filter((o) => o.status === 'PENDING_REVIEW').length})`,
+                label: `На проверке (${orgs.filter((o) => o.status === 'PENDING_REVIEW' || o.hasPendingChanges).length})`,
               },
               {
                 id: 'APPROVED',
@@ -479,10 +479,15 @@ export const AdminDashboardPage: React.FC = () => {
                 className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className={`px-3 py-1 rounded-full text-xs font-bold border ${st.color}`}>
                       {st.label}
                     </span>
+                    {org.hasPendingChanges && (
+                      <span className="px-3 py-1 rounded-full text-xs font-bold border bg-amber-50 text-amber-800 border-amber-300">
+                        Предложены изменения (текущая версия активна)
+                      </span>
+                    )}
                     <span className="text-xs font-semibold text-slate-500">
                       Версия подачи #{org.submissionVersion} • {ORG_TYPE_LABELS[org.orgType]}
                     </span>
@@ -525,6 +530,42 @@ export const AdminDashboardPage: React.FC = () => {
                   )}
                 </div>
 
+                {org.hasPendingChanges && org.pendingChanges && (
+                  <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200 space-y-2 text-xs text-amber-950">
+                    <div className="font-display font-bold text-sm text-amber-900">
+                      Заявка на изменение данных верифицированной организации (версия #{org.submissionVersion}):
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-amber-700">Новое название:</span>{' '}
+                        <strong>{org.pendingChanges.name}</strong>
+                      </div>
+                      <div>
+                        <span className="text-amber-700">Новый город / регион:</span>{' '}
+                        <strong>{org.pendingChanges.city}</strong>
+                      </div>
+                      <div>
+                        <span className="text-amber-700">Тип:</span>{' '}
+                        <strong>{ORG_TYPE_LABELS[org.pendingChanges.orgType] || org.pendingChanges.orgType}</strong>
+                      </div>
+                      <div>
+                        <span className="text-amber-700">Контакт для модерации:</span>{' '}
+                        <strong>{org.pendingChanges.moderationContact}</strong>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-amber-700">Новое описание:</span>{' '}
+                      <span className="font-medium">{org.pendingChanges.description}</span>
+                    </div>
+                    {org.pendingChanges.extraModerationInfo && (
+                      <div>
+                        <span className="text-amber-700">Пояснение к изменениям:</span>{' '}
+                        <strong>{org.pendingChanges.extraModerationInfo}</strong>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
                   <input
                     type="text"
@@ -557,6 +598,29 @@ export const AdminDashboardPage: React.FC = () => {
                       </button>
                     )}
 
+                    {org.status === 'APPROVED' && org.hasPendingChanges && (
+                      <>
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleModerateOrg(org.id, 'APPROVED')}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Одобрить изменения</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleModerateOrg(org.id, 'REJECTED')}
+                          className="inline-flex items-center gap-1 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Отклонить изменения</span>
+                        </button>
+                      </>
+                    )}
+
                     {org.status === 'PENDING_REVIEW' && (
                       <button
                         type="button"
@@ -569,7 +633,7 @@ export const AdminDashboardPage: React.FC = () => {
                       </button>
                     )}
 
-                    {org.status === 'APPROVED' && (
+                    {org.status === 'APPROVED' && !org.hasPendingChanges && (
                       <>
                         <button
                           type="button"
@@ -846,7 +910,7 @@ export const AdminDashboardPage: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1">
-                        Новый статус тикета
+                        Новый статус обращения
                       </label>
                       <CustomSelect
                         size="sm"

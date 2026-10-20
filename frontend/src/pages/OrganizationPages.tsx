@@ -710,6 +710,12 @@ export const OrganizationPublicPage: React.FC = () => {
                 <span>{isCommunity ? 'Вы управляете сообществом' : 'Аккаунт организации'}</span>
               </span>
             )}
+            {canManage && org.hasPendingChanges && (
+              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
+                <Clock className="w-3.5 h-3.5" />
+                <span>Изменения на модерации (текущая версия публична)</span>
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -1029,18 +1035,19 @@ export const MyOrganizationCabinetPage: React.FC = () => {
   const populateForm = (o: OrganizationDto) => {
     setSelectedOrg(o);
     setConfirmDelete(false);
-    setName(o.name);
-    setOrgType(o.orgType);
-    setCity(o.city);
-    setDescription(o.description);
-    setRepresentativeName(o.representativeName || o.name);
-    setModerationContact(o.moderationContact || '');
-    setPublicContacts(o.publicContacts || '');
-    setWebsiteUrl(o.websiteUrl || '');
-    setSocialUrl(o.socialUrl || '');
-    setVerificationLink(o.verificationLink || '');
-    setExtraModerationInfo(o.extraModerationInfo || '');
-    setSelectedSportIds(o.sports.map((s) => s.id));
+    const p = o.pendingChanges;
+    setName(p?.name ?? o.name);
+    setOrgType(p?.orgType ?? o.orgType);
+    setCity(p?.city ?? o.city);
+    setDescription(p?.description ?? o.description);
+    setRepresentativeName(p?.representativeName ?? o.representativeName ?? o.name);
+    setModerationContact(p?.moderationContact ?? o.moderationContact ?? '');
+    setPublicContacts(p?.publicContacts ?? o.publicContacts ?? '');
+    setWebsiteUrl(p?.websiteUrl ?? o.websiteUrl ?? '');
+    setSocialUrl(p?.socialUrl ?? o.socialUrl ?? '');
+    setVerificationLink(p?.verificationLink ?? o.verificationLink ?? '');
+    setExtraModerationInfo(p?.extraModerationInfo ?? o.extraModerationInfo ?? '');
+    setSelectedSportIds(p?.sportIds ?? o.sports.map((s) => s.id));
   };
 
   const loadMyOrgs = async () => {
@@ -1114,7 +1121,9 @@ export const MyOrganizationCabinetPage: React.FC = () => {
       setOrgs((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
       await refreshMe();
       setFeedback(
-        updated.status === 'PENDING_REVIEW'
+        updated.hasPendingChanges
+          ? `Изменения отправлены на рассмотрение администратору (версия #${updated.submissionVersion})! Текущая верифицированная версия организации остаётся видимой для всех пользователей.`
+          : updated.status === 'PENDING_REVIEW'
           ? `Изменения сохранены! Заявка (версия #${updated.submissionVersion}) отправлена на повторное рассмотрение администратору.`
           : 'Данные успешно обновлены!'
       );
@@ -1245,10 +1254,15 @@ export const MyOrganizationCabinetPage: React.FC = () => {
       {/* Status Alert Banner */}
       <div className="bg-card rounded-3xl border border-line-2 p-6 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             <span className={`px-3.5 py-1 rounded-full text-xs font-bold border ${statusMeta.color}`}>
               {statusMeta.label}
             </span>
+            {selectedOrg.hasPendingChanges && (
+              <span className="px-3.5 py-1 rounded-full text-xs font-bold border bg-amber-50 text-amber-800 border-amber-200">
+                Новые изменения на проверке
+              </span>
+            )}
             <span className="text-xs font-semibold text-muted">
               Версия анкеты: #{selectedOrg.submissionVersion}
             </span>
@@ -1268,6 +1282,28 @@ export const MyOrganizationCabinetPage: React.FC = () => {
           </div>
         )}
 
+        {selectedOrg.status === 'APPROVED' && selectedOrg.rejectionReason && !selectedOrg.hasPendingChanges && (
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 space-y-1">
+            <div className="font-display font-bold text-sm flex items-center gap-2 text-rose-800">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>Последние предложенные изменения были отклонены администратором:</span>
+            </div>
+            <p className="text-xs sm:text-sm font-medium">{selectedOrg.rejectionReason}</p>
+            <p className="text-xs text-rose-700 pt-0.5">
+              Текущая верифицированная версия организации осталась без изменений и доступна всем пользователям.
+            </p>
+          </div>
+        )}
+
+        {selectedOrg.hasPendingChanges && (
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center gap-2.5">
+            <Clock className="w-5 h-5 text-amber-600 shrink-0" />
+            <span>
+              Внесённые изменения отправлены на рассмотрение администратору. Текущая верифицированная версия организации («{selectedOrg.name}») остаётся видимой для всех пользователей и сохраняет статус подтверждённой.
+            </span>
+          </div>
+        )}
+
         {selectedOrg.status === 'PENDING_REVIEW' && (
           <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center gap-2.5">
             <Clock className="w-5 h-5 text-amber-600 shrink-0" />
@@ -1283,7 +1319,7 @@ export const MyOrganizationCabinetPage: React.FC = () => {
             <span>
               {isSelectedCommunity
                 ? 'Сообщество активно! Вы и назначенные администраторы можете публиковать разовые и регулярные сборы.'
-                : 'Организация активна! Вы можете публиковать разовые и регулярные мероприятия от имени организации.'}
+                : 'Организация активна и верифицирована! Вы можете публиковать разовые и регулярные мероприятия от имени организации.'}
             </span>
           </div>
         )}

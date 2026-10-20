@@ -13,12 +13,11 @@ import {
   Map as MapIcon,
   MapPin,
   Menu,
-  Moon,
   Plus,
   ShieldCheck,
-  Sun,
   Type,
   User,
+  UserPlus,
   Users,
   X,
 } from 'lucide-react';
@@ -36,12 +35,10 @@ export function setSelectedGlobalRegion(region: string) {
 }
 
 interface UiSettings {
-  theme: 'light' | 'dark';
   fontSize: 'normal' | 'lg' | 'xl';
 }
 
 const DEFAULT_SETTINGS: UiSettings = {
-  theme: 'light',
   fontSize: 'normal',
 };
 
@@ -56,9 +53,9 @@ function useNavActiveState() {
 
   const isMapActive = (isHome && viewParam !== 'list') || (isCatalogRoute && viewParam === 'map');
   const isCatalogActive = (isCatalogRoute && viewParam !== 'map') || (isHome && viewParam === 'list');
-  const isPartnersActive =
+  const isFriendsActive = location.pathname.startsWith('/friends');
+  const isPartnerSearchActive =
     location.pathname.startsWith('/partners') ||
-    location.pathname.startsWith('/friends') ||
     location.pathname.startsWith('/users/');
   const isCommunitiesActive = location.pathname.startsWith('/communities');
   const isOrganizationsActive =
@@ -73,7 +70,8 @@ function useNavActiveState() {
   return {
     isMapActive,
     isCatalogActive,
-    isPartnersActive,
+    isFriendsActive,
+    isPartnerSearchActive,
     isCommunitiesActive,
     isOrganizationsActive,
     isMyActive,
@@ -101,7 +99,8 @@ export const AppSidebar: React.FC<{
   const {
     isMapActive,
     isCatalogActive,
-    isPartnersActive,
+    isFriendsActive,
+    isPartnerSearchActive,
     isCommunitiesActive,
     isOrganizationsActive,
     isMyActive,
@@ -216,7 +215,7 @@ export const AppSidebar: React.FC<{
           >
             <span className="flex items-center gap-2.5">
               <List className="w-4 h-4 shrink-0" />
-              <span>Каталог встреч</span>
+              <span>Найти встречи</span>
             </span>
           </Link>
 
@@ -243,13 +242,24 @@ export const AppSidebar: React.FC<{
           </Link>
 
           <Link
-            to="/partners"
+            to="/friends"
             onClick={onCloseMobile}
-            className={sidebarLinkClass(isPartnersActive)}
+            className={sidebarLinkClass(isFriendsActive)}
           >
             <span className="flex items-center gap-2.5">
               <Users className="w-4 h-4 shrink-0" />
-              <span>Напарники и друзья</span>
+              <span>Мои друзья</span>
+            </span>
+          </Link>
+
+          <Link
+            to="/partners"
+            onClick={onCloseMobile}
+            className={sidebarLinkClass(isPartnerSearchActive)}
+          >
+            <span className="flex items-center gap-2.5">
+              <UserPlus className="w-4 h-4 shrink-0" />
+              <span>Поиск друзей</span>
             </span>
           </Link>
 
@@ -266,7 +276,7 @@ export const AppSidebar: React.FC<{
               >
                 <span className="flex items-center gap-2.5">
                   <CalendarCheck className="w-4 h-4 shrink-0" />
-                  <span>Мои записи и календарь</span>
+                  <span>Мои записи</span>
                 </span>
               </Link>
 
@@ -297,7 +307,7 @@ export const AppSidebar: React.FC<{
               >
                 <span className="flex items-center gap-2.5">
                   <HelpCircle className="w-4 h-4 shrink-0" />
-                  <span>Поддержка и тикеты</span>
+                  <span>Поддержка и обращения</span>
                 </span>
               </Link>
             </>
@@ -323,7 +333,7 @@ export const AppSidebar: React.FC<{
         </nav>
       </div>
 
-      {/* Нижняя часть только для неавторизованных гостей (чтобы не дублировать меню профиля сверху) */}
+      {/* Нижняя часть только для неавторизованных гостей */}
       {!user && (
         <div className="p-3.5 border-t border-line-2 bg-surface/40">
           <div className="grid grid-cols-2 gap-2">
@@ -358,7 +368,6 @@ export const Navbar: React.FC<{
 }> = ({ onOpenMobileSidebar, cityModalOpen: externalModalOpen, setCityModalOpen: setExternalModalOpen }) => {
   const {
     user,
-    myOrganizations,
     unreadNotificationsCount,
     refreshUnreadCount,
     savedSessions,
@@ -391,7 +400,6 @@ export const Navbar: React.FC<{
       if (!saved) return DEFAULT_SETTINGS;
       const parsed = JSON.parse(saved);
       return {
-        theme: parsed.theme === 'dark' ? 'dark' : 'light',
         fontSize: parsed.fontSize === 'lg' || parsed.fontSize === 'xl' ? parsed.fontSize : 'normal',
       };
     } catch {
@@ -415,10 +423,10 @@ export const Navbar: React.FC<{
     return () => window.removeEventListener('sp-region-change', handler);
   }, []);
 
-  // Применяем тему и только размер шрифта
+  // Светлая тема всегда включена; применяем выбранный размер шрифта
   useEffect(() => {
     const html = document.documentElement;
-    html.dataset.theme = settings.theme;
+    html.dataset.theme = 'light';
     html.classList.remove(
       'a11y-font-lg',
       'a11y-font-xl',
@@ -430,7 +438,7 @@ export const Navbar: React.FC<{
     );
     if (settings.fontSize === 'lg') html.classList.add('a11y-font-lg');
     if (settings.fontSize === 'xl') html.classList.add('a11y-font-xl');
-    localStorage.setItem('sp_a11y', JSON.stringify(settings));
+    localStorage.setItem('sp_a11y', JSON.stringify({ theme: 'light', fontSize: settings.fontSize }));
   }, [settings]);
 
   const loadNotifications = useCallback(async () => {
@@ -488,45 +496,27 @@ export const Navbar: React.FC<{
 
   const unreadNotifications = notifications.filter((n) => !n.read);
 
-  const currentRegionInfo = getRegionInfo(selectedRegion);
   const filteredRegions = searchRussianLocations(cityQuery);
 
   return (
     <>
       <header className="h-14 bg-card border-b border-line-2 px-2.5 sm:px-6 flex items-center justify-between gap-1.5 sm:gap-3 relative z-40 shrink-0">
-        {/* Левая часть: Кнопка мобильного меню + быстрый выбор города */}
+        {/* Левая часть: Кнопка мобильного меню */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1">
           {onOpenMobileSidebar && (
             <button
               type="button"
               onClick={onOpenMobileSidebar}
               aria-label="Открыть меню разделов"
-              className="lg:hidden h-9 w-9 sm:w-auto sm:px-2.5 rounded-xl bg-surface hover:bg-surface-2 border border-line-2 text-ink flex items-center justify-center gap-1.5 text-xs font-bold shrink-0 cursor-pointer"
+              className="lg:hidden h-9 px-2.5 rounded-xl bg-surface hover:bg-surface-2 border border-line-2 text-ink flex items-center justify-center gap-1.5 text-xs font-bold shrink-0 cursor-pointer"
             >
               <Menu className="w-4 h-4 text-brand shrink-0" />
-              <span className="hidden sm:inline">Разделы</span>
+              <span>Разделы</span>
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={() => setCityModalOpen(true)}
-            className="h-9 px-2.5 sm:px-3 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 flex items-center gap-1.5 text-ink transition-colors min-w-0 max-w-[165px] xs:max-w-[190px] sm:max-w-[260px] cursor-pointer"
-          >
-            <MapPin className="w-3.5 h-3.5 text-brand shrink-0" />
-            <span className="text-xs font-bold truncate">
-              {selectedRegion || 'Все регионы РФ'}
-            </span>
-            {currentRegionInfo && (
-              <span className="hidden md:inline font-mono text-[10px] font-bold text-muted bg-card px-1.5 py-0.5 rounded border border-line shrink-0">
-                {currentRegionInfo.tzLabel.split(' ')[0]}
-              </span>
-            )}
-            <ChevronDown className="w-3.5 h-3.5 text-muted shrink-0" />
-          </button>
         </div>
 
-        {/* Правая часть: Масштаб шрифта (100% / 112% / 124%), Тема, Уведомления, Профиль */}
+        {/* Правая часть: Масштаб шрифта (100% / 112% / 124%), Уведомления, Профиль */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Компактная кнопка размера шрифта для мобильных экранов */}
           <button
@@ -586,33 +576,18 @@ export const Navbar: React.FC<{
             })}
           </div>
 
-          {/* Переключатель светлой / тёмной темы */}
-          <button
-            type="button"
-            onClick={() =>
-              setSettings((prev) => ({
-                ...prev,
-                theme: prev.theme === 'dark' ? 'light' : 'dark',
-              }))
-            }
-            title={settings.theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
-            aria-label="Переключить тему"
-            className="w-9 h-9 rounded-xl bg-surface/80 hover:bg-surface border border-line-2 text-ink flex items-center justify-center transition-colors shrink-0 cursor-pointer"
-          >
-            {settings.theme === 'dark' ? (
-              <Sun className="w-4 h-4 text-amber-400" />
-            ) : (
-              <Moon className="w-4 h-4" />
-            )}
-          </button>
-
-          {/* Уведомления */}
+          {/* Уведомления (на мобильном сразу переходит на страницу /notifications) */}
           {user && (
             <div className="relative">
               <button
                 ref={notifBtnRef}
                 type="button"
                 onClick={() => {
+                  if (window.innerWidth < 1024) {
+                    setNotifOpen(false);
+                    navigate('/notifications');
+                    return;
+                  }
                   const next = !notifOpen;
                   setNotifOpen(next);
                   if (next) loadNotifications();
@@ -632,7 +607,7 @@ export const Navbar: React.FC<{
               {notifOpen && (
                 <div
                   ref={notifPanelRef}
-                  className="absolute right-0 top-11 w-80 sm:w-96 rounded-2xl bg-card border border-line-2 shadow-2xl p-4 z-50 space-y-3 anim-fade"
+                  className="hidden lg:block absolute right-0 top-11 w-96 rounded-2xl bg-card border border-line-2 shadow-2xl p-4 z-50 space-y-3 anim-fade"
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-line">
                     <span className="font-display font-bold text-xs text-ink">
@@ -766,31 +741,6 @@ export const Navbar: React.FC<{
                     <span>Мой профиль и настройки</span>
                   </Link>
 
-                  <Link
-                    to="/my"
-                    onClick={() => setProfileMenuOpen(false)}
-                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-ink hover:bg-surface"
-                  >
-                    <CalendarCheck className="w-4 h-4 text-brand" />
-                    <span>Мои записи и календарь</span>
-                  </Link>
-
-                  <Link
-                    to="/my-organization"
-                    onClick={() => setProfileMenuOpen(false)}
-                    className="flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-ink hover:bg-surface"
-                  >
-                    <span className="flex items-center gap-2.5">
-                      <Building2 className="w-4 h-4 text-brand" />
-                      <span>Управление организациями и сообществами</span>
-                    </span>
-                    {myOrganizations.length > 0 && (
-                      <span className="px-1.5 py-0.5 rounded-md bg-brand-tint text-brand-ink font-mono text-[10px] font-bold">
-                        {myOrganizations.length}
-                      </span>
-                    )}
-                  </Link>
-
                   {savedSessions.length > 1 && (
                     <div className="pt-1 mt-1 border-t border-line">
                       <div className="px-3 py-1 text-[10px] font-bold text-muted uppercase tracking-wider">
@@ -855,7 +805,7 @@ export const Navbar: React.FC<{
 
       {/* Модальное окно выбора региона / города России */}
       {cityModalOpen && (
-        <div className="fixed inset-0 !m-0 z-[300] bg-black/55 backdrop-blur-sm flex items-center justify-center p-4 anim-fade">
+        <div className="fixed inset-0 !m-0 z-[700] bg-black/55 backdrop-blur-sm flex items-center justify-center p-4 anim-fade">
           <div className="bg-card border border-line-2 rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div>

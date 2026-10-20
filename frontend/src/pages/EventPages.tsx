@@ -219,7 +219,7 @@ export const CreateEventPage: React.FC = () => {
             Создать спортивный сбор
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Опубликуйте разовую или повторяющуюся встречу с привязкой к точному адресу на карте
+            Опубликуйте разовую или регулярную встречу с привязкой к точному адресу на карте
           </p>
         </div>
 
@@ -424,7 +424,7 @@ export const CreateEventPage: React.FC = () => {
                   className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                 />
                 <span className="text-xs font-bold text-slate-900">
-                  Повторяющиеся встречи (автоматически создаются встречи на 4 недели вперёд)
+                  Регулярные встречи (автоматически создаются встречи на 4 недели вперёд)
                 </span>
               </label>
             </div>
@@ -1098,7 +1098,7 @@ export const EventDetailPage: React.FC = () => {
                 {event.recurringOccurrence && (
                   <span className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-orange-100 text-orange-800 text-xs font-bold">
                     <Repeat className="w-3.5 h-3.5" />
-                    Повторяющиеся встречи
+                    Регулярные встречи
                   </span>
                 )}
               </div>
@@ -1218,7 +1218,7 @@ export const EventDetailPage: React.FC = () => {
               <div className="pt-2 space-y-2">
                 <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <Repeat className="w-4 h-4 text-orange-600" />
-                  <span>Расписание повторяющихся встреч (запись отдельно на каждую дату):</span>
+                  <span>Расписание регулярных встреч (запись отдельно на каждую дату):</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {seriesOccurrences.map((occ) => (
@@ -1228,7 +1228,7 @@ export const EventDetailPage: React.FC = () => {
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
                         occ.id === event.id
                           ? 'bg-blue-600 text-white border-blue-600'
-                          : occ.status !== 'PUBLISHED'
+                          : occ.status !== 'PUBLISHED' || new Date(occ.startsAt).getTime() < Date.now()
                           ? 'bg-rose-50 text-rose-700 border-rose-200 line-through'
                           : 'bg-white text-slate-700 border-slate-200 hover:border-blue-400'
                       }`}
@@ -1255,8 +1255,20 @@ export const EventDetailPage: React.FC = () => {
               </span>
             </div>
 
-            {/* Organizer does not apply to their own event (#18) */}
-            {isOrganizer ? (
+            {/* Archived / Past check first: cannot join archived events */}
+            {event.status === 'COMPLETED' || new Date(event.startsAt).getTime() < Date.now() ? (
+              <div className="space-y-2.5">
+                {event.viewerParticipationStatus === 'CONFIRMED' && (
+                  <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Вы принимали участие в этой встрече.</span>
+                  </div>
+                )}
+                <div className="p-3.5 rounded-2xl bg-slate-100 border border-slate-200 text-xs text-slate-700 font-bold text-center">
+                  Мероприятие завершено (в архиве). Запись закрыта.
+                </div>
+              </div>
+            ) : isOrganizer ? (
               <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 text-xs font-bold text-blue-950 flex items-center gap-2.5">
                 <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
                 <span>Вы являетесь организатором этой встречи и управляете составом участников.</span>

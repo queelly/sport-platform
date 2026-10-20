@@ -87,7 +87,7 @@ const AppShell: React.FC = () => {
 
       {/* Мобильный выезжающий сайдбар */}
       {mobileSidebarOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex">
+        <div className="lg:hidden fixed inset-0 z-[600] flex">
           <div
             className="fixed inset-0 bg-black/50 backdrop-blur-xs"
             onClick={() => setMobileSidebarOpen(false)}
@@ -193,7 +193,7 @@ const AppShell: React.FC = () => {
               path="/partners"
               element={
                 <PageContainer>
-                  <PartnersAndFriendsPage />
+                  <PartnersAndFriendsPage mode="SEARCH" />
                 </PageContainer>
               }
             />
@@ -201,7 +201,7 @@ const AppShell: React.FC = () => {
               path="/friends"
               element={
                 <PageContainer>
-                  <PartnersAndFriendsPage />
+                  <PartnersAndFriendsPage mode="FRIENDS" />
                 </PageContainer>
               }
             />
@@ -361,7 +361,7 @@ const LegalInfoPage: React.FC<{ doc: 'terms' | 'privacy' }> = ({ doc }) => {
             2. Безопасность и ответственность участников
           </h2>
           <p>
-            Каждый участник самостоятельно оценивает состояние своего здоровья и уровень физической подготовки перед записью на спортивные встречи. При обнаружении нарушений правил любой пользователь может подать обращение через систему тикетов.
+            Каждый участник самостоятельно оценивает состояние своего здоровья и уровень физической подготовки перед записью на спортивные встречи. При обнаружении нарушений правил любой пользователь может подать обращение в службу поддержки.
           </p>
         </div>
       ) : (
@@ -388,7 +388,7 @@ const LegalInfoPage: React.FC<{ doc: 'terms' | 'privacy' }> = ({ doc }) => {
         <span>Служба поддержки: support@sportplatform.ru</span>
         <div className="flex gap-3">
           <Link to="/support" className="font-bold text-brand-ink hover:underline">
-            Создать тикет в поддержку
+            Отправить обращение в поддержку
           </Link>
           <Link to="/support/chat" className="font-bold text-brand-ink hover:underline">
             Открыть онлайн-чат с поддержкой

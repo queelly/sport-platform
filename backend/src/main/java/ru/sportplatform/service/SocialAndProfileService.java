@@ -17,6 +17,7 @@ import ru.sportplatform.repository.UserRepository;
 import ru.sportplatform.repository.UserSportInterestRepository;
 import ru.sportplatform.security.UserPrincipal;
 
+import java.time.Instant;
 import java.util.*;
 
 @Service
@@ -367,17 +368,18 @@ public class SocialAndProfileService {
                 || target.getShowUpcomingEvents() == VisibilityScope.ALL
                 || (target.getShowUpcomingEvents() == VisibilityScope.FRIENDS_ONLY && isFriend);
 
+        Instant now = java.time.Instant.now();
         UserPrincipal targetPrincipal = new UserPrincipal(target.getId(), target.getEmail(), target.getDisplayName(), target.getGlobalRole());
         List<EventCardDto> organized = eventService.listMyOrganizedEvents(targetPrincipal)
                 .stream()
-                .filter(e -> e.status() == EventStatus.PUBLISHED)
+                .filter(e -> e.status() == EventStatus.PUBLISHED && !e.startsAt().isBefore(now))
                 .limit(6)
                 .toList();
 
         List<EventCardDto> upcomingParticipations = canSeeUpcoming
                 ? eventService.listMyParticipations(targetPrincipal)
                 .stream()
-                .filter(e -> e.status() == EventStatus.PUBLISHED)
+                .filter(e -> e.status() == EventStatus.PUBLISHED && !e.startsAt().isBefore(now))
                 .limit(6)
                 .toList()
                 : List.of();

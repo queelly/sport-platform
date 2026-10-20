@@ -193,7 +193,7 @@ public class FileStorageService {
                         .map(m -> m.getTicket().getAuthor().getId().equals(viewer.id()))
                         .orElse(false);
                 if (!isTicketAuthor) {
-                    throw ApiException.forbidden("Вы не можете просматривать вложения чужого тикета");
+                    throw ApiException.forbidden("Вы не можете просматривать вложения чужого обращения");
                 }
             }
         }

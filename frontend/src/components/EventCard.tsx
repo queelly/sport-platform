@@ -98,14 +98,18 @@ export const EventCard: React.FC<EventCardProps> = ({
       ? Math.min(100, Math.max(0, Math.round((confirmed / capacity) * 100)))
       : 35;
 
-  const statusBadge =
-    event.viewerParticipationStatus === 'CONFIRMED'
-      ? { label: 'Вы записаны ✓', cls: 'bg-brand-tint text-brand-ink border border-brand-line' }
-      : event.viewerParticipationStatus === 'PENDING'
-      ? { label: 'Заявка отправлена', cls: 'bg-amber-50 text-amber-800 border border-amber-200' }
-      : event.viewerParticipationStatus === 'WAITLISTED'
-      ? { label: 'Вы в очереди', cls: 'bg-surface-2 text-ink' }
-      : null;
+  const isArchived =
+    event.status === 'COMPLETED' || new Date(event.startsAt).getTime() < Date.now();
+
+  const statusBadge = isArchived
+    ? { label: 'В архиве (завершено)', cls: 'bg-surface-2 text-muted border border-line' }
+    : event.viewerParticipationStatus === 'CONFIRMED'
+    ? { label: 'Вы записаны ✓', cls: 'bg-brand-tint text-brand-ink border border-brand-line' }
+    : event.viewerParticipationStatus === 'PENDING'
+    ? { label: 'Заявка отправлена', cls: 'bg-amber-50 text-amber-800 border border-amber-200' }
+    : event.viewerParticipationStatus === 'WAITLISTED'
+    ? { label: 'Вы в очереди', cls: 'bg-surface-2 text-ink' }
+    : null;
 
   const coverSrc = event.coverImageUrl || getSportCoverUrl(event.sport.name, event.id);
 
@@ -139,7 +143,9 @@ export const EventCard: React.FC<EventCardProps> = ({
 
         {/* Top-left Pill (Online or Entry Mode) */}
         <span className="absolute top-3.5 left-3.5 bg-brand text-white font-bold text-xs px-3 py-1 rounded-full shadow-sm select-none">
-          {isOnline
+          {isArchived
+            ? 'Завершено'
+            : isOnline
             ? 'Онлайн'
             : event.joinMode === 'OPEN'
             ? 'Свободная запись'
@@ -151,7 +157,7 @@ export const EventCard: React.FC<EventCardProps> = ({
           <div className="absolute bottom-3 left-3.5 right-3.5 flex flex-wrap items-center gap-1.5 pointer-events-none">
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/65 backdrop-blur-xs text-white text-[11px] font-semibold">
               <Repeat className="w-3 h-3" />
-              <span>Повторяющиеся встречи</span>
+              <span>Регулярные встречи</span>
             </span>
           </div>
         )}

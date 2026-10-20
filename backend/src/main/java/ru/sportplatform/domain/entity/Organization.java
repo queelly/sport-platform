@@ -76,6 +76,9 @@ public class Organization {
     @Column(name = "reviewed_at")
     private Instant reviewedAt;
 
+    @Column(name = "pending_changes_json", columnDefinition = "TEXT")
+    private String pendingChangesJson;
+
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
             name = "organization_sports",
@@ -143,6 +146,8 @@ public class Organization {
     public void setReviewedByAdminId(UUID reviewedByAdminId) { this.reviewedByAdminId = reviewedByAdminId; }
     public Instant getReviewedAt() { return reviewedAt; }
     public void setReviewedAt(Instant reviewedAt) { this.reviewedAt = reviewedAt; }
+    public String getPendingChangesJson() { return pendingChangesJson; }
+    public void setPendingChangesJson(String pendingChangesJson) { this.pendingChangesJson = pendingChangesJson; }
     public Set<Sport> getSports() { return sports; }
     public void setSports(Set<Sport> sports) { this.sports = sports; }
     public Instant getCreatedAt() { return createdAt; }
