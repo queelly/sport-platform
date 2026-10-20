@@ -65,7 +65,7 @@ export const ScenicSportIllustration: React.FC<{
       className={`event-card-cover-banner relative overflow-hidden bg-gradient-to-br ${bgGradient} flex items-center justify-center select-none ${className}`}
     >
       <div className="absolute -right-8 -bottom-8 w-36 h-36 rounded-full bg-white/10 blur-xl" />
-      <div className="absolute left-6 top-6 w-20 h-20 rounded-full bg-[#04D793]/20 blur-lg" />
+      <div className="absolute left-6 top-6 w-20 h-20 rounded-full bg-brand/20 blur-lg" />
       <span className="text-5xl opacity-90 drop-shadow-md">{sportEmoji}</span>
     </div>
   );
@@ -113,11 +113,11 @@ export const EventCard: React.FC<EventCardProps> = ({
     <article
       className={`anim-rise group w-full flex flex-col text-left rounded-[22px] bg-card overflow-hidden border transition-[box-shadow,border-color] justify-between ${
         active
-          ? 'border-brand ring-2 ring-brand/40 shadow-[0_4px_24px_rgba(4,215,147,0.3)]'
+          ? 'border-brand ring-2 ring-brand/40 shadow-md'
           : 'border-line-2 shadow-sm hover:shadow-md hover:border-brand/40'
       }`}
     >
-      {/* Top Cover Banner (Sportikus 185px style) */}
+      {/* Top Cover Banner */}
       <Link
         to={`/events/${event.id}`}
         onClick={(e) => {
@@ -135,10 +135,10 @@ export const EventCard: React.FC<EventCardProps> = ({
           loading="lazy"
         />
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-transparent pointer-events-none" />
 
-        {/* Top-left Pill (Online or Entry Mode / Category) */}
-        <span className="absolute top-3.5 left-3.5 bg-[#04D793] dark:bg-[#D5F45B] text-white dark:text-[#111315] font-bold text-xs sm:text-sm px-3.5 py-1.5 rounded-full shadow-sm select-none">
+        {/* Top-left Pill (Online or Entry Mode) */}
+        <span className="absolute top-3.5 left-3.5 bg-brand text-white font-bold text-xs px-3 py-1 rounded-full shadow-sm select-none">
           {isOnline
             ? '🌐 Онлайн'
             : event.joinMode === 'OPEN'
@@ -147,39 +147,34 @@ export const EventCard: React.FC<EventCardProps> = ({
         </span>
 
         {/* Top-right Pill (Sport Name) */}
-        <span className="absolute top-3.5 right-3.5 bg-white/95 dark:bg-card/95 text-slate-900 dark:text-ink font-bold text-xs sm:text-sm px-3.5 py-1.5 rounded-full shadow-sm select-none">
+        <span className="absolute top-3.5 right-3.5 bg-card/95 text-ink font-bold text-xs px-3 py-1 rounded-full shadow-sm select-none">
           {getSportEmoji(event.sport.name)} {event.sport.name}
         </span>
 
-        {/* Bottom-left badges (Category / Recurring) */}
-        <div className="absolute bottom-3 left-3.5 right-3.5 flex flex-wrap items-center gap-1.5 pointer-events-none">
-          {event.activityFormat && (
-            <span className="px-2.5 py-1 rounded-full bg-black/65 backdrop-blur-xs text-white text-[11px] font-semibold">
-              {event.activityFormat}
-            </span>
-          )}
-          {event.recurringOccurrence && (
+        {/* Bottom-left badges (Recurring only, no categories) */}
+        {event.recurringOccurrence && (
+          <div className="absolute bottom-3 left-3.5 right-3.5 flex flex-wrap items-center gap-1.5 pointer-events-none">
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/65 backdrop-blur-xs text-white text-[11px] font-semibold">
               <Repeat className="w-3 h-3" />
               <span>Повторяющиеся встречи</span>
             </span>
-          )}
-        </div>
+          </div>
+        )}
       </Link>
 
       {/* Card Content Body */}
       <div className="p-4 sm:p-5 flex flex-col gap-3 flex-1 justify-between">
         <div className="flex flex-col gap-2">
           {/* Sport & City/Timezone Row */}
-          <div className="flex items-center justify-between text-xs sm:text-sm font-medium text-muted">
+          <div className="flex items-center justify-between text-xs font-medium text-muted">
             <span className="truncate">{event.organizationName || event.sport.name}</span>
-            <span className="shrink-0 ml-2">
+            <span className="shrink-0 ml-2 font-mono text-[11px]">
               {isOnline ? tzLabel : `${event.city} · ${tzLabel}`}
             </span>
           </div>
 
           {/* Title */}
-          <h3 className="text-lg sm:text-[19px] font-bold text-ink leading-snug line-clamp-2">
+          <h3 className="font-display font-bold text-base sm:text-[17px] text-ink leading-snug line-clamp-2">
             <Link
               to={`/events/${event.id}`}
               onClick={(e) => {
@@ -196,41 +191,41 @@ export const EventCard: React.FC<EventCardProps> = ({
 
           {/* Date & Time */}
           <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-ink">
-            <Calendar className="w-4 h-4 text-ink shrink-0" />
+            <Calendar className="w-4 h-4 text-brand shrink-0" />
             <span>{formatDateTime(event.startsAt)}</span>
           </div>
 
           {/* Location */}
           <div className="flex items-start gap-2 text-ink">
-            <MapPin className="w-4 h-4 text-ink shrink-0 mt-0.5" />
+            <MapPin className="w-4 h-4 text-brand shrink-0 mt-0.5" />
             <div className="flex flex-col min-w-0">
               <span className="text-xs sm:text-sm font-bold text-ink leading-tight truncate">
                 {event.locationAddress}
               </span>
-              <span className="text-[11px] sm:text-xs text-muted leading-tight mt-0.5 truncate">
-                {isOnline ? 'Онлайн-подключение' : event.city}
+              <span className="text-[11px] text-muted leading-tight mt-0.5 truncate">
+                {isOnline ? 'Онлайн-подключение' : `${event.city} · Точка 2ГИС`}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Capacity Progress Bar (Sportikus exact style) */}
+        {/* Capacity Progress Bar */}
         <div className="pt-2 flex flex-col gap-1.5">
-          <div className="flex items-center justify-between text-xs sm:text-sm">
-            <span className="font-bold text-[#04D793] dark:text-[#D5F45B]">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-brand-ink">
               {freeSpots !== null
                 ? freeSpots > 0
                   ? `Свободно ${freeSpots} мест`
                   : 'Мест нет (очередь)'
                 : `Участвуют: ${confirmed}`}
             </span>
-            <span className="font-medium text-muted">
+            <span className="font-mono font-medium text-muted">
               {capacity > 0 ? `${confirmed} из ${capacity}` : 'Без лимита'}
             </span>
           </div>
-          <div className="w-full h-1.5 sm:h-2 bg-slate-100 dark:bg-surface-2 rounded-full overflow-hidden">
+          <div className="w-full h-1.5 sm:h-2 bg-surface-2 rounded-full overflow-hidden">
             <div
-              className="h-full rounded-full bg-[#04D793] dark:bg-[#D5F45B] transition-all"
+              className="h-full rounded-full bg-brand transition-all"
               style={{ width: `${fillPct}%` }}
             />
           </div>
@@ -241,7 +236,7 @@ export const EventCard: React.FC<EventCardProps> = ({
           {statusBadge ? (
             <Link
               to={`/events/${event.id}`}
-              className={`w-full py-3 rounded-xl font-bold text-sm sm:text-base flex items-center justify-center transition-colors ${statusBadge.cls}`}
+              className={`w-full py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center transition-colors ${statusBadge.cls}`}
             >
               {statusBadge.label}
             </Link>
@@ -254,9 +249,9 @@ export const EventCard: React.FC<EventCardProps> = ({
                   onOpen();
                 }
               }}
-              className="w-full py-3 sm:py-3.5 rounded-xl bg-[#04D793] hover:bg-[#03c485] dark:bg-[#D5F45B] dark:hover:bg-[#c4e447] text-white dark:text-[#111315] font-bold text-sm sm:text-base flex items-center justify-center transition-colors shadow-sm text-center"
+              className="w-full py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white font-display font-bold text-xs sm:text-sm flex items-center justify-center transition-colors shadow-xs"
             >
-              Подробнее
+              {event.joinMode === 'OPEN' ? 'Присоединиться' : 'Подать заявку'}
             </Link>
           )}
         </div>

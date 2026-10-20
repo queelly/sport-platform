@@ -41,13 +41,19 @@ import { useAuth } from '../AuthContext';
 import {
   AttachmentDto,
   DiscussionMessageDto,
-  EVENT_CATEGORIES,
   EventDetailDto,
   getBrowserLocalTzLabel,
   getRegionInfo,
   isOnlineEvent,
 } from '../types';
-import { CustomDateTimePicker, CustomSelect, RegionSelect } from '../components/UiControls';
+import {
+  CustomDateTimePicker,
+  CustomSelect,
+  Embedded2GisMiniMap,
+  MapAddressPicker,
+  RegionSelect,
+  searchRealAddresses2Gis,
+} from '../components/UiControls';
 import { ScenicSportIllustration } from '../components/EventCard';
 
 export const CreateEventPage: React.FC = () => {
@@ -63,11 +69,12 @@ export const CreateEventPage: React.FC = () => {
   const [sportId, setSportId] = useState<string>('');
   const [useNewSport, setUseNewSport] = useState(false);
   const [newSportName, setNewSportName] = useState('');
-  const [newSportCategory, setNewSportCategory] = useState('Командные и игровые дисциплины');
   const [organizationId, setOrganizationId] = useState<string>(preselectedOrgId);
   const [isOnline, setIsOnline] = useState(false);
   const [city, setCity] = useState(user?.city || 'Москва');
   const [locationAddress, setLocationAddress] = useState('');
+  const [latitude, setLatitude] = useState<number | null>(() => getRegionInfo(user?.city || 'Москва')?.lat ?? 55.7558);
+  const [longitude, setLongitude] = useState<number | null>(() => getRegionInfo(user?.city || 'Москва')?.lng ?? 37.6173);
   const [startsAtLocal, setStartsAtLocal] = useState(() => {
     const d = new Date(Date.now() + 24 * 3600 * 1000);
     d.setMinutes(0, 0, 0);
@@ -77,7 +84,6 @@ export const CreateEventPage: React.FC = () => {
   const [durationMinutesStr, setDurationMinutesStr] = useState<string>('90');
   const [joinMode, setJoinMode] = useState<'OPEN' | 'APPROVAL_REQUIRED'>('OPEN');
   const [skillLevel, setSkillLevel] = useState('ANY');
-  const [activityFormat, setActivityFormat] = useState('Спортивные тренировки');
   const [participationConditions, setParticipationConditions] = useState('Участие бесплатное');
   const [whatToBring, setWhatToBring] = useState('Спортивная форма и вода');
   const [maxParticipants, setMaxParticipants] = useState<string>('12');
@@ -151,21 +157,35 @@ export const CreateEventPage: React.FC = () => {
       const startIso = startDate.toISOString();
       const endIso = new Date(startDate.getTime() + validDuration * 60000).toISOString();
 
+      let finalLat = isOnline ? null : latitude;
+      let finalLng = isOnline ? null : longitude;
+      let finalAddress = isOnline ? locationAddress || 'Онлайн-платформа' : locationAddress.trim();
+
+      if (!isOnline && finalAddress) {
+        const geocoded = await searchRealAddresses2Gis(finalAddress, city);
+        if (geocoded.length > 0 && (finalLat === null || finalLng === null)) {
+          finalLat = geocoded[0].lat;
+          finalLng = geocoded[0].lng;
+        }
+      }
+
       const body = {
         title,
         description,
         sportId: useNewSport ? null : sportId,
         newSportName: useNewSport ? newSportName.trim() : null,
-        newSportCategory: useNewSport ? newSportCategory.trim() : null,
+        newSportCategory: useNewSport ? 'Спорт' : null,
         organizationId: organizationId || null,
         coverAttachmentId: coverAttachment?.id || null,
         city: isOnline ? 'Онлайн' : city,
-        locationAddress: isOnline ? locationAddress || 'Онлайн-платформа' : locationAddress,
+        locationAddress: finalAddress,
+        latitude: finalLat,
+        longitude: finalLng,
         startsAt: startIso,
         endsAt: endIso,
         joinMode,
         skillLevel,
-        activityFormat,
+        activityFormat: '',
         participationConditions,
         whatToBring,
         maxParticipants: parsedMax,
@@ -195,10 +215,10 @@ export const CreateEventPage: React.FC = () => {
       <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-9 shadow-xl space-y-6">
         <div>
           <h1 className="font-display font-extrabold text-2xl sm:text-3xl text-slate-900">
-            Создать спортивное мероприятие
+            Создать спортивный сбор
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            Опубликуйте разовую или повторяющуюся встречу для совместной тренировки, соревнования, фестиваля или квеста
+            Опубликуйте разовую или повторяющуюся встречу с точной привязкой к адресу и координатам 2ГИС
           </p>
         </div>
 
@@ -234,61 +254,41 @@ export const CreateEventPage: React.FC = () => {
             </div>
           )}
 
-          {/* Sport selection and Category (#11) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="block text-xs font-bold text-slate-700">Спортивное направление *</label>
-                <button
-                  type="button"
-                  onClick={() => setUseNewSport(!useNewSport)}
-                  className="text-xs font-bold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>{useNewSport ? 'Из списка' : 'Добавить новый'}</span>
-                </button>
-              </div>
-
-              {!useNewSport ? (
-                <CustomSelect
-                  value={sportId}
-                  onChange={setSportId}
-                  options={sports.map((s) => ({
-                    value: s.id,
-                    label: `${s.name} (${s.category})`,
-                  }))}
-                />
-              ) : (
-                <div className="space-y-2 p-3 rounded-2xl bg-blue-50/70 border border-blue-200">
-                  <input
-                    type="text"
-                    required
-                    value={newSportName}
-                    onChange={(e) => setNewSportName(e.target.value)}
-                    placeholder="Название вида спорта (напр. Падел)"
-                    className="w-full px-3 py-2 rounded-xl border border-blue-300 text-xs bg-white"
-                  />
-                  <input
-                    type="text"
-                    value={newSportCategory}
-                    onChange={(e) => setNewSportCategory(e.target.value)}
-                    placeholder="Категория (напр. Ракеточные)"
-                    className="w-full px-3 py-2 rounded-xl border border-blue-300 text-xs bg-white"
-                  />
-                </div>
-              )}
+          {/* Sport selection (without sport categories) */}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="block text-xs font-bold text-slate-700">Вид спорта *</label>
+              <button
+                type="button"
+                onClick={() => setUseNewSport(!useNewSport)}
+                className="text-xs font-bold text-brand-ink hover:underline inline-flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{useNewSport ? 'Выбрать из списка' : 'Добавить свой вид спорта'}</span>
+              </button>
             </div>
 
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-slate-700">
-                Категория мероприятия *
-              </label>
+            {!useNewSport ? (
               <CustomSelect
-                value={activityFormat}
-                onChange={setActivityFormat}
-                options={EVENT_CATEGORIES}
+                value={sportId}
+                onChange={setSportId}
+                options={sports.map((s) => ({
+                  value: s.id,
+                  label: s.name,
+                }))}
               />
-            </div>
+            ) : (
+              <div className="p-3 rounded-2xl bg-brand-tint/60 border border-brand/30">
+                <input
+                  type="text"
+                  required
+                  value={newSportName}
+                  onChange={(e) => setNewSportName(e.target.value)}
+                  placeholder="Введите название вида спорта (например: Падел, Сквош, Воркаут)"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-brand/40 text-sm bg-white"
+                />
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
@@ -347,8 +347,8 @@ export const CreateEventPage: React.FC = () => {
             />
           </div>
 
-          {/* Online vs Offline Format (#7) */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+          {/* Привязка к реальному адресу и координатам на карте 2ГИС */}
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="inline-flex items-center gap-2 cursor-pointer">
                 <input
@@ -378,20 +378,35 @@ export const CreateEventPage: React.FC = () => {
                 />
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Город / Регион *</label>
-                  <RegionSelect value={city} onChange={setCity} />
+                  <RegionSelect
+                    value={city}
+                    onChange={(nextCity) => {
+                      setCity(nextCity);
+                      const info = getRegionInfo(nextCity);
+                      if (info) {
+                        setLatitude(info.lat);
+                        setLongitude(info.lng);
+                      }
+                    }}
+                  />
                 </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Адрес или название площадки *</label>
-                  <input
-                    type="text"
-                    required
-                    value={locationAddress}
-                    onChange={(e) => setLocationAddress(e.target.value)}
-                    placeholder="Улица, дом, номер корта или ориентир сбора"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Реальный адрес площадки или выбор точки на карте 2ГИС *
+                  </label>
+                  <MapAddressPicker
+                    city={city}
+                    address={locationAddress}
+                    latitude={latitude}
+                    longitude={longitude}
+                    onChange={(next) => {
+                      setLocationAddress(next.address);
+                      setLatitude(next.latitude);
+                      setLongitude(next.longitude);
+                    }}
                   />
                 </div>
               </div>
@@ -572,11 +587,12 @@ export const EventDetailPage: React.FC = () => {
   const [editIsOnline, setEditIsOnline] = useState(false);
   const [editCity, setEditCity] = useState('');
   const [editAddress, setEditAddress] = useState('');
+  const [editLatitude, setEditLatitude] = useState<number | null>(null);
+  const [editLongitude, setEditLongitude] = useState<number | null>(null);
   const [editStartsAtLocal, setEditStartsAtLocal] = useState('');
   const [editDurationStr, setEditDurationStr] = useState('90');
   const [editJoinMode, setEditJoinMode] = useState<'OPEN' | 'APPROVAL_REQUIRED'>('OPEN');
   const [editSkillLevel, setEditSkillLevel] = useState('ANY');
-  const [editActivityFormat, setEditActivityFormat] = useState('Спортивные тренировки');
   const [editConditions, setEditConditions] = useState('');
   const [editWhatToBring, setEditWhatToBring] = useState('');
   const [editMaxParticipants, setEditMaxParticipants] = useState('');
@@ -655,11 +671,14 @@ export const EventDetailPage: React.FC = () => {
     if (!detail) return;
     const ev = detail.event;
     const online = isOnlineEvent(ev.city, ev.locationAddress);
+    const region = getRegionInfo(ev.city) || getRegionInfo('Москва');
     setEditTitle(ev.title);
     setEditDesc(ev.description);
     setEditIsOnline(online);
     setEditCity(online ? 'Москва' : ev.city);
     setEditAddress(ev.locationAddress);
+    setEditLatitude(ev.latitude ?? (region ? region.lat : 55.7512));
+    setEditLongitude(ev.longitude ?? (region ? region.lng : 37.6184));
     const d = new Date(ev.startsAt);
     const pad = (n: number) => String(n).padStart(2, '0');
     setEditStartsAtLocal(
@@ -672,7 +691,6 @@ export const EventDetailPage: React.FC = () => {
     setEditDurationStr(String(durMins));
     setEditJoinMode(ev.joinMode);
     setEditSkillLevel(ev.skillLevel);
-    setEditActivityFormat(ev.activityFormat || 'Спортивные тренировки');
     setEditConditions(ev.participationConditions || '');
     setEditWhatToBring(ev.whatToBring || '');
     setEditMaxParticipants(ev.maxParticipants ? String(ev.maxParticipants) : '');
@@ -836,11 +854,12 @@ export const EventDetailPage: React.FC = () => {
           description: editDesc,
           city: editIsOnline ? 'Онлайн' : editCity,
           locationAddress: editIsOnline ? editAddress || 'Онлайн-платформа' : editAddress,
+          latitude: editIsOnline ? null : editLatitude,
+          longitude: editIsOnline ? null : editLongitude,
           startsAt: startD.toISOString(),
           endsAt: endD.toISOString(),
           joinMode: editJoinMode,
           skillLevel: editSkillLevel,
-          activityFormat: editActivityFormat,
           participationConditions: editConditions,
           whatToBring: editWhatToBring,
           maxParticipants: editMaxParticipants.trim() ? parseInt(editMaxParticipants.trim(), 10) : null,
@@ -1043,11 +1062,6 @@ export const EventDetailPage: React.FC = () => {
                 <span className="px-3 py-1 rounded-xl bg-blue-600 text-white text-xs font-bold">
                   {event.sport.name}
                 </span>
-                {event.activityFormat && (
-                  <span className="px-3 py-1 rounded-xl bg-[#E7F8F0] text-[#11995E] text-xs font-bold">
-                    {event.activityFormat}
-                  </span>
-                )}
                 {isOnline && (
                   <span className="px-3 py-1 rounded-xl bg-indigo-600 text-white text-xs font-bold">
                     🌐 Онлайн
@@ -1121,7 +1135,7 @@ export const EventDetailPage: React.FC = () => {
                   <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                   <div className="space-y-1.5">
                     <div className="font-bold text-slate-900">
-                      {isOnline ? 'Формат и платформа подключения' : 'Место проведения'}
+                      {isOnline ? 'Формат и платформа подключения' : 'Место проведения (2ГИС)'}
                     </div>
                     <div className="text-slate-700">
                       {isOnline
@@ -1130,6 +1144,20 @@ export const EventDetailPage: React.FC = () => {
                     </div>
                     {!isOnline && (
                       <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        <a
+                          href={
+                            event.latitude != null && event.longitude != null
+                              ? `https://2gis.ru/geo/${event.longitude},${event.latitude}`
+                              : `https://2gis.ru/search/${encodeURIComponent(`${event.city} ${event.locationAddress}`)}`
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100/90 hover:bg-emerald-200 text-emerald-950 font-bold text-[11px] transition-colors"
+                        >
+                          <MapPin className="w-3 h-3 text-emerald-700" />
+                          <span>Открыть точку в 2ГИС</span>
+                          <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                        </a>
                         <a
                           href={`https://yandex.ru/maps/?text=${encodeURIComponent(
                             `${event.city}, ${event.locationAddress}`
@@ -1140,18 +1168,6 @@ export const EventDetailPage: React.FC = () => {
                         >
                           <Navigation className="w-3 h-3 text-amber-700" />
                           <span>Яндекс Карты</span>
-                          <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-                        </a>
-                        <a
-                          href={`https://2gis.ru/search/${encodeURIComponent(
-                            `${event.city} ${event.locationAddress}`
-                          )}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100/90 hover:bg-emerald-200 text-emerald-950 font-bold text-[11px] transition-colors"
-                        >
-                          <MapPin className="w-3 h-3 text-emerald-700" />
-                          <span>Открыть в 2ГИС</span>
                           <ExternalLink className="w-2.5 h-2.5 opacity-60" />
                         </a>
                       </div>
@@ -1171,6 +1187,15 @@ export const EventDetailPage: React.FC = () => {
                 </div>
               </div>
             </div>
+
+            {!isOnline && (
+              <Embedded2GisMiniMap
+                city={event.city}
+                address={event.locationAddress}
+                latitude={event.latitude}
+                longitude={event.longitude}
+              />
+            )}
 
             {/* Series other dates if recurring */}
             {seriesOccurrences.length > 1 && (
@@ -1957,25 +1982,15 @@ export const EventDetailPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveEditedEvent} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Название встречи *</label>
-                  <input
-                    type="text"
-                    required
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Категория *</label>
-                  <CustomSelect
-                    value={editActivityFormat}
-                    onChange={setEditActivityFormat}
-                    options={EVENT_CATEGORIES}
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Название встречи *</label>
+                <input
+                  type="text"
+                  required
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
+                />
               </div>
 
               <div>
@@ -2059,21 +2074,32 @@ export const EventDetailPage: React.FC = () => {
                     />
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-3">
                     <div>
                       <label className="block text-xs font-bold text-slate-700 mb-1">Город / Регион *</label>
-                      <RegionSelect value={editCity} onChange={setEditCity} />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Адрес площадки *</label>
-                      <input
-                        type="text"
-                        required
-                        value={editAddress}
-                        onChange={(e) => setEditAddress(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm bg-white"
+                      <RegionSelect
+                        value={editCity}
+                        onChange={(newCity) => {
+                          setEditCity(newCity);
+                          const reg = getRegionInfo(newCity);
+                          if (reg) {
+                            setEditLatitude(reg.lat);
+                            setEditLongitude(reg.lng);
+                          }
+                        }}
                       />
                     </div>
+                    <MapAddressPicker
+                      city={editCity}
+                      address={editAddress}
+                      latitude={editLatitude}
+                      longitude={editLongitude}
+                      onChange={({ address, latitude, longitude }) => {
+                        setEditAddress(address);
+                        setEditLatitude(latitude);
+                        setEditLongitude(longitude);
+                      }}
+                    />
                   </div>
                 )}
               </div>

@@ -1,7 +1,12 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
-import { MobileTabBar, Navbar } from './components/Navbar';
+import {
+  AppSidebar,
+  getSelectedGlobalRegion,
+  MobileTabBar,
+  Navbar,
+} from './components/Navbar';
 import {
   HomeAndCatalogPage,
   MyEventsPage,
@@ -51,221 +56,270 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; requireAdmin?: boole
 };
 
 const PageContainer: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="max-w-[1240px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20 md:pb-10">
+  <div className="max-w-[1240px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20 lg:pb-10">
     {children}
   </div>
 );
+
+const AppShell: React.FC = () => {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [cityModalOpen, setCityModalOpen] = useState(false);
+  const [selectedRegion, setSelectedRegion] = useState<string>(() => getSelectedGlobalRegion());
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const custom = e as CustomEvent<string>;
+      setSelectedRegion(custom.detail ?? '');
+    };
+    window.addEventListener('sp-region-change', handler);
+    return () => window.removeEventListener('sp-region-change', handler);
+  }, []);
+
+  return (
+    <div className="h-dvh flex bg-page text-ink font-sans overflow-hidden">
+      {/* Левая боковая панель со всеми вкладками (на десктопе всегда видна и ничего не обрезается) */}
+      <div className="hidden lg:flex h-full shrink-0">
+        <AppSidebar
+          selectedRegion={selectedRegion}
+          onOpenRegionModal={() => setCityModalOpen(true)}
+        />
+      </div>
+
+      {/* Мобильный выезжающий сайдбар */}
+      {mobileSidebarOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-xs"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+          <div className="relative z-10 h-full">
+            <AppSidebar
+              selectedRegion={selectedRegion}
+              onOpenRegionModal={() => setCityModalOpen(true)}
+              mobileOpen={mobileSidebarOpen}
+              onCloseMobile={() => setMobileSidebarOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Правая рабочая область: Верхняя компактная панель + Основной контент */}
+      <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden">
+        <Navbar
+          onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+          cityModalOpen={cityModalOpen}
+          setCityModalOpen={setCityModalOpen}
+        />
+
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+          <Routes>
+            <Route path="/" element={<HomeAndCatalogPage />} />
+            <Route path="/events" element={<HomeAndCatalogPage catalogOnly />} />
+            <Route path="/recommended" element={<RecommendedPage />} />
+            <Route path="/my" element={<MyEventsPage />} />
+
+            <Route
+              path="/events/new"
+              element={
+                <ProtectedRoute>
+                  <PageContainer>
+                    <CreateEventPage />
+                  </PageContainer>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/events/:eventId"
+              element={
+                <PageContainer>
+                  <EventDetailPage />
+                </PageContainer>
+              }
+            />
+
+            <Route
+              path="/login"
+              element={
+                <PageContainer>
+                  <LoginPage />
+                </PageContainer>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <PageContainer>
+                  <RegisterPage />
+                </PageContainer>
+              }
+            />
+
+            <Route
+              path="/organizations"
+              element={
+                <PageContainer>
+                  <OrganizationsListPage />
+                </PageContainer>
+              }
+            />
+            <Route
+              path="/organizations/:orgId"
+              element={
+                <PageContainer>
+                  <OrganizationPublicPage />
+                </PageContainer>
+              }
+            />
+            <Route
+              path="/my-organization"
+              element={
+                <ProtectedRoute>
+                  <PageContainer>
+                    <MyOrganizationCabinetPage />
+                  </PageContainer>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/partners"
+              element={
+                <PageContainer>
+                  <PartnersAndFriendsPage />
+                </PageContainer>
+              }
+            />
+            <Route
+              path="/friends"
+              element={
+                <PageContainer>
+                  <PartnersAndFriendsPage />
+                </PageContainer>
+              }
+            />
+            <Route
+              path="/users/:userId"
+              element={
+                <PageContainer>
+                  <PublicUserProfilePage />
+                </PageContainer>
+              }
+            />
+
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <PageContainer>
+                    <MyProfilePage />
+                  </PageContainer>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/support"
+              element={
+                <ProtectedRoute>
+                  <PageContainer>
+                    <SupportPage />
+                  </PageContainer>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/support/tickets/:ticketId"
+              element={
+                <ProtectedRoute>
+                  <PageContainer>
+                    <SupportPage />
+                  </PageContainer>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/support/chat"
+              element={
+                <ProtectedRoute>
+                  <PageContainer>
+                    <SupportPage />
+                  </PageContainer>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/notifications"
+              element={
+                <ProtectedRoute>
+                  <PageContainer>
+                    <NotificationsAndVkPage />
+                  </PageContainer>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute requireAdmin>
+                  <PageContainer>
+                    <AdminDashboardPage />
+                  </PageContainer>
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/terms"
+              element={
+                <PageContainer>
+                  <LegalInfoPage doc="terms" />
+                </PageContainer>
+              }
+            />
+            <Route
+              path="/privacy"
+              element={
+                <PageContainer>
+                  <LegalInfoPage doc="privacy" />
+                </PageContainer>
+              }
+            />
+
+            <Route
+              path="*"
+              element={
+                <PageContainer>
+                  <div className="max-w-lg mx-auto my-12 bg-card rounded-[22px] border border-line-2 p-10 text-center space-y-3">
+                    <div className="font-extrabold text-3xl text-ink">404</div>
+                    <p className="text-sm text-muted">Страница не найдена</p>
+                    <div className="pt-2">
+                      <Link
+                        to="/"
+                        className="inline-flex px-5 py-2.5 rounded-xl bg-brand text-white text-xs font-bold"
+                      >
+                        Вернуться на карту
+                      </Link>
+                    </div>
+                  </div>
+                </PageContainer>
+              }
+            />
+          </Routes>
+        </main>
+
+        <MobileTabBar />
+      </div>
+    </div>
+  );
+};
 
 export const App: React.FC = () => {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <div className="h-dvh flex flex-col bg-page text-ink font-sans overflow-x-hidden">
-          {/* Sportikus Single 64px Top Header */}
-          <Navbar />
-
-          {/* Full-width Workspace (No cluttered left/right sidebars) */}
-          <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-            <Routes>
-              <Route path="/" element={<HomeAndCatalogPage />} />
-              <Route path="/events" element={<HomeAndCatalogPage catalogOnly />} />
-              <Route path="/recommended" element={<RecommendedPage />} />
-              <Route path="/my" element={<MyEventsPage />} />
-
-              <Route
-                path="/events/new"
-                element={
-                  <ProtectedRoute>
-                    <PageContainer>
-                      <CreateEventPage />
-                    </PageContainer>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/events/:eventId"
-                element={
-                  <PageContainer>
-                    <EventDetailPage />
-                  </PageContainer>
-                }
-              />
-
-              <Route
-                path="/login"
-                element={
-                  <PageContainer>
-                    <LoginPage />
-                  </PageContainer>
-                }
-              />
-              <Route
-                path="/register"
-                element={
-                  <PageContainer>
-                    <RegisterPage />
-                  </PageContainer>
-                }
-              />
-
-              <Route
-                path="/organizations"
-                element={
-                  <PageContainer>
-                    <OrganizationsListPage />
-                  </PageContainer>
-                }
-              />
-              <Route
-                path="/organizations/:orgId"
-                element={
-                  <PageContainer>
-                    <OrganizationPublicPage />
-                  </PageContainer>
-                }
-              />
-              <Route
-                path="/my-organization"
-                element={
-                  <ProtectedRoute>
-                    <PageContainer>
-                      <MyOrganizationCabinetPage />
-                    </PageContainer>
-                  </ProtectedRoute>
-                }
-              />
-
-              <Route
-                path="/partners"
-                element={
-                  <PageContainer>
-                    <PartnersAndFriendsPage />
-                  </PageContainer>
-                }
-              />
-              <Route
-                path="/friends"
-                element={
-                  <PageContainer>
-                    <PartnersAndFriendsPage />
-                  </PageContainer>
-                }
-              />
-              <Route
-                path="/users/:userId"
-                element={
-                  <PageContainer>
-                    <PublicUserProfilePage />
-                  </PageContainer>
-                }
-              />
-
-              <Route
-                path="/profile"
-                element={
-                  <ProtectedRoute>
-                    <PageContainer>
-                      <MyProfilePage />
-                    </PageContainer>
-                  </ProtectedRoute>
-                }
-              />
-
-              <Route
-                path="/support"
-                element={
-                  <ProtectedRoute>
-                    <PageContainer>
-                      <SupportPage />
-                    </PageContainer>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/support/tickets/:ticketId"
-                element={
-                  <ProtectedRoute>
-                    <PageContainer>
-                      <SupportPage />
-                    </PageContainer>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/support/chat"
-                element={
-                  <ProtectedRoute>
-                    <PageContainer>
-                      <SupportPage />
-                    </PageContainer>
-                  </ProtectedRoute>
-                }
-              />
-
-              <Route
-                path="/notifications"
-                element={
-                  <ProtectedRoute>
-                    <PageContainer>
-                      <NotificationsAndVkPage />
-                    </PageContainer>
-                  </ProtectedRoute>
-                }
-              />
-
-              <Route
-                path="/admin"
-                element={
-                  <ProtectedRoute requireAdmin>
-                    <PageContainer>
-                      <AdminDashboardPage />
-                    </PageContainer>
-                  </ProtectedRoute>
-                }
-              />
-
-              <Route
-                path="/terms"
-                element={
-                  <PageContainer>
-                    <LegalInfoPage doc="terms" />
-                  </PageContainer>
-                }
-              />
-              <Route
-                path="/privacy"
-                element={
-                  <PageContainer>
-                    <LegalInfoPage doc="privacy" />
-                  </PageContainer>
-                }
-              />
-
-              <Route
-                path="*"
-                element={
-                  <PageContainer>
-                    <div className="max-w-lg mx-auto my-12 bg-card rounded-[22px] border border-line-2 p-10 text-center space-y-3">
-                      <div className="font-extrabold text-3xl text-ink">404</div>
-                      <p className="text-sm text-muted">Страница не найдена</p>
-                      <div className="pt-2">
-                        <Link
-                          to="/"
-                          className="inline-flex px-5 py-2.5 rounded-xl bg-brand text-white text-xs font-bold"
-                        >
-                          Вернуться на карту
-                        </Link>
-                      </div>
-                    </div>
-                  </PageContainer>
-                }
-              />
-            </Routes>
-          </main>
-
-          {/* Sportikus Mobile Bottom Tab Bar */}
-          <MobileTabBar />
-        </div>
+        <AppShell />
       </BrowserRouter>
     </AuthProvider>
   );
@@ -287,7 +341,7 @@ const LegalInfoPage: React.FC<{ doc: 'terms' | 'privacy' }> = ({ doc }) => {
       {isTerms ? (
         <div className="space-y-3 text-sm text-ink/90 leading-relaxed">
           <p>
-            Настоящее Пользовательское соглашение регулирует порядок использования Спортивной Платформы «Точка Сбора» для поиска и организации спортивных тренировок, соревнований, фестивалей, квестов и городских спортивных сообществ.
+            Настоящее Пользовательское соглашение регулирует порядок использования Спортивной Платформы «Точка Сбора» для поиска и организации спортивных тренировок и городских спортивных сообществ.
           </p>
           <h2 className="font-bold text-base text-ink pt-2">
             1. Правила создания мероприятий и участия
@@ -299,7 +353,7 @@ const LegalInfoPage: React.FC<{ doc: 'terms' | 'privacy' }> = ({ doc }) => {
             2. Безопасность и ответственность участников
           </h2>
           <p>
-            Каждый участник самостоятельно оценивает состояние своего здоровья и уровень физической подготовки перед записью на спортивные встречи и соревнования. При обнаружении нарушений правил любой пользователь может подать обращение через систему тикетов.
+            Каждый участник самостоятельно оценивает состояние своего здоровья и уровень физической подготовки перед записью на спортивные встречи. При обнаружении нарушений правил любой пользователь может подать обращение через систему тикетов.
           </p>
         </div>
       ) : (

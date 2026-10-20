@@ -233,7 +233,6 @@ export const MyProfilePage: React.FC = () => {
   // Add new sport directly inside profile (#15)
   const [showAddSportForm, setShowAddSportForm] = useState(false);
   const [newSportName, setNewSportName] = useState('');
-  const [newSportCategory, setNewSportCategory] = useState('Индивидуальные и командные дисциплины');
   const [creatingSport, setCreatingSport] = useState(false);
 
   useEffect(() => {
@@ -306,7 +305,7 @@ export const MyProfilePage: React.FC = () => {
         method: 'POST',
         body: JSON.stringify({
           name: newSportName.trim(),
-          category: newSportCategory.trim() || 'Пользовательские виды спорта',
+          category: 'Спорт',
           description: 'Добавлено участником из личного кабинета',
         }),
       });
@@ -561,16 +560,6 @@ export const MyProfilePage: React.FC = () => {
                     value={newSportName}
                     onChange={(e) => setNewSportName(e.target.value)}
                     placeholder="Например: Сквош, Падел, Сапбординг, Боулдеринг..."
-                    className="w-full px-3 py-2 rounded-xl border border-blue-300 text-xs bg-white"
-                  />
-                </div>
-                <div className="sm:w-56">
-                  <label className="block text-[11px] font-bold text-blue-900 mb-1">Категория</label>
-                  <input
-                    type="text"
-                    value={newSportCategory}
-                    onChange={(e) => setNewSportCategory(e.target.value)}
-                    placeholder="Категория"
                     className="w-full px-3 py-2 rounded-xl border border-blue-300 text-xs bg-white"
                   />
                 </div>
